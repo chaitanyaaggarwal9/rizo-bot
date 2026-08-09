@@ -1,0 +1,16 @@
+{
+  "name": "chai-agent",
+  "version": "1.0.0",
+  "description": "Personal AI assistant backend using OpenRouter",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "chat": "node cli.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  }
+}

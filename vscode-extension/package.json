@@ -1,0 +1,31 @@
+{
+  "name": "chai-agent",
+  "displayName": "Chai Agent",
+  "description": "Team AI coding assistant — cost-optimized model routing, file edit, terminal, git.",
+  "version": "0.0.1",
+  "publisher": "chai-agent-internal",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "chaiAgent.openChat",
+        "title": "Chai Agent: Open Chat"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

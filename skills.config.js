@@ -1,0 +1,85 @@
+const fs = require('fs');
+const path = require('path');
+
+const SKILLS_DIR = path.join(__dirname, 'skills');
+
+// Every coding-classified request gets this as the base layer — the other
+// skill files' own text says they build on top of it.
+const BASE_SKILL = 'coding-discipline.md';
+
+// More specific than the coding/general split in models.config.js — this
+// decides WHICH coding skill(s) apply, not whether the request is coding-
+// related at all. A message can match more than one.
+// Plural/inflected forms are listed explicitly (not matched via a wildcard
+// suffix) — a trailing \w* would also turn short/common-word keywords into
+// unsafe prefix matches: "pr" would match "prime"/"project", "class" would
+// match "classic", "react" would match "reaction", "exception" would match
+// "exceptional", "commit" would match "commitment". Strict word-boundary
+// matching on explicit literals avoids all of that. "rest" is deliberately
+// spelled "restful" instead of the bare word — "rest" alone is too common
+// an English word ("get some rest") to use safely even as an exact match.
+const SKILL_KEYWORDS = {
+  'debugging-discipline.md': [
+    'bug', 'bugs', 'debug', 'debugging', 'crash', 'crashes', 'stack trace',
+    'traceback', 'broken', 'failing', 'root cause', 'reproduce',
+    'regression', 'regressions', 'flaky', 'exception', 'exceptions',
+  ],
+  'git-hygiene.md': [
+    'git', 'commit', 'commits', 'push', 'pull request', 'pull requests',
+    'branch', 'branches', 'merge', 'rebase', 'squash',
+  ],
+  'backend-api-taste.md': [
+    'api', 'apis', 'endpoint', 'endpoints', 'restful', 'route', 'routes',
+    'http status', 'pagination', 'versioning',
+  ],
+  'test-discipline.md': [
+    'test', 'tests', 'testing', 'spec', 'specs', 'unit test', 'unit tests',
+    'mock', 'mocks', 'coverage', 'assert', 'assertion',
+  ],
+};
+
+// Naive substring matching misfires: "capital" contains "api", "digital"
+// contains "git", "latest" contains "test". Strict \b...\b boundaries reject
+// all of those, since the boundary immediately after the keyword fails
+// inside a longer word.
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+const SKILL_PATTERNS = Object.fromEntries(
+  Object.entries(SKILL_KEYWORDS).map(([file, keywords]) => [
+    file,
+    new RegExp(`\\b(?:${keywords.map(escapeRegExp).join('|')})\\b`, 'i'),
+  ]),
+);
+
+// Returns which skill files apply to this message. General/non-coding
+// requests get none — a "what's the capital of France" question doesn't
+// need Git Hygiene or Test Discipline loaded.
+function selectSkillFiles(message, taskType) {
+  if (taskType !== 'coding') return [];
+
+  const files = [BASE_SKILL];
+  for (const [file, pattern] of Object.entries(SKILL_PATTERNS)) {
+    if (pattern.test(message)) files.push(file);
+  }
+  return files;
+}
+
+// Reads the selected skill files fresh on every request (no caching) so
+// edits apply without a restart, and joins them into one system-prompt string.
+function loadSkillsContent(message, taskType) {
+  const files = selectSkillFiles(message, taskType);
+  return files
+    .map((file) => {
+      try {
+        return fs.readFileSync(path.join(SKILLS_DIR, file), 'utf-8');
+      } catch (err) {
+        console.warn(`Could not read skill file ${file}:`, err.message);
+        return '';
+      }
+    })
+    .filter(Boolean)
+    .join('\n\n---\n\n');
+}
+
+module.exports = { selectSkillFiles, loadSkillsContent };

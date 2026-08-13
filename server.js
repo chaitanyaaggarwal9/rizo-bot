@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { FREE_MODELS, detectTaskType } = require('./models.config');
+const { loadSkillsContent } = require('./skills.config');
 
 const app = express();
 app.use(express.json());
@@ -10,7 +11,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const SKILLS_PATH = path.join(__dirname, 'skills.md');
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LOG_DIR = path.join(__dirname, 'logs');
 const LOG_PATH = path.join(LOG_DIR, 'model-usage.jsonl');
@@ -94,22 +94,19 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 
-  // Read skills.md fresh on every request (no caching) so edits apply without a restart
-  let skillsContent = '';
-  try {
-    skillsContent = fs.readFileSync(SKILLS_PATH, 'utf-8');
-  } catch (err) {
-    console.warn('Could not read skills.md, proceeding without it:', err.message);
-  }
+  const taskType = detectTaskType(message);
+  console.log(`[chat] task type detected: ${taskType}`);
+
+  // Only the skill files relevant to this message are loaded — general/
+  // search questions get none, coding questions get the base layer plus
+  // whichever specific topics (debugging, git, api, testing) match.
+  const skillsContent = loadSkillsContent(message, taskType);
 
   const messages = [
     { role: 'system', content: skillsContent },
     ...conversationHistory,
     { role: 'user', content: message },
   ];
-
-  const taskType = detectTaskType(message);
-  console.log(`[chat] task type detected: ${taskType}`);
 
   try {
     const { model, reply, attempts } = await chatWithFallback(messages, taskType);

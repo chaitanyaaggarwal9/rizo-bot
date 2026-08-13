@@ -19,11 +19,21 @@ const FREE_MODELS = {
 
 // Simple keyword check: coding-flavored words -> "coding" list, else "general".
 // This determines which ranked list to use, not which specific model within it.
+// Includes git-workflow words (commit, push, branch, merge, pull request,
+// rebase) so git questions route to the coding tier too — skills.config.js's
+// Git Hygiene file only loads for messages already classified "coding" here.
+// Plural/inflected forms are listed explicitly, not matched via a wildcard
+// suffix — a wildcard would turn "class" into a match for "classic", "react"
+// into a match for "reaction", "exception" into a match for "exceptional",
+// "commit" into a match for "commitment". Strict whole-word matching avoids all of that.
 const CODING_KEYWORDS = [
-  'code', 'coding', 'function', 'bug', 'debug', 'error', 'exception',
-  'script', 'compile', 'syntax', 'variable', 'class', 'api', 'array',
-  'json', 'sql', 'regex', 'refactor', 'typescript', 'javascript',
-  'python', 'react', 'node.js', 'npm', 'git', 'terminal', 'stack trace',
+  'code', 'coding', 'function', 'functions', 'bug', 'bugs', 'debug',
+  'debugging', 'error', 'errors', 'exception', 'exceptions', 'script',
+  'compile', 'syntax', 'variable', 'variables', 'class', 'api', 'apis',
+  'array', 'arrays', 'json', 'sql', 'regex', 'refactor', 'typescript',
+  'javascript', 'python', 'react', 'node.js', 'npm', 'git', 'terminal',
+  'stack trace', 'commit', 'commits', 'push', 'branch', 'branches',
+  'merge', 'pull request', 'pull requests', 'rebase',
 ];
 
 // Match whole words only — a naive substring check (e.g. "message.includes(kw)")

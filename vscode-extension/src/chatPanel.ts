@@ -496,6 +496,8 @@ export class ChatPanel {
     const nonce = getNonce();
     const iconPath = path.join(this.context.extensionPath, 'icon.png');
     const iconDataUri = `data:image/png;base64,${fs.readFileSync(iconPath).toString('base64')}`;
+    const mascotPath = path.join(this.context.extensionPath, 'assets', 'mascot.png');
+    const mascotDataUri = `data:image/png;base64,${fs.readFileSync(mascotPath).toString('base64')}`;
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -589,9 +591,9 @@ export class ChatPanel {
     text-align: center;
   }
   #emptyState img {
-    width: 56px;
-    height: 56px;
-    filter: drop-shadow(0 0 28px rgba(76, 163, 158, 0.35));
+    width: 130px;
+    height: auto;
+    filter: drop-shadow(0 0 32px rgba(76, 163, 158, 0.3));
   }
   #emptyState .hint {
     font-size: 12.5px;
@@ -755,7 +757,7 @@ export class ChatPanel {
     </div>
   </div>
   <div id="emptyState">
-    <img src="${iconDataUri}" alt="">
+    <img src="${mascotDataUri}" alt="">
     <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Everything routes to a model sized for the job, <strong>free</strong> or <strong>paid</strong>, your call above.</div>
   </div>
   <div id="messages"></div>

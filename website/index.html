@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rizo — BYOK AI coding assistant for VS Code</title>
-<meta name="description" content="Rizo routes every request to a model sized for the job — trivial, general, or coding — through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
+<title>Rizo: BYOK AI coding assistant for VS Code</title>
+<meta name="description" content="Rizo routes every request (trivial, general, or coding) to a model sized for the job, through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
 <link rel="icon" href="favicon.png" type="image/png">
 
-<meta property="og:title" content="Rizo — BYOK AI coding assistant for VS Code">
+<meta property="og:title" content="Rizo: BYOK AI coding assistant for VS Code">
 <meta property="og:description" content="One key. Three model tiers. Routed to the right model, every time.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rizobot.com">
@@ -50,7 +50,7 @@
         VS Code extension · Bring your own key
       </span>
       <h1>Your OpenRouter key. Routed to the right model, every time.</h1>
-      <p class="hero-sub">Rizo classifies every request — trivial, general, or coding — and sends it to a model sized for the job, so you're not paying Claude-Sonnet prices to say hi. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
+      <p class="hero-sub">Rizo classifies every request as trivial, general, or coding, and sends it to a model sized for the job, so you're not paying Claude-Sonnet prices to say hi. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
       <div class="hero-ctas">
         <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
         <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">
@@ -66,7 +66,7 @@
       </div>
 
       <div class="diagram-wrap">
-        <span class="diagram-label">Live routing — paid mode</span>
+        <span class="diagram-label">Live routing: paid mode</span>
         <svg id="routing-diagram" viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: a message is classified as trivial, general, or coding, then routed to gpt-5-nano, gemini-2.5-flash, or claude-sonnet-5 respectively">
           <!-- input node -->
           <rect class="node-box" x="16" y="112" width="120" height="40" rx="3"></rect>
@@ -109,7 +109,7 @@
     <div class="section-head reveal">
       <span class="section-kicker">How it routes</span>
       <h2>Three tiers, one hard rule for code</h2>
-      <p>Every message is classified by keyword (word-boundary matched — "capital" doesn't misfire on "api") into one of three tiers. Coding is hard-pinned to Claude Sonnet 5, no fallback, because that's the one place a cheaper model isn't worth the risk.</p>
+      <p>Every message is classified by keyword (word-boundary matched, so "capital" doesn't misfire on "api") into one of three tiers. Coding is hard-pinned to Claude Sonnet 5, no fallback, because that's the one place a cheaper model isn't worth the risk.</p>
     </div>
 
     <div class="table-wrap reveal">
@@ -139,7 +139,7 @@
         </tbody>
       </table>
     </div>
-    <p class="table-note reveal">Pricing is what OpenRouter charges for these models as of this writing — check openrouter.ai/models for current rates.</p>
+    <p class="table-note reveal">Pricing is what OpenRouter charges for these models as of this writing. Check openrouter.ai/models for current rates.</p>
   </div>
 </section>
 
@@ -156,12 +156,12 @@
     </div>
     <div class="mode-cards reveal">
       <div class="mode-card">
-        <h4><span class="dot dot-paid"></span> Paid — cost-optimized routing</h4>
-        <p>The three-tier routing above. Small model for easy questions, mid-tier for general reasoning, Claude Sonnet 5 for coding. Billed by OpenRouter per token, at their published rate — Rizo adds nothing.</p>
+        <h4><span class="dot dot-paid"></span> Paid: cost-optimized routing</h4>
+        <p>The three-tier routing above. Small model for easy questions, mid-tier for general reasoning, Claude Sonnet 5 for coding. Billed by OpenRouter per token, at their published rate. Rizo adds nothing.</p>
       </div>
       <div class="mode-card">
-        <h4><span class="dot dot-free"></span> Free — always $0</h4>
-        <p>Routes through a ranked chain of free-tier OpenRouter models instead, with automatic fallback to the next one in the list on any error, rate limit, or empty reply — and a final backstop (<code>openrouter/free</code>) so something always answers. No credit required.</p>
+        <h4><span class="dot dot-free"></span> Free: always $0</h4>
+        <p>Routes through a ranked chain of free-tier OpenRouter models instead, with automatic fallback to the next one in the list on any error, rate limit, or empty reply, plus a final backstop (<code>openrouter/free</code>) so something always answers. No credit required.</p>
       </div>
     </div>
   </div>
@@ -172,7 +172,7 @@
     <div class="section-head reveal">
       <span class="section-kicker">Safety</span>
       <h2>Nothing happens without your click</h2>
-      <p>Every file write and every shell command stops for approval first. A malicious repo can prompt-inject the model into <em>attempting</em> a bad tool call — it can't click "Approve" for it.</p>
+      <p>Every file write and every shell command stops for approval first. A malicious repo can prompt-inject the model into <em>attempting</em> a bad tool call, but it can't click "Approve" for it.</p>
     </div>
 
     <ul class="safety-list reveal">
@@ -182,11 +182,11 @@
       </li>
       <li class="destructive">
         <span class="tag">Always asks</span>
-        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Destructive commands never get a bypass</strong><span style="color:var(--text-dim); font-size:0.95rem;"><code>git push --force</code>, <code>reset --hard</code>, <code>branch -D</code>, <code>rm -rf</code> and its long-form/colon-refspec equivalents get an elevated warning every single time — "Always Allow" is deliberately not offered for these.</span></div>
+        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Destructive commands never get a bypass</strong><span style="color:var(--text-dim); font-size:0.95rem;"><code>git push --force</code>, <code>reset --hard</code>, <code>branch -D</code>, <code>rm -rf</code> and its long-form/colon-refspec equivalents get an elevated warning every single time. "Always Allow" is deliberately not offered for these.</span></div>
       </li>
       <li>
         <span class="tag always">Scoped</span>
-        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">"Always Allow" is per-workspace</strong><span style="color:var(--text-dim); font-size:0.95rem;">Trusting one project never carries over into another — VS Code scopes it for us.</span></div>
+        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">"Always Allow" is per-workspace</strong><span style="color:var(--text-dim); font-size:0.95rem;">Trusting one project never carries over into another. VS Code scopes it for us.</span></div>
       </li>
     </ul>
   </div>
@@ -204,7 +204,7 @@
         </div>
         <div class="byok-step">
           <span class="num">02</span>
-          <p><strong>Paste your key into Rizo, once</strong>Stored in your OS keychain via VS Code's own Secret Storage — never written to a file.</p>
+          <p><strong>Paste your key into Rizo, once</strong>Stored in your OS keychain via VS Code's own Secret Storage, never written to a file.</p>
         </div>
         <div class="byok-step">
           <span class="num">03</span>
@@ -217,8 +217,8 @@
       <ul>
         <li>No shared account, no per-seat pricing, no markup on top of OpenRouter's rate</li>
         <li>Your key never leaves your machine except to call OpenRouter directly</li>
-        <li>Free mode needs no credit at all — a real way to try it with $0 at risk</li>
-        <li>Open source, Apache 2.0 — the routing and safety logic above is exactly what's in the repo, not a claim to take on faith</li>
+        <li>Free mode needs no credit at all: a real way to try it with $0 at risk</li>
+        <li>Open source, Apache 2.0: the routing and safety logic above is exactly what's in the repo, not a claim to take on faith</li>
       </ul>
     </div>
   </div>
@@ -239,17 +239,17 @@
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <h3>Cost you can see</h3>
-        <p>Running token count and estimated dollar cost shown live under the composer, for the whole chat — not buried in a dashboard.</p>
+        <p>Running token count and estimated dollar cost shown live under the composer, for the whole chat, not buried in a dashboard.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
         <h3>Terminal &amp; git, agentically</h3>
-        <p>Runs commands in your workspace root with a 60s timeout and a capped output buffer — bounded, not a runaway loop.</p>
+        <p>Runs commands in your workspace root with a 60s timeout and a capped output buffer: bounded, not a runaway loop.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21 8 13.5 2.5 9h7z"/></svg>
         <h3>Open source</h3>
-        <p>Apache License 2.0. Fork it, read the routing logic, send a PR — nothing about how it decides where your money goes is hidden.</p>
+        <p>Apache License 2.0. Fork it, read the routing logic, send a PR. Nothing about how it decides where your money goes is hidden.</p>
       </div>
     </div>
   </div>

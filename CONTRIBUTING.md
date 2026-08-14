@@ -1,9 +1,10 @@
 # Contributing
 
-Internal guide for working on this repo — the Express backend/CLI (root) and
-the Rizo VS Code extension (`vscode-extension/`). This is private, proprietary
-code (see [LICENSE](LICENSE)) — this doc is for the team, not for accepting
-outside contributions.
+Guide for working on this repo — the Express backend/CLI (root) and the Rizo
+VS Code extension (`vscode-extension/`). Licensed Apache 2.0 (see
+[LICENSE](LICENSE)) — issues and pull requests are welcome. For anything
+beyond a small fix, open an issue first so we can agree on the approach
+before you put time into an implementation.
 
 ## Coding standards
 

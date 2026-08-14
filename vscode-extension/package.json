@@ -5,8 +5,7 @@
   "version": "0.1.0",
   "publisher": "chai-agent-internal",
   "icon": "icon.png",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.85.0"
   },

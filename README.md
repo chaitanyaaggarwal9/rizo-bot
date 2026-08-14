@@ -87,7 +87,7 @@ your message
 │   └── model-usage.jsonl     Auto-generated: one line per request (model, task type, attempts)
 ├── vscode-extension/        Standalone VS Code extension — see below
 ├── .github/workflows/       CI: server sanity checks + extension build
-├── LICENSE                  Proprietary, all rights reserved
+├── LICENSE                  Apache License 2.0
 └── .gitignore                Excludes node_modules/, .env, logs/, .DS_Store
 ```
 
@@ -178,7 +178,7 @@ loop:
 - Per-teammate OpenRouter keys are stored via VS Code Secret Storage,
   never in a file
 
-**Using it (teammates):** see [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md)
+**Using it:** see [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md)
 — install the `.vsix`, add your API key, go.
 
 **Building it (development):**
@@ -207,8 +207,20 @@ npx vsce package --allow-missing-repository
   `server.js`, `cli.js`, `models.config.js`, and `skills.config.js`
 - **`vscode-extension-ci.yml`** — installs and type-checks/builds the VS
   Code extension (`npm run compile`) whenever `vscode-extension/` changes
+- **`stale-issues.yml`** — labels issues stale after 60 days of no
+  activity, closes them after 14 more; runs on a daily schedule, not on push
+
+Dependabot (`.github/dependabot.yml`) opens a weekly grouped PR for
+dependency updates in both `vscode-extension/` and the root project.
+
+## Contributing
+
+Bug reports and feature requests: use the issue templates. Pull requests:
+see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and open an issue
+first for anything beyond a small fix.
 
 ## License
 
-Proprietary — all rights reserved. See [LICENSE](LICENSE). Not licensed
-for redistribution (`package.json`'s `"license": "UNLICENSED"`).
+Apache License 2.0 — see [LICENSE](LICENSE). Free to use, modify, and
+redistribute, including commercially; just carry the copyright/license
+notice and don't use the "Rizo" name to imply endorsement of a fork.

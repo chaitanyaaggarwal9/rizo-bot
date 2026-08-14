@@ -49,14 +49,32 @@ configured — no setup needed beyond `npm install`.
   the webview, approval dialogs, or file/terminal tools — those need the
   real host to test meaningfully.
 
-**Packaging a `.vsix` to distribute:**
+**Releasing to the Marketplace:**
+
+Bump `version` in `vscode-extension/package.json`, move the relevant
+[`CHANGELOG.md`](CHANGELOG.md) entries out of `[Unreleased]` into a new
+dated section, commit, then tag and push:
 
 ```bash
-npx vsce package --allow-missing-repository
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-Bump the `version` in `package.json` first if the change is user-facing,
-and add an entry to [`CHANGELOG.md`](CHANGELOG.md).
+`.github/workflows/release.yml` picks it up from there: compiles, checks
+the tag matches `package.json`'s version (refuses to publish on a
+mismatch), packages, publishes to the Marketplace, and attaches the
+`.vsix` to a GitHub Release. Needs a `VSCE_PAT` repo secret — a
+Marketplace-scoped Personal Access Token from
+[dev.azure.com](https://dev.azure.com), added under Settings → Secrets
+and variables → Actions.
+
+To package a `.vsix` locally without publishing (e.g. to test an install
+before tagging a release):
+
+```bash
+cd vscode-extension
+npx vsce package --allow-missing-repository
+```
 
 ## Before every push
 

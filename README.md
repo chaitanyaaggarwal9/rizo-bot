@@ -224,6 +224,10 @@ npx vsce package --allow-missing-repository
   Code extension (`npm run compile`) whenever `vscode-extension/` changes
 - **`stale-issues.yml`** — labels issues stale after 60 days of no
   activity, closes them after 14 more; runs on a daily schedule, not on push
+- **`release.yml`** — publishes to the Marketplace, tag-triggered
+  (`v*.*.*`) rather than on every push, since a publish is hard to fully
+  undo. Refuses to run if the tag doesn't match `package.json`'s version.
+  See [CONTRIBUTING.md](CONTRIBUTING.md) for the release steps
 
 Dependabot (`.github/dependabot.yml`) opens a weekly grouped PR for
 dependency updates in both `vscode-extension/` and the root project.

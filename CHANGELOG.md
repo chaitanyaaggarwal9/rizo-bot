@@ -10,6 +10,13 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- `.github/workflows/release.yml` — tag-triggered (`v*.*.*`) Marketplace
+  publish: compiles, checks the tag matches `package.json`'s version,
+  packages, publishes, attaches the `.vsix` to a GitHub Release. Needs a
+  `VSCE_PAT` repo secret. See CONTRIBUTING.md for the release steps
+- A custom mascot in the empty-state chat view, replacing the plain
+  R-mark; source PNG had a solid black canvas, keyed out to transparent
+  so it adapts to any VS Code theme
 - Extension panel now shows the actual Rizo mark in its tab (`iconPath`
   was never set, so it fell back to plain text next to a generic icon)
 - An empty-state view for a new/blank chat: centered mark, one-line hint,

@@ -1,15 +1,25 @@
 {
   "name": "rizo",
   "displayName": "Rizo",
-  "description": "Team AI coding assistant — cost-optimized model routing, file edit, terminal, git.",
+  "description": "BYOK AI coding assistant — cost-optimized model routing, file edit, terminal, git, all through your own OpenRouter key.",
   "version": "0.1.0",
-  "publisher": "chai-agent-internal",
+  "publisher": "PUBLISHER_ID_HERE",
   "icon": "icon.png",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chaitanyaaggarwal9/rizo-bot.git",
+    "directory": "vscode-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/chaitanyaaggarwal9/rizo-bot/issues"
+  },
+  "homepage": "https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md",
+  "keywords": ["ai", "chat", "assistant", "openrouter", "byok", "coding assistant"],
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": ["Other", "Chat"],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {

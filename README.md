@@ -46,7 +46,8 @@ smallest thing that actually works, and easy to extend later.
   - a plain HTML/CSS/JS chat page at `/` (scrolling messages, Reset button)
   - a CLI (`npm run chat`) for quick questions or an interactive REPL,
     without leaving the terminal
-  - a VS Code extension (`vscode-extension/`) for the team — see
+  - a VS Code extension (`vscode-extension/`), published to the
+    Marketplace as **Rizo** — see
     [VS Code extension](#vs-code-extension) below
 - **Visibility into what's actually answering** — every request appends a
   line to `logs/model-usage.jsonl` recording which model responded and how
@@ -146,7 +147,7 @@ performing well for you and manually re-rank them higher.
 
 ## VS Code extension — Rizo
 
-`vscode-extension/` is **Rizo**, a standalone team-facing extension — same
+`vscode-extension/` is **Rizo**, a standalone BYOK extension — same
 chat-over-OpenRouter idea, brought into the editor with an agentic tool-use
 loop:
 

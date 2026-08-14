@@ -28,6 +28,22 @@ const SKILL_KEYWORDS: Record<string, string[]> = {
     'test', 'tests', 'testing', 'spec', 'specs', 'unit test', 'unit tests',
     'mock', 'mocks', 'coverage', 'assert', 'assertion',
   ],
+  'security-hygiene.md': [
+    'security', 'secure', 'vulnerability', 'vulnerabilities', 'auth',
+    'authentication', 'authorization', 'password', 'passwords',
+    'encryption', 'sql injection', 'xss', 'owasp', 'sanitize',
+    'sanitization', 'jwt', 'oauth',
+  ],
+  'typescript-taste.md': [
+    'typescript', 'generics', 'generic type', 'generic types',
+    'type guard', 'type guards', 'discriminated union',
+    'discriminated unions', 'utility type', 'utility types', 'tsconfig',
+    'type safety', 'branded type', 'branded types',
+  ],
+  'code-review-discipline.md': [
+    'code review', 'code reviews', 'review this pr', 'review my pr',
+    'pr review', 'pr reviews',
+  ],
 };
 
 function escapeRegExp(str: string): string {

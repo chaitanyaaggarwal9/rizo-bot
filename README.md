@@ -80,7 +80,10 @@ your message
 │   ├── debugging-discipline.md
 │   ├── git-hygiene.md
 │   ├── backend-api-taste.md
-│   └── test-discipline.md
+│   ├── test-discipline.md
+│   ├── security-hygiene.md
+│   ├── typescript-taste.md
+│   └── code-review-discipline.md
 ├── cli.js                  Terminal client — npm run chat (interactive or one-shot)
 ├── public/
 │   └── index.html            Browser chat UI, served at /

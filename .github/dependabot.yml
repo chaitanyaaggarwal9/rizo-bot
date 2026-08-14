@@ -1,0 +1,42 @@
+version: 2
+updates:
+    # Rizo (VS Code extension) — only devDependencies today, but keep this
+    # honest as soon as that changes.
+    - package-ecosystem: "npm"
+      directory: "/vscode-extension"
+      schedule:
+          interval: "weekly"
+      groups:
+          all-dependencies:
+              patterns:
+                  - "*"
+      ignore:
+          # Security patches bypass this ignore rule regardless — only
+          # routine version bumps get grouped and batched weekly instead of
+          # opening a PR per package.
+          - dependency-name: "*"
+            update-types:
+                - "version-update:semver-major"
+                - "version-update:semver-minor"
+                - "version-update:semver-patch"
+
+    # Backend/CLI (root)
+    - package-ecosystem: "npm"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+      groups:
+          all-dependencies:
+              patterns:
+                  - "*"
+      ignore:
+          - dependency-name: "*"
+            update-types:
+                - "version-update:semver-major"
+                - "version-update:semver-minor"
+                - "version-update:semver-patch"
+
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "weekly"

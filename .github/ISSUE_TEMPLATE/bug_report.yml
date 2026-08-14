@@ -1,0 +1,72 @@
+name: 🐛 Bug Report
+description: File a bug report
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Rizo is BYOK — you bring
+        your own OpenRouter key — so please double check the bug isn't
+        specific to your key/credits (e.g. an OpenRouter "requires more
+        credits" error) before filing.
+  - type: input
+    id: rizo-version
+    attributes:
+      label: Rizo Version
+      description: Extensions view → Rizo → the version shown there
+      placeholder: 'e.g., 0.1.0'
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      description: Were you in Free or Paid mode when this happened?
+      options:
+        - Paid
+        - Free
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect to happen instead?
+      placeholder: Tell us what you saw!
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Which model was routed for the task (shown in the reply's info tag), if relevant
+      placeholder: 'e.g., anthropic/claude-sonnet-5, openai/gpt-5-nano'
+    validations:
+      required: false
+  - type: textarea
+    id: vscode-diagnostics
+    attributes:
+      label: VS Code Diagnostics
+      description: |
+        `Help → About` (Windows/Linux) or `Code → About Visual Studio Code` (macOS), then copy the info.
+      placeholder: Paste the copied About info here.
+    validations:
+      required: false
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System Information
+      placeholder: |
+        OS: macOS Sonoma, Windows 11, Ubuntu 22.04, etc.
+    validations:
+      required: false

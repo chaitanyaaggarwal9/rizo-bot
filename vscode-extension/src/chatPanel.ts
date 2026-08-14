@@ -5,11 +5,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { callOpenRouter, callWithFallback, ChatMessage, ContentPart, Usage } from './openrouter';
+import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from './openrouter';
 import { modelForMessage, MODEL_FOR_TASK, TaskType, visionModelForTask } from './modelRouter';
 import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
-import { ToolDefinition, TOOLS, executeTool } from './tools';
+import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from './tools';
 import { expandSlashCommand } from './slashCommands';
 import { loadProjectInstructions } from './projectInstructions';
 import {
@@ -66,6 +66,12 @@ export class ChatPanel {
   private readonly context: vscode.ExtensionContext;
   private disposables: vscode.Disposable[] = [];
   private activeThreadId: string;
+  // Set for the duration of one in-flight handleSend call; 'cancel' from the
+  // webview aborts the fetch/stream via the controller and records the
+  // turnId so the tool loop (which can't be interrupted mid-iteration) at
+  // least refuses to start the *next* one.
+  private activeAbortController: AbortController | undefined;
+  private cancelledTurnId: string | undefined;
 
   public static createOrShow(context: vscode.ExtensionContext) {
     if (ChatPanel.currentPanel) {
@@ -104,7 +110,11 @@ export class ChatPanel {
             this.sendInit();
             break;
           case 'send':
-            await this.handleSend(message.text, message.attachments || []);
+            await this.handleSend(message.text, message.turnId, message.attachments || []);
+            break;
+          case 'cancel':
+            this.activeAbortController?.abort();
+            this.cancelledTurnId = message.turnId;
             break;
           case 'attachFile':
             await this.handleAttachFile();
@@ -198,6 +208,7 @@ export class ChatPanel {
     messages: ChatMessage[],
     hasImage: boolean,
     tools: ToolDefinition[],
+    options: CallOptions = {},
   ) {
     if (this.isFreeMode()) {
       if (hasImage) {
@@ -205,10 +216,10 @@ export class ChatPanel {
           "Image attachments need a vision-capable model, and the free tier doesn't currently include one. Switch to Paid mode to use an image in this chat.",
         );
       }
-      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, tools);
+      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, tools, options);
     }
     const model = hasImage ? visionModelForTask(taskType) : MODEL_FOR_TASK[taskType];
-    return callOpenRouter(apiKey, model, messages, tools);
+    return callOpenRouter(apiKey, model, messages, tools, options);
   }
 
   // "Attach file...": any file on disk, not limited to the workspace — an
@@ -343,14 +354,16 @@ export class ChatPanel {
     }
   }
 
-  private async handleSend(text: string, attachments: IncomingAttachment[] = []) {
+  private async handleSend(text: string, turnId: string, attachments: IncomingAttachment[] = []) {
     const apiKey = await this.getApiKey();
     if (!apiKey) {
-      this.panel.webview.postMessage({ type: 'error', error: 'No API key provided.' });
+      this.panel.webview.postMessage({ type: 'error', error: 'No API key provided.', turnId });
       return;
     }
 
     const startedAt = Date.now();
+    const controller = new AbortController();
+    this.activeAbortController = controller;
 
     try {
       // /commit, /review, /test expand to a canned prompt before anything
@@ -443,7 +456,16 @@ export class ChatPanel {
       const totalUsage = emptyUsage();
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage, enabledTools);
+        if (this.cancelledTurnId === turnId) break;
+
+        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage, enabledTools, {
+          signal: controller.signal,
+          onDelta: (chunk) => this.panel.webview.postMessage({ type: 'textDelta', turnId, text: chunk }),
+          // A model failed after already streaming some text — the webview
+          // needs to clear that partial text before the next model's fresh
+          // attempt starts, so the two don't visually run together.
+          onRestart: () => this.panel.webview.postMessage({ type: 'textReset', turnId }),
+        });
         answeredBy = usedModel;
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
@@ -458,14 +480,29 @@ export class ChatPanel {
         // so history stays valid even if a tool call throws.
         messages.push({ role: 'assistant', content: message.content, tool_calls: message.tool_calls });
 
-        // No progress updates sent to the webview here on purpose — tool
-        // activity stays fully hidden behind a plain "Thinking..." until
-        // the final answer. The approval prompts themselves (inside
-        // executeTool) are unaffected and still show full detail — hiding
-        // ambient status text is not the same as hiding what you're
-        // actually being asked to approve.
+        // Tool activity is visible in the transcript as it happens — a
+        // start line the moment a call is issued, updated once it resolves.
+        // Cancellation only stops the *next* call/iteration from starting;
+        // a call already in flight here still runs to completion (see
+        // Stop/Cancel's design notes — killing a running command is a
+        // separate, deferred change).
         for (const toolCall of message.tool_calls) {
+          if (this.cancelledTurnId === turnId) break;
+          this.panel.webview.postMessage({
+            type: 'toolStart',
+            turnId,
+            callId: toolCall.id,
+            name: toolCall.function.name,
+            argsSummary: summarizeToolCall(toolCall.function.name, toolCall.function.arguments),
+          });
           const result = await executeTool(this.context, toolCall.function.name, toolCall.function.arguments);
+          this.panel.webview.postMessage({
+            type: 'toolEnd',
+            turnId,
+            callId: toolCall.id,
+            ok: !result.startsWith('Error:'),
+            resultSummary: summarizeToolResult(result),
+          });
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
         }
       }
@@ -502,6 +539,7 @@ export class ChatPanel {
 
       this.panel.webview.postMessage({
         type: 'reply',
+        turnId,
         model: answeredBy,
         taskType,
         reply: finalReply,
@@ -515,18 +553,29 @@ export class ChatPanel {
       // maybeSummarize's own comment for what this actually does.
       void this.maybeSummarize(apiKey);
     } catch (err: any) {
-      // "User not found" / 401 means OpenRouter didn't recognize the key at
-      // all — clear it so the next send re-prompts instead of failing
-      // forever on a bad stored key.
-      if (/user not found|401|unauthorized/i.test(err.message)) {
+      // Stop was clicked — the webview already showed "Stopped." locally
+      // (see send()'s cancel handling), this just confirms the extension
+      // side actually unwound rather than silently continuing.
+      if (err.name === 'AbortError') {
+        this.panel.webview.postMessage({ type: 'cancelled', turnId });
+      } else if (/user not found|401|unauthorized/i.test(err.message)) {
+        // "User not found" / 401 means OpenRouter didn't recognize the key
+        // at all — clear it so the next send re-prompts instead of failing
+        // forever on a bad stored key.
         await this.context.secrets.delete(SECRET_KEY);
         this.panel.webview.postMessage({
           type: 'error',
+          turnId,
           error: `${err.message} — cleared the stored key. Send your message again to re-enter it.`,
         });
       } else {
-        this.panel.webview.postMessage({ type: 'error', error: err.message });
+        this.panel.webview.postMessage({ type: 'error', turnId, error: err.message });
       }
+    } finally {
+      // Only clear if this turn still owns the controller — a rapid
+      // second send() before this one's finally runs would otherwise wipe
+      // out the newer turn's own controller.
+      if (this.activeAbortController === controller) this.activeAbortController = undefined;
     }
   }
 
@@ -647,6 +696,33 @@ export class ChatPanel {
   .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-bottom-left-radius: 4px; }
   .msg .attachedImg { max-width: 220px; max-height: 220px; border-radius: 8px; display: block; margin-top: 6px; }
+
+  /* --- Live tool-call transcript --- */
+  .transcript { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .transcriptLine {
+    font-size: 11.5px;
+    font-family: var(--vscode-editor-font-family);
+    color: var(--vscode-descriptionForeground);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(128,128,128,0.08);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .transcriptLine.running { opacity: 0.75; }
+  .transcriptLine.running::after { content: ' …'; }
+  .transcriptLine.failed { color: var(--vscode-errorForeground, #f14c4c); }
+  .streamedText { display: block; }
+  .stoppedNote { font-size: 11px; opacity: 0.6; font-style: italic; margin-top: 6px; }
+
+  /* --- Markdown rendering (assistant replies only) --- */
+  .msg pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 8px; overflow-x: auto; font-family: var(--vscode-editor-font-family); font-size: 12px; margin: 6px 0; }
+  .msg code { font-family: var(--vscode-editor-font-family); background: rgba(128,128,128,0.15); padding: 1px 4px; border-radius: 4px; }
+  .msg pre code { background: none; padding: 0; }
+  .msg ul { margin: 4px 0; padding-left: 20px; }
+  .msg li { margin: 2px 0; }
+  .mdHeading { font-weight: 600; font-size: 1.08em; }
+
   .model-tag {
     display: inline-block;
     font-size: 10px;
@@ -772,6 +848,11 @@ export class ChatPanel {
   }
   #sendBtn:disabled { opacity: 0.5; cursor: default; }
   #sendBtn:not(:disabled):hover { background: var(--vscode-button-hoverBackground); }
+  /* While a turn is in flight, sendBtn becomes a Stop button instead of
+     being disabled — still clickable, just does something different. */
+  #sendBtn.stopping { background: rgba(241, 76, 76, 0.18); color: var(--vscode-errorForeground, #f14c4c); }
+  #sendBtn.stopping:hover { background: rgba(241, 76, 76, 0.28); }
+  #inputBox:disabled { opacity: 0.6; }
 
   #statsBar {
     display: flex;
@@ -823,7 +904,15 @@ export class ChatPanel {
     const freeOption = document.getElementById('freeOption');
     const paidOption = document.getElementById('paidOption');
     const tokenStats = document.getElementById('tokenStats');
-    let thinkingEl = null;
+    // The one in-flight turn's live state — transcript lines, streamed
+    // text, and the eventual final render are three states of this one
+    // object/DOM node, not three competing update paths. null whenever
+    // nothing is in flight. Every extension->webview message during a
+    // turn carries that turn's id; anything whose id doesn't match
+    // activeTurn.id is dropped (see the message listener below) — that's
+    // what makes Stop safe without the extension having to guarantee
+    // instant termination.
+    let activeTurn = null;
 
     function formatCost(cost) {
       if (!cost) return '$0.00';
@@ -836,6 +925,149 @@ export class ChatPanel {
       if (usage && usage.totalTokens) parts.push(usage.totalTokens.toLocaleString() + ' tokens');
       if (typeof elapsedMs === 'number') parts.push((elapsedMs / 1000).toFixed(1) + 's');
       return parts.join('  ·  ');
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Hand-rolled, dependency-free markdown subset — fenced code blocks,
+    // inline code, bold/italic, lists, headers (flattened to bold, not
+    // real heading tags — a full <h1> in an ~82%-wide chat bubble reads
+    // oversized). Deliberately no link/image syntax: that would reopen an
+    // injection/tracking vector nobody asked for. Escaping happens FIRST,
+    // before any transform runs, and code spans/blocks are protected with
+    // a placeholder token so later emphasis regexes never fire inside
+    // them — the two things standing between this and an XSS bug in
+    // whatever a model decides to output.
+    function renderMarkdown(raw) {
+      let text = escapeHtml(raw);
+
+      const TICK = String.fromCharCode(96);
+      const FENCE = TICK + TICK + TICK;
+      const codeBlocks = [];
+      text = text.replace(new RegExp(FENCE + '(\\w*)\\n?([\\s\\S]*?)' + FENCE, 'g'), (_, _lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+        return ' CODEBLOCK' + idx + ' ';
+      });
+
+      const inlineCodes = [];
+      text = text.replace(new RegExp(TICK + '([^' + TICK + '\\n]+)' + TICK, 'g'), (_, code) => {
+        const idx = inlineCodes.length;
+        inlineCodes.push('<code>' + code + '</code>');
+        return ' INLINECODE' + idx + ' ';
+      });
+
+      text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+      text = text.replace(/^#{1,6}\s+(.+)$/gm, '<span class="mdHeading">$1</span>');
+
+      const lines = text.split('\n');
+      const out = [];
+      let inList = false;
+      for (const line of lines) {
+        const m = line.match(/^[-*]\s+(.+)$/);
+        if (m) {
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push('<li>' + m[1] + '</li>');
+        } else {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(line);
+        }
+      }
+      if (inList) out.push('</ul>');
+      text = out.join('\n');
+
+      text = text.replace(/ INLINECODE(\d+) /g, (_, i) => inlineCodes[Number(i)]);
+      text = text.replace(/ CODEBLOCK(\d+) /g, (_, i) => codeBlocks[Number(i)]);
+      return text;
+    }
+
+    function setSending(isSending) {
+      sendBtn.textContent = isSending ? '■' : '➤';
+      sendBtn.title = isSending ? 'Stop' : 'Send';
+      sendBtn.classList.toggle('stopping', isSending);
+      inputEl.disabled = isSending;
+    }
+
+    // Builds the one bubble a turn lives in for its whole lifecycle:
+    // transcript lines appended as tool calls happen, then streamed text,
+    // then (finalizeTurn) the rendered final content — same DOM node
+    // throughout, never removed-and-replaced.
+    function startTurn(turnId) {
+      const el = document.createElement('div');
+      el.className = 'msg assistant pending';
+      const transcriptEl = document.createElement('div');
+      transcriptEl.className = 'transcript';
+      const textEl = document.createElement('span');
+      textEl.className = 'streamedText';
+      textEl.textContent = 'Thinking…';
+      el.appendChild(transcriptEl);
+      el.appendChild(textEl);
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      activeTurn = { id: turnId, el, transcriptEl, textEl, toolLines: new Map(), textBuffer: '', hasText: false };
+      return activeTurn;
+    }
+
+    function handleToolStart(turnId, callId, name, argsSummary) {
+      if (!activeTurn || activeTurn.id !== turnId) return;
+      const line = document.createElement('div');
+      line.className = 'transcriptLine running';
+      line.textContent = argsSummary || name;
+      activeTurn.transcriptEl.appendChild(line);
+      activeTurn.toolLines.set(callId, line);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function handleToolEnd(turnId, callId, ok, resultSummary) {
+      if (!activeTurn || activeTurn.id !== turnId) return;
+      const line = activeTurn.toolLines.get(callId);
+      if (!line) return;
+      line.classList.remove('running');
+      if (!ok) line.classList.add('failed');
+      line.textContent += (ok ? '  ✓ ' : '  ✗ ') + resultSummary;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function handleTextDelta(turnId, text) {
+      if (!activeTurn || activeTurn.id !== turnId) return;
+      if (!activeTurn.hasText) { activeTurn.textBuffer = ''; activeTurn.hasText = true; }
+      activeTurn.textBuffer += text;
+      activeTurn.textEl.textContent = activeTurn.textBuffer;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    // A model failed after already streaming some text — clear it before
+    // the next fallback model's fresh attempt starts, so the two don't
+    // visually run together as one garbled reply.
+    function handleTextReset(turnId) {
+      if (!activeTurn || activeTurn.id !== turnId) return;
+      activeTurn.textBuffer = '';
+      activeTurn.hasText = false;
+      activeTurn.textEl.textContent = 'Thinking…';
+    }
+
+    // Swaps the streamed plain text over to rendered markdown exactly
+    // once, using the server's authoritative final string rather than the
+    // client's own concatenated deltas — a dropped/reordered textDelta
+    // can't cause drift this way.
+    function finalizeTurn(turnId, replyText, model, taskType, usage, elapsedMs) {
+      if (!activeTurn || activeTurn.id !== turnId) return;
+      const turn = activeTurn;
+      turn.el.classList.remove('pending');
+      if (model) {
+        const tag = document.createElement('span');
+        tag.className = 'model-tag';
+        tag.textContent = formatTag(model, taskType, usage, elapsedMs);
+        const br = document.createElement('br');
+        turn.el.insertBefore(br, turn.el.firstChild);
+        turn.el.insertBefore(tag, br);
+      }
+      turn.textEl.innerHTML = renderMarkdown(replyText || '');
+      activeTurn = null;
+      setSending(false);
     }
 
     // content is either a plain string, or an array of parts ({type:'text',
@@ -860,11 +1092,19 @@ export class ChatPanel {
             img.src = part.image_url.url;
             div.appendChild(img);
           } else if (part.type === 'text' && part.text) {
+            // Array content only happens for a user message carrying
+            // attachments today — plain text, never markdown-rendered.
             const span = document.createElement('span');
             span.textContent = part.text;
             div.appendChild(span);
           }
         }
+      } else if (role === 'assistant') {
+        // Markdown applies to assistant replies only — never a user's own
+        // pasted text, which shouldn't be reinterpreted as markup.
+        const span = document.createElement('span');
+        span.innerHTML = renderMarkdown(content || '');
+        div.appendChild(span);
       } else {
         const span = document.createElement('span');
         span.textContent = content;
@@ -889,6 +1129,11 @@ export class ChatPanel {
     const emptyStateEl = document.getElementById('emptyState');
 
     function renderMessages(messages) {
+      // Only called on a context switch (init/new/switch thread), never
+      // mid-reply — safe to drop whatever turn belonged to the view being
+      // replaced rather than leave the Stop button stuck showing forever.
+      activeTurn = null;
+      setSending(false);
       messagesEl.innerHTML = '';
       emptyStateEl.style.display = messages.length === 0 ? 'flex' : 'none';
       messagesEl.style.display = messages.length === 0 ? 'none' : 'flex';
@@ -986,14 +1231,33 @@ export class ChatPanel {
       renderChips();
       inputEl.value = '';
       autoGrow();
-      sendBtn.disabled = true;
-      // Tool activity stays hidden — this bubble never updates with
-      // per-step detail, only gets replaced by the final reply.
-      thinkingEl = addMessage('assistant', 'Thinking...');
-      vscode.postMessage({ type: 'send', text, attachments });
+
+      const turnId = Date.now() + '-' + Math.random().toString(36).slice(2);
+      startTurn(turnId);
+      setSending(true);
+      vscode.postMessage({ type: 'send', text, attachments, turnId });
     }
 
-    sendBtn.addEventListener('click', send);
+    // sendBtn does double duty: Send when idle, Stop while a turn is in
+    // flight (see setSending). Stop finalizes the UI immediately rather
+    // than waiting for the extension's 'cancelled' ack — turnId-gating in
+    // the message listener below is what makes that safe against
+    // whatever in-flight messages arrive after.
+    sendBtn.addEventListener('click', () => {
+      if (activeTurn) {
+        const turn = activeTurn;
+        vscode.postMessage({ type: 'cancel', turnId: turn.id });
+        const stoppedEl = document.createElement('div');
+        stoppedEl.className = 'stoppedNote';
+        stoppedEl.textContent = 'Stopped.';
+        turn.el.appendChild(stoppedEl);
+        turn.el.classList.remove('pending');
+        activeTurn = null;
+        setSending(false);
+        return;
+      }
+      send();
+    });
     inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -1026,14 +1290,30 @@ export class ChatPanel {
         renderChips();
         return;
       }
-      if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
-      sendBtn.disabled = false;
-      if (msg.type === 'reply') {
-        addMessage('assistant', msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
+
+      // Everything below belongs to one in-flight turn — drop it if it's
+      // not (or no longer, e.g. after Stop) the turn currently active.
+      if (!activeTurn || msg.turnId !== activeTurn.id) return;
+
+      if (msg.type === 'toolStart') {
+        handleToolStart(msg.turnId, msg.callId, msg.name, msg.argsSummary);
+      } else if (msg.type === 'toolEnd') {
+        handleToolEnd(msg.turnId, msg.callId, msg.ok, msg.resultSummary);
+      } else if (msg.type === 'textDelta') {
+        handleTextDelta(msg.turnId, msg.text);
+      } else if (msg.type === 'textReset') {
+        handleTextReset(msg.turnId);
+      } else if (msg.type === 'reply') {
+        finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
         renderThreadStats(msg.threadTokens, msg.threadCost);
       } else if (msg.type === 'error') {
+        activeTurn.el.remove();
+        activeTurn = null;
+        setSending(false);
         addMessage('assistant', 'Error: ' + msg.error);
       }
+      // 'cancelled' needs no handling — the local Stop click already
+      // finalized the UI; this is just the extension's confirmation.
     });
 
     vscode.postMessage({ type: 'ready' });

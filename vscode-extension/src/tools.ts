@@ -84,6 +84,42 @@ export const TOOLS: ToolDefinition[] = [
   },
 ];
 
+// For the live tool-call transcript in chatPanel.ts — one line shown the
+// moment a call starts. Best-effort: a malformed args string (still being
+// streamed, or just malformed) falls back to the bare tool name rather
+// than throwing.
+export function summarizeToolCall(name: string, argsJson: string): string {
+  let args: any = {};
+  try {
+    args = JSON.parse(argsJson);
+  } catch {
+    /* best effort — show the raw name only */
+  }
+  switch (name) {
+    case 'read_file':
+      return `Reading ${args.path ?? '(unknown path)'}`;
+    case 'write_file':
+      return `Writing ${args.path ?? '(unknown path)'}`;
+    case 'edit_file':
+      return `Editing ${args.path ?? '(unknown path)'}`;
+    case 'run_command':
+      return `Running: ${args.command ?? '(unknown command)'}`;
+    default:
+      return name;
+  }
+}
+
+// Never the full result — read_file can return an entire file's contents,
+// run_command's stdout can be large. One collapsed-to-one-line preview.
+const RESULT_SUMMARY_MAX_CHARS = 200;
+
+export function summarizeToolResult(result: string): string {
+  const oneLine = result.replace(/\s+/g, ' ').trim();
+  return oneLine.length <= RESULT_SUMMARY_MAX_CHARS
+    ? oneLine
+    : oneLine.slice(0, RESULT_SUMMARY_MAX_CHARS) + '…';
+}
+
 function getWorkspaceRoot(): string {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {

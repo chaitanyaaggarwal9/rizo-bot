@@ -211,6 +211,27 @@ full file read/write and command-running tools:
   vision-capable model for that request (coding tier already handles
   vision). Free mode has no vision model in its chain, so an image there
   fails with a clear message instead of being silently ignored
+- **Live tool-call transcript** — a line appears the moment a tool call
+  starts ("Reading src/x.ts", "Running: git status") and updates once it
+  resolves, replacing the old static "Thinking..." placeholder. Shows
+  completed calls, not live shell stdout — a long-running command's
+  output still only appears once it finishes
+- **Streaming replies** — text and tool-call arguments arrive
+  incrementally (server-sent events under the hood) instead of the whole
+  reply appearing at once. If a model fails mid-stream after already
+  showing some text, the partial text is discarded and the next model in
+  the fallback chain starts a clean reply, rather than the two answers
+  visibly running together
+- **Markdown rendering** — fenced code blocks, inline code, bold/italic,
+  lists, and headers (flattened to bold — a full heading reads oversized
+  in a chat bubble) render properly instead of showing literal backticks
+  and asterisks. Hand-rolled, escape-first, no new dependency, no
+  syntax-highlight colors — applies to assistant replies only
+- **Stop button** — the send button becomes Stop while a turn is in
+  flight; clicking it aborts the wait for a model reply and blocks the
+  next tool-call iteration from starting. An already-running shell
+  command finishes on its own (bounded by the existing 60s timeout
+  either way) and its result is discarded
 - **Per-chat summarization** — past 20 stored messages, everything older
   than the last 10 folds into a running summary (one cheap-tier call)
   instead of being replayed in full on every future turn. Every message

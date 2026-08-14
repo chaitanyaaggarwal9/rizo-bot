@@ -10,6 +10,42 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- Live tool-call transcript, streaming replies, markdown rendering, and
+  a Stop button for the chat — replaces the old opaque "Thinking..."
+  bubble with one that evolves in place through a turn (transcript lines
+  as tool calls happen, streamed text, then the rendered final content —
+  designed as one client-side `activeTurn` state object rather than
+  three competing update paths):
+  - `src/openrouter.ts` — `callOpenRouter` rewritten for SSE streaming
+    (`response.body` read loop, `stream: true` +
+    `stream_options: { include_usage: true }`), with concrete
+    index-keyed reassembly of streamed tool-call argument fragments into
+    complete JSON strings before they ever leave the file — `tools.ts`
+    needed zero changes as a result. `callWithFallback` now discards a
+    partial reply and restarts cleanly with the next model if a failure
+    happens *after* some text already streamed, instead of letting a
+    second model's answer visually run together with the first's
+    orphaned fragment. New optional `signal`/`onDelta`/`onRestart` on
+    `CallOptions`
+  - `src/tools.ts` — `summarizeToolCall`/`summarizeToolResult` helpers
+    for the transcript's one-line-per-call previews (never the full
+    result — `read_file` can return an entire file)
+  - `src/chatPanel.ts` — the tool-call loop now posts `toolStart`/
+    `toolEnd` around each call instead of running fully hidden;
+    `AbortController` wired through `handleSend` → `callModel` for Stop,
+    gated by a `turnId` every extension→webview message during a turn
+    now carries (a late message for an already-cancelled turn is
+    dropped, not specially handled). Webview gets a hand-rolled,
+    dependency-free markdown renderer (escape-first, fenced code blocks
+    and inline code protected from later emphasis regexes via a
+    placeholder-token swap, no link/image syntax, headers flattened to
+    bold rather than real heading tags) — applies to assistant replies
+    only, never per-streamed-chunk (once, at the final swap, to avoid
+    flickering on an unclosed code fence mid-stream)
+  - Send button doubles as Stop while a turn is in flight; the input box
+    is now actually disabled during a turn too (previously only the send
+    button was, so Enter could still fire a second send mid-request)
+
 - Four features adapted from patterns in the official `claude-code`
   repo's examples/plugins (docs only — the CLI itself is closed-source),
   scoped to the VS Code extension only (`server.js`/`cli.js` have no

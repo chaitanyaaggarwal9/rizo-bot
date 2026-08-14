@@ -36,13 +36,28 @@ jobs:
 
       # Refuses to publish if the tag and package.json disagree — catches
       # "forgot to bump the version" or "tagged the wrong commit" before
-      # anything irreversible happens, rather than after.
+      # anything irreversible happens, rather than after. ::error:: makes
+      # this a red annotation at the top of the run, not just a line
+      # buried in a step's log.
       - name: Verify tag matches package.json version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Tag is v$TAG_VERSION but package.json says $PKG_VERSION — refusing to publish a mismatch."
+            echo "::error::Tag is v$TAG_VERSION but package.json says $PKG_VERSION — refusing to publish a mismatch. Fix the tag or the version and push again."
+            exit 1
+          fi
+
+      # A second, cheaper re-run of an already-published tag (exactly what
+      # happened cutting v0.2.0) used to fail deep inside `vsce publish`
+      # with little context. Catch it here instead, with a message that
+      # says what to actually do about it.
+      - name: Check this version isn't already on the Marketplace
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          ALREADY=$(npx vsce show ChaitanyaAggarwal.rizo --json | jq -r --arg v "$PKG_VERSION" '[.versions[].version] | index($v) != null')
+          if [ "$ALREADY" = "true" ]; then
+            echo "::error::v$PKG_VERSION is already published to the Marketplace. Bump the version in vscode-extension/package.json, commit, and tag again — this tag can't be reused to republish."
             exit 1
           fi
 

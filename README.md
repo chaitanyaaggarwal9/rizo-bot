@@ -6,8 +6,8 @@
 A personal AI assistant backend I own end-to-end — no third-party AI
 extension, no vendor lock-in. One small Node.js/Express server, my own
 skill instructions, and free-tier open-weight models routed through
-[OpenRouter](https://openrouter.ai) — plus a VS Code extension that brings
-the same routing and skills into the editor for the team.
+[OpenRouter](https://openrouter.ai) — plus **Rizo**, a public VS Code
+extension that brings the same routing and skills into the editor, BYOK.
 
 ## Why this exists
 
@@ -161,17 +161,29 @@ loop:
   free-tier-only fallback chain (ported from the server's `models.config.js`
   free-tier list), persisted per-workspace
 - **Skills** (`src/skillsLoader.ts`, `skills/`) — the same per-topic,
-  selectively-loaded approach as the server, bundled so every teammate
-  gets identical instructions
+  selectively-loaded approach as the server, bundled into the extension so
+  every install gets identical instructions
 - **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
   read-only), `write_file`/`edit_file` (diff preview + modal approval
   before anything touches disk), `run_command` (approval-gated, with an
   elevated warning for destructive-looking commands like force-push,
-  hard reset, `branch -D`, `rm -rf`). Non-destructive approvals can be set
-  to "Always Allow (this project)" — destructive ones can't, on purpose.
-  Tool activity itself stays hidden behind a plain "Thinking..." until the
-  final answer; the approval prompts are unaffected and still show full
-  detail.
+  hard reset, `branch -D`, `rm -rf`, and their long-form/colon-refspec
+  equivalents). Non-destructive approvals can be set to "Always Allow
+  (this project)" — destructive ones can't, on purpose. Tool activity
+  itself stays hidden behind a plain "Thinking..." until the final
+  answer; the approval prompts are unaffected and still show full detail.
+- **Attachments** — "Attach file..." (any file via the OS picker) or
+  "Mention file from this project..." (workspace quick pick) from the
+  composer's `+` button. Text files fold into the message; images become
+  real vision attachments, auto-routing low/medium tier up to a
+  vision-capable model for that request (coding tier already handles
+  vision). Free mode has no vision model in its chain, so an image there
+  fails with a clear message instead of being silently ignored
+- **Per-chat summarization** — past 20 stored messages, everything older
+  than the last 10 folds into a running summary (one cheap-tier call)
+  instead of being replayed in full on every future turn. Every message
+  is still stored and shown in full in the UI; only what gets sent to the
+  model shrinks
 - **Cost visibility** (`src/pricing.ts`) — every reply shows tokens used +
   elapsed time, and the chat as a whole shows a running total of tokens
   and estimated $ cost (free-tier replies always count as $0)

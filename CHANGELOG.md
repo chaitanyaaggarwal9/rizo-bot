@@ -9,6 +9,16 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-14
+
+### Changed
+- Marketplace Overview (`vscode-extension/README.md`) updated for
+  everything shipped in 0.3.0 — it had gone out with the 0.2.0 feature
+  list still in place. `v0.3.0`'s tag was already pushed and protected
+  (can't be moved/deleted on this repo) by the time this was caught, so
+  it ships as its own patch release rather than retroactively changing
+  what `v0.3.0` points to
+
 ## [0.3.0] - 2026-08-14
 
 ### Added

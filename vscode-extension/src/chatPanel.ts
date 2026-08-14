@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { callOpenRouter, ChatMessage } from './openrouter';
-import { modelForMessage } from './modelRouter';
+import { callOpenRouter, callWithFallback, ChatMessage, Usage } from './openrouter';
+import { modelForMessage, MODEL_FOR_TASK, TaskType } from './modelRouter';
+import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
 import { TOOLS, executeTool } from './tools';
 import {
   StoredMessage,
-  ThreadMeta,
   DEFAULT_THREAD_NAME,
   listThreads,
   createThread,
@@ -14,11 +14,14 @@ import {
   saveThreadMessages,
   renameThread,
   deriveThreadName,
+  sumThreadTokens,
+  sumThreadCost,
 } from './threadStore';
 
 const MAX_TOOL_ITERATIONS = 8;
 
-const SECRET_KEY = 'chaiAgent.openRouterApiKey';
+const SECRET_KEY = 'rizo.openRouterApiKey';
+const FREE_MODE_KEY = 'rizo.freeMode';
 
 function getNonce(): string {
   let text = '';
@@ -27,6 +30,10 @@ function getNonce(): string {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return text;
+}
+
+function emptyUsage(): Usage {
+  return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 }
 
 export class ChatPanel {
@@ -43,8 +50,8 @@ export class ChatPanel {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      'chaiAgentChat',
-      'Chai Agent',
+      'rizoChat',
+      'Rizo',
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -83,6 +90,10 @@ export class ChatPanel {
           case 'renameThread':
             await this.handleRename();
             break;
+          case 'setFreeMode':
+            await this.context.workspaceState.update(FREE_MODE_KEY, !!message.value);
+            this.sendInit();
+            break;
         }
       },
       null,
@@ -92,13 +103,21 @@ export class ChatPanel {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
+  private isFreeMode(): boolean {
+    return this.context.workspaceState.get<boolean>(FREE_MODE_KEY, false);
+  }
+
   private sendInit() {
     const thread = loadThread(this.context, this.activeThreadId);
+    const messages = thread?.messages || [];
     this.panel.webview.postMessage({
       type: 'init',
       threads: listThreads(this.context),
       activeThreadId: this.activeThreadId,
-      messages: thread?.messages || [],
+      messages,
+      freeMode: this.isFreeMode(),
+      threadTokens: sumThreadTokens(messages),
+      threadCost: sumThreadCost(messages),
     });
   }
 
@@ -133,6 +152,16 @@ export class ChatPanel {
     return key;
   }
 
+  // Picks the paid single-model path or the free fallback-chain path,
+  // depending on the workspace's free/paid toggle. Free mode never touches
+  // a paid model, even for coding — that's the entire point of the toggle.
+  private async callModel(apiKey: string, taskType: TaskType, messages: ChatMessage[]) {
+    if (this.isFreeMode()) {
+      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, TOOLS);
+    }
+    return callOpenRouter(apiKey, MODEL_FOR_TASK[taskType], messages, TOOLS);
+  }
+
   private async handleSend(text: string) {
     const apiKey = await this.getApiKey();
     if (!apiKey) {
@@ -140,8 +169,10 @@ export class ChatPanel {
       return;
     }
 
+    const startedAt = Date.now();
+
     try {
-      const { model, taskType } = modelForMessage(text);
+      const { taskType } = modelForMessage(text);
 
       // Only coding-tier messages get skill instructions loaded — general
       // low/medium chat doesn't need engineering-discipline guidance.
@@ -167,12 +198,16 @@ export class ChatPanel {
         { role: 'user', content: text },
       ];
 
-      let answeredBy = model;
+      let answeredBy = '';
       let finalReply = '(no final response — hit the tool-call iteration limit)';
+      const totalUsage = emptyUsage();
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        const { model: usedModel, message } = await callOpenRouter(apiKey, model, messages, TOOLS);
+        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages);
         answeredBy = usedModel;
+        totalUsage.promptTokens += usage.promptTokens;
+        totalUsage.completionTokens += usage.completionTokens;
+        totalUsage.totalTokens += usage.totalTokens;
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
           finalReply = message.content || '';
@@ -183,21 +218,33 @@ export class ChatPanel {
         // so history stays valid even if a tool call throws.
         messages.push({ role: 'assistant', content: message.content, tool_calls: message.tool_calls });
 
+        // No progress updates sent to the webview here on purpose — tool
+        // activity stays fully hidden behind a plain "Thinking..." until
+        // the final answer. The approval prompts themselves (inside
+        // executeTool) are unaffected and still show full detail — hiding
+        // ambient status text is not the same as hiding what you're
+        // actually being asked to approve.
         for (const toolCall of message.tool_calls) {
-          this.panel.webview.postMessage({
-            type: 'progress',
-            text: `Running ${toolCall.function.name}(${toolCall.function.arguments})...`,
-          });
-          const result = await executeTool(toolCall.function.name, toolCall.function.arguments);
+          const result = await executeTool(this.context, toolCall.function.name, toolCall.function.arguments);
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
         }
       }
+
+      const elapsedMs = Date.now() - startedAt;
 
       // Persist only the final exchange — not the tool-call sub-steps.
       const updated: StoredMessage[] = [
         ...(thread?.messages || []),
         { role: 'user', content: text },
-        { role: 'assistant', content: finalReply, model: answeredBy, taskType },
+        {
+          role: 'assistant',
+          content: finalReply,
+          model: answeredBy,
+          taskType,
+          promptTokens: totalUsage.promptTokens,
+          completionTokens: totalUsage.completionTokens,
+          totalTokens: totalUsage.totalTokens,
+        },
       ];
       saveThreadMessages(this.context, this.activeThreadId, updated);
 
@@ -213,7 +260,16 @@ export class ChatPanel {
         });
       }
 
-      this.panel.webview.postMessage({ type: 'reply', model: answeredBy, taskType, reply: finalReply });
+      this.panel.webview.postMessage({
+        type: 'reply',
+        model: answeredBy,
+        taskType,
+        reply: finalReply,
+        usage: totalUsage,
+        elapsedMs,
+        threadTokens: sumThreadTokens(updated),
+        threadCost: sumThreadCost(updated),
+      });
     } catch (err: any) {
       // "User not found" / 401 means OpenRouter didn't recognize the key at
       // all — clear it so the next send re-prompts instead of failing
@@ -238,30 +294,164 @@ export class ChatPanel {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
-  body { font-family: var(--vscode-font-family); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); margin: 0; display: flex; flex-direction: column; height: 100vh; }
-  #threadBar { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--vscode-widget-border); align-items: center; }
-  #threadSelect { flex: 1; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 4px; padding: 4px 6px; }
-  #threadBar button { padding: 4px 10px; font-size: 12px; }
-  #messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-  .msg { max-width: 80%; padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
-  .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); }
-  .model-tag { display: block; font-size: 10px; opacity: 0.6; margin-bottom: 4px; }
-  #inputBar { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--vscode-widget-border); }
-  #inputBox { flex: 1; padding: 6px 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 4px; font-family: inherit; }
-  button { padding: 6px 14px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; border-radius: 4px; cursor: pointer; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: var(--vscode-font-family);
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    font-size: 13px;
+  }
+
+  /* --- Header / thread bar --- */
+  #threadBar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--vscode-widget-border);
+    align-items: center;
+  }
+  #threadSelect {
+    flex: 1;
+    background: var(--vscode-dropdown-background);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .iconBtn {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+
+  /* Free/Paid segmented control — both options always visible, active one
+     highlighted, sits directly above the message area so the current
+     spending mode is never ambiguous. */
+  #modeBar {
+    display: flex;
+    justify-content: center;
+    padding: 8px 12px 0;
+  }
+  #modeSwitch {
+    display: flex;
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 999px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .modeOption {
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: none;
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .modeOption.active {
+    opacity: 1;
+    background: var(--vscode-badge-background, rgba(128,128,128,0.2));
+    font-weight: 600;
+  }
+  .modeOption[data-mode="free"].active { color: var(--vscode-charts-green, #2ea043); }
+  .modeOption[data-mode="paid"].active { color: var(--vscode-charts-orange, #cc8800); }
+
+  /* --- Messages --- */
+  #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; }
+  .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
+  .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-bottom-left-radius: 4px; }
+  .model-tag {
+    display: inline-block;
+    font-size: 10px;
+    opacity: 0.65;
+    margin-bottom: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--vscode-badge-background, rgba(128,128,128,0.15));
+    color: var(--vscode-badge-foreground, inherit);
+  }
+
+  /* --- Composer --- */
+  #composerWrap { border-top: 1px solid var(--vscode-widget-border); padding: 10px 12px 6px; }
+  #composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 14px;
+    padding: 8px 8px 8px 14px;
+  }
+  #composer:focus-within { border-color: var(--vscode-focusBorder); }
+  #inputBox {
+    flex: 1;
+    background: transparent;
+    color: var(--vscode-input-foreground);
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+    max-height: 160px;
+    line-height: 1.4;
+    padding: 4px 0;
+  }
+  #sendBtn {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    line-height: 1;
+  }
+  #sendBtn:disabled { opacity: 0.5; cursor: default; }
+  #sendBtn:not(:disabled):hover { background: var(--vscode-button-hoverBackground); }
+
+  #statsBar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 6px 4px;
+    font-size: 11px;
+    opacity: 0.55;
+  }
 </style>
 </head>
 <body>
   <div id="threadBar">
     <select id="threadSelect"></select>
-    <button id="newThreadBtn">New</button>
-    <button id="renameThreadBtn">Rename</button>
+    <button class="iconBtn" id="newThreadBtn">New</button>
+    <button class="iconBtn" id="renameThreadBtn">Rename</button>
+  </div>
+  <div id="modeBar">
+    <div id="modeSwitch">
+      <button class="modeOption" id="freeOption" data-mode="free">🆓 Free</button>
+      <button class="modeOption" id="paidOption" data-mode="paid">💰 Paid</button>
+    </div>
   </div>
   <div id="messages"></div>
-  <div id="inputBar">
-    <input id="inputBox" placeholder="Message..." />
-    <button id="sendBtn">Send</button>
+  <div id="composerWrap">
+    <div id="composer">
+      <textarea id="inputBox" placeholder="Message... (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
+      <button id="sendBtn" title="Send">➤</button>
+    </div>
+    <div id="statsBar"><span id="tokenStats"></span></div>
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -271,16 +461,33 @@ export class ChatPanel {
     const threadSelect = document.getElementById('threadSelect');
     const newThreadBtn = document.getElementById('newThreadBtn');
     const renameThreadBtn = document.getElementById('renameThreadBtn');
+    const freeOption = document.getElementById('freeOption');
+    const paidOption = document.getElementById('paidOption');
+    const tokenStats = document.getElementById('tokenStats');
     let thinkingEl = null;
 
-    function addMessage(role, text, model, taskType) {
+    function formatCost(cost) {
+      if (!cost) return '$0.00';
+      return cost < 0.01 ? '<$0.01' : '$' + cost.toFixed(2);
+    }
+
+    function formatTag(model, taskType, usage, elapsedMs) {
+      const parts = [model];
+      if (taskType) parts.push(taskType);
+      if (usage && usage.totalTokens) parts.push(usage.totalTokens.toLocaleString() + ' tokens');
+      if (typeof elapsedMs === 'number') parts.push((elapsedMs / 1000).toFixed(1) + 's');
+      return parts.join('  ·  ');
+    }
+
+    function addMessage(role, text, model, taskType, usage, elapsedMs) {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
       if (role === 'assistant' && model) {
         const tag = document.createElement('span');
         tag.className = 'model-tag';
-        tag.textContent = taskType ? model + '  ·  ' + taskType : model;
+        tag.textContent = formatTag(model, taskType, usage, elapsedMs);
         div.appendChild(tag);
+        div.appendChild(document.createElement('br'));
       }
       const span = document.createElement('span');
       span.textContent = text;
@@ -304,37 +511,61 @@ export class ChatPanel {
     function renderMessages(messages) {
       messagesEl.innerHTML = '';
       for (const m of messages) {
-        addMessage(m.role, m.content, m.model, m.taskType);
+        addMessage(m.role, m.content, m.model, m.taskType, m.totalTokens ? { totalTokens: m.totalTokens } : null);
       }
     }
+
+    function renderFreeMode(freeMode) {
+      freeOption.classList.toggle('active', freeMode);
+      paidOption.classList.toggle('active', !freeMode);
+    }
+
+    function renderThreadStats(totalTokens, totalCost) {
+      if (!totalTokens) { tokenStats.textContent = ''; return; }
+      tokenStats.textContent = 'Total this chat: ' + totalTokens.toLocaleString() + ' tokens  ·  ' + formatCost(totalCost);
+    }
+
+    function autoGrow() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+    }
+    inputEl.addEventListener('input', autoGrow);
 
     function send() {
       const text = inputEl.value.trim();
       if (!text) return;
       addMessage('user', text);
       inputEl.value = '';
+      autoGrow();
       sendBtn.disabled = true;
+      // Tool activity stays hidden — this bubble never updates with
+      // per-step detail, only gets replaced by the final reply.
       thinkingEl = addMessage('assistant', 'Thinking...');
       vscode.postMessage({ type: 'send', text });
     }
 
     sendBtn.addEventListener('click', send);
-    inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
     newThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'newThread' }));
     renameThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'renameThread' }));
+    freeOption.addEventListener('click', () => vscode.postMessage({ type: 'setFreeMode', value: true }));
+    paidOption.addEventListener('click', () => vscode.postMessage({ type: 'setFreeMode', value: false }));
     threadSelect.addEventListener('change', () => {
       vscode.postMessage({ type: 'switchThread', id: threadSelect.value });
     });
 
     window.addEventListener('message', (event) => {
       const msg = event.data;
-      if (msg.type === 'progress') {
-        if (thinkingEl) thinkingEl.querySelector('span:last-child').textContent = msg.text;
-        return;
-      }
       if (msg.type === 'init') {
         renderThreadList(msg.threads, msg.activeThreadId);
         renderMessages(msg.messages);
+        renderFreeMode(msg.freeMode);
+        renderThreadStats(msg.threadTokens, msg.threadCost);
         return;
       }
       if (msg.type === 'threadListUpdated') {
@@ -344,7 +575,8 @@ export class ChatPanel {
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
       sendBtn.disabled = false;
       if (msg.type === 'reply') {
-        addMessage('assistant', msg.reply, msg.model, msg.taskType);
+        addMessage('assistant', msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
+        renderThreadStats(msg.threadTokens, msg.threadCost);
       } else if (msg.type === 'error') {
         addMessage('assistant', 'Error: ' + msg.error);
       }

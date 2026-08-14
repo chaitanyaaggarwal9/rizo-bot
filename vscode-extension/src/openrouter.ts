@@ -27,9 +27,25 @@ export interface AssistantMessage {
   tool_calls?: ToolCall[];
 }
 
+export interface Usage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface ChatResult {
   model: string;
   message: AssistantMessage;
+  usage: Usage;
+}
+
+function extractUsage(data: any): Usage {
+  const u = data?.usage || {};
+  return {
+    promptTokens: u.prompt_tokens || 0,
+    completionTokens: u.completion_tokens || 0,
+    totalTokens: u.total_tokens || 0,
+  };
 }
 
 export async function callOpenRouter(
@@ -58,5 +74,35 @@ export async function callOpenRouter(
   }
 
   const message: AssistantMessage = data?.choices?.[0]?.message ?? { role: 'assistant', content: '' };
-  return { model: data?.model || model, message };
+  return { model: data?.model || model, message, usage: extractUsage(data) };
+}
+
+// Tries each model in the chain in order — used for free-mode routing,
+// where any individual free model can 429 or come back empty far more
+// often than a paid one. Moves to the next model on any error, on a 429,
+// or on an HTTP-200-but-empty reply (no text and no tool call).
+export async function callWithFallback(
+  apiKey: string,
+  chain: string[],
+  messages: ChatMessage[],
+  tools?: ToolDefinition[],
+): Promise<ChatResult> {
+  let lastError = 'All models in the fallback chain failed';
+
+  for (const model of chain) {
+    try {
+      const result = await callOpenRouter(apiKey, model, messages, tools);
+      const hasContent = !!(result.message.content && result.message.content.trim());
+      const hasToolCalls = !!(result.message.tool_calls && result.message.tool_calls.length > 0);
+      if (!hasContent && !hasToolCalls) {
+        lastError = `${model} returned an empty reply`;
+        continue;
+      }
+      return result;
+    } catch (err: any) {
+      lastError = err.message;
+    }
+  }
+
+  throw new Error(lastError);
 }

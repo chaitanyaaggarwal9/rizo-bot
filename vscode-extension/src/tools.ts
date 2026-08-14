@@ -98,15 +98,29 @@ function resolveSafePath(relativePath: string): string {
   return resolved;
 }
 
+// Per-workspace "don't ask me again" flags. Deliberately NOT offered for
+// destructive commands (see approveCommand) — that warning only means
+// something if it can't be permanently silenced.
+const ALWAYS_ALLOW_EDITS_KEY = 'rizo.alwaysAllowFileEdits';
+const ALWAYS_ALLOW_COMMANDS_KEY = 'rizo.alwaysAllowCommands';
+
 // Shows a native VS Code diff view of the proposed change, then a modal
 // approve/reject prompt. Nothing is written to disk by this function —
 // callers only proceed past it if the return value is true.
-async function showApprovalDiff(relativePath: string, oldContent: string, newContent: string, isNew: boolean): Promise<boolean> {
+async function showApprovalDiff(
+  context: vscode.ExtensionContext,
+  relativePath: string,
+  oldContent: string,
+  newContent: string,
+  isNew: boolean,
+): Promise<boolean> {
+  if (context.workspaceState.get(ALWAYS_ALLOW_EDITS_KEY)) return true;
+
   const tmpDir = os.tmpdir();
   const base = path.basename(relativePath);
   const stamp = Date.now();
-  const oldTmp = path.join(tmpDir, `chai-agent-before-${stamp}-${base}`);
-  const newTmp = path.join(tmpDir, `chai-agent-after-${stamp}-${base}`);
+  const oldTmp = path.join(tmpDir, `rizo-before-${stamp}-${base}`);
+  const newTmp = path.join(tmpDir, `rizo-after-${stamp}-${base}`);
   fs.writeFileSync(oldTmp, oldContent);
   fs.writeFileSync(newTmp, newContent);
 
@@ -118,8 +132,13 @@ async function showApprovalDiff(relativePath: string, oldContent: string, newCon
       `Apply this change to ${relativePath}?`,
       { modal: true },
       'Approve',
+      'Always Allow (this project)',
       'Reject',
     );
+    if (choice === 'Always Allow (this project)') {
+      await context.workspaceState.update(ALWAYS_ALLOW_EDITS_KEY, true);
+      return true;
+    }
     return choice === 'Approve';
   } finally {
     try { fs.unlinkSync(oldTmp); } catch { /* best effort cleanup */ }
@@ -127,7 +146,9 @@ async function showApprovalDiff(relativePath: string, oldContent: string, newCon
   }
 }
 
-async function approveCommand(command: string): Promise<boolean> {
+async function approveCommand(context: vscode.ExtensionContext, command: string): Promise<boolean> {
+  // Destructive commands always ask, every time — no "always allow" escape
+  // hatch is offered for these, on purpose.
   if (isDestructive(command)) {
     const choice = await vscode.window.showWarningMessage(
       `⚠️ This command is hard to reverse once run:\n\n${command}`,
@@ -136,19 +157,27 @@ async function approveCommand(command: string): Promise<boolean> {
     );
     return choice === 'Yes, run this destructive command';
   }
+
+  if (context.workspaceState.get(ALWAYS_ALLOW_COMMANDS_KEY)) return true;
+
   const choice = await vscode.window.showInformationMessage(
     `Run this command?\n\n${command}`,
     { modal: true },
     'Approve',
+    'Always Allow (this project)',
     'Reject',
   );
+  if (choice === 'Always Allow (this project)') {
+    await context.workspaceState.update(ALWAYS_ALLOW_COMMANDS_KEY, true);
+    return true;
+  }
   return choice === 'Approve';
 }
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
-async function runCommand(command: string): Promise<string> {
-  const approved = await approveCommand(command);
+async function runCommand(context: vscode.ExtensionContext, command: string): Promise<string> {
+  const approved = await approveCommand(context, command);
   if (!approved) return 'User rejected running this command. Do not retry without asking why.';
 
   const root = getWorkspaceRoot();
@@ -166,7 +195,7 @@ async function runCommand(command: string): Promise<string> {
   });
 }
 
-export async function executeTool(name: string, argsJson: string): Promise<string> {
+export async function executeTool(context: vscode.ExtensionContext, name: string, argsJson: string): Promise<string> {
   let args: any;
   try {
     args = JSON.parse(argsJson);
@@ -186,7 +215,7 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
         const filePath = resolveSafePath(args.path);
         const isNew = !fs.existsSync(filePath);
         const oldContent = isNew ? '' : fs.readFileSync(filePath, 'utf-8');
-        const approved = await showApprovalDiff(args.path, oldContent, args.content, isNew);
+        const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, args.content);
@@ -201,14 +230,14 @@ export async function executeTool(name: string, argsJson: string): Promise<strin
         if (occurrences === 0) return `Error: old_string not found in ${args.path}. No changes made.`;
         if (occurrences > 1) return `Error: old_string appears ${occurrences} times in ${args.path} — must be unique. No changes made.`;
         const newContent = oldContent.replace(args.old_string, args.new_string);
-        const approved = await showApprovalDiff(args.path, oldContent, newContent, false);
+        const approved = await showApprovalDiff(context, args.path, oldContent, newContent, false);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
         fs.writeFileSync(filePath, newContent);
         return `Edited ${args.path}.`;
       }
 
       case 'run_command':
-        return await runCommand(args.command);
+        return await runCommand(context, args.command);
 
       default:
         return `Error: unknown tool "${name}"`;

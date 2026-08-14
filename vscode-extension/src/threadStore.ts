@@ -1,16 +1,39 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { estimateCost } from './pricing';
 
 // Only the final exchange per turn is stored — not tool_calls/tool results
 // from the Stage A5 agent loop. Replaying full tool history (including raw
 // file contents read back) into every future request would bloat context
 // and cost; the final answer is what matters for conversational continuity.
+// promptTokens/completionTokens are stored separately (not just the total)
+// because they're priced very differently per model — cost can't be
+// recovered accurately from the total alone.
 export interface StoredMessage {
   role: 'user' | 'assistant';
   content: string;
   model?: string;
   taskType?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
+// Sums totalTokens across every assistant message in a thread — the
+// running "tokens used in this chat" figure, computed from what's already
+// persisted rather than tracked separately.
+export function sumThreadTokens(messages: StoredMessage[]): number {
+  return messages.reduce((sum, m) => sum + (m.totalTokens || 0), 0);
+}
+
+// Sums estimated $ cost across every assistant message — free-tier
+// messages contribute $0 automatically (see pricing.ts).
+export function sumThreadCost(messages: StoredMessage[]): number {
+  return messages.reduce((sum, m) => {
+    if (!m.model || !m.promptTokens || !m.completionTokens) return sum;
+    return sum + estimateCost(m.model, m.promptTokens, m.completionTokens);
+  }, 0);
 }
 
 export interface ThreadMeta {

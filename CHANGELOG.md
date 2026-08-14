@@ -10,6 +10,31 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- Extension panel now shows the actual Rizo mark in its tab (`iconPath`
+  was never set, so it fell back to plain text next to a generic icon)
+- An empty-state view for a new/blank chat: centered mark, one-line hint,
+  replacing the blank panel a first-time open used to show
+- File attachments in the composer: "Attach file..." (any file on disk,
+  via the OS picker) and "Mention file from this project..." (workspace
+  quick pick). Text files fold into the message; images become real
+  vision attachments (rendered as thumbnails in the chip tray and in the
+  message bubble, not just a filename)
+- Vision-capable routing: an attached image bumps low/medium tier to
+  Gemini Flash for that request (Sonnet 5 already handles vision on the
+  coding tier); free mode has no vision model in its chain yet, so an
+  image there fails with a clear message instead of being silently
+  dropped
+- Per-chat summarization: once a thread passes 20 stored messages,
+  everything older than the last 10 gets folded into a running summary
+  (one cheap-tier call) instead of being replayed in full on every future
+  turn. Every message is still stored and still shown in the UI, this
+  only shrinks what gets sent to the model
+
+### Changed
+- Free/Paid switch dropped the 🆓/💰 emoji — text-only now, active state
+  colored with the brand teal/amber instead of an icon standing in for
+  what the label already says
+
 - `website/` — the marketing site (deploys to rizobot.com via Vercel,
   see `website/README.md`). Static HTML/CSS/JS, no framework. Hero
   features a live diagram of the actual task-routing mechanism rather

@@ -71,3 +71,12 @@ export function modelForMessage(message: string): { model: string; taskType: Tas
   const taskType = detectTaskType(message);
   return { model: MODEL_FOR_TASK[taskType], taskType };
 }
+
+// gpt-5-nano's vision support on OpenRouter is inconsistent across
+// providers; whenever an image is attached (this turn, or replayed from
+// earlier in the thread), low/medium bump up to Gemini Flash, which is
+// cheap and reliably multimodal. Coding stays on Sonnet 5 either way, it's
+// vision-capable already, and it's hard-pinned regardless of images.
+export function visionModelForTask(taskType: TaskType): string {
+  return taskType === 'coding' ? MODEL_FOR_TASK.coding : MODEL_FOR_TASK.medium;
+}

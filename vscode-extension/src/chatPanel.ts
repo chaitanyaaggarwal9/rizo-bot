@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { callOpenRouter, callWithFallback, ChatMessage, Usage } from './openrouter';
-import { modelForMessage, MODEL_FOR_TASK, TaskType } from './modelRouter';
+import * as fs from 'fs';
+import { callOpenRouter, callWithFallback, ChatMessage, ContentPart, Usage } from './openrouter';
+import { modelForMessage, MODEL_FOR_TASK, TaskType, visionModelForTask } from './modelRouter';
 import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
 import { TOOLS, executeTool } from './tools';
@@ -14,6 +15,7 @@ import {
   saveThreadMessages,
   renameThread,
   deriveThreadName,
+  updateThreadSummary,
   sumThreadTokens,
   sumThreadCost,
 } from './threadStore';
@@ -22,6 +24,22 @@ const MAX_TOOL_ITERATIONS = 8;
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
 const FREE_MODE_KEY = 'rizo.freeMode';
+
+// Long threads stop replaying their full raw history once they pass this
+// many stored messages — everything older than the last SUMMARY_KEEP_TAIL
+// gets folded into a running summary instead (see maybeSummarize below).
+const SUMMARIZE_THRESHOLD = 20;
+const SUMMARY_KEEP_TAIL = 10;
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB — generous for a screenshot, not for a video
+
+interface IncomingAttachment {
+  name: string;
+  type: 'text' | 'image';
+  content: string; // utf-8 text, or base64 for images
+  mimeType?: string;
+}
 
 function getNonce(): string {
   let text = '';
@@ -55,6 +73,9 @@ export class ChatPanel {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
+    // Without this the tab just shows plain text — every other AI panel
+    // (Claude Code, Codex, Cline) shows its mark here instead.
+    panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'icon.png'));
 
     ChatPanel.currentPanel = new ChatPanel(panel, context);
   }
@@ -77,7 +98,13 @@ export class ChatPanel {
             this.sendInit();
             break;
           case 'send':
-            await this.handleSend(message.text);
+            await this.handleSend(message.text, message.attachments || []);
+            break;
+          case 'attachFile':
+            await this.handleAttachFile();
+            break;
+          case 'attachWorkspaceFile':
+            await this.handleAttachWorkspaceFile();
             break;
           case 'newThread':
             this.activeThreadId = createThread(this.context).id;
@@ -155,14 +182,156 @@ export class ChatPanel {
   // Picks the paid single-model path or the free fallback-chain path,
   // depending on the workspace's free/paid toggle. Free mode never touches
   // a paid model, even for coding — that's the entire point of the toggle.
-  private async callModel(apiKey: string, taskType: TaskType, messages: ChatMessage[]) {
+  // hasImage bumps the paid path to a vision-capable model (see
+  // visionModelForTask); the free chain has no vision models in it at all
+  // today, so an image in free mode fails clearly instead of silently
+  // getting ignored by a model that can't see it.
+  private async callModel(apiKey: string, taskType: TaskType, messages: ChatMessage[], hasImage: boolean) {
     if (this.isFreeMode()) {
+      if (hasImage) {
+        throw new Error(
+          "Image attachments need a vision-capable model, and the free tier doesn't currently include one. Switch to Paid mode to use an image in this chat.",
+        );
+      }
       return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, TOOLS);
     }
-    return callOpenRouter(apiKey, MODEL_FOR_TASK[taskType], messages, TOOLS);
+    const model = hasImage ? visionModelForTask(taskType) : MODEL_FOR_TASK[taskType];
+    return callOpenRouter(apiKey, model, messages, TOOLS);
   }
 
-  private async handleSend(text: string) {
+  // "Attach file...": any file on disk, not limited to the workspace — an
+  // explicit user-driven pick through the OS file dialog, so it's exempt
+  // from resolveSafePath's workspace-boundary check on purpose (that check
+  // guards against the *model* reaching outside the workspace on its own,
+  // not against the human deliberately choosing a file to hand it).
+  private async handleAttachFile() {
+    const picked = await vscode.window.showOpenDialog({ canSelectMany: false, openLabel: 'Attach' });
+    if (!picked || picked.length === 0) return;
+    await this.readAndSendAttachment(picked[0].fsPath);
+  }
+
+  // "Mention file from this project...": a quick pick over workspace files,
+  // read immediately (same as Attach) rather than inserted as a reference
+  // for the model to read later via read_file — attaching should mean "use
+  // this content now," not "maybe go look at this."
+  private async handleAttachWorkspaceFile() {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      vscode.window.showWarningMessage('No workspace folder is open.');
+      return;
+    }
+    const files = await vscode.workspace.findFiles(
+      '**/*',
+      '{**/node_modules/**,**/.git/**,**/out/**,**/dist/**,**/build/**}',
+      500,
+    );
+    const items = files.map((uri) => ({
+      label: path.basename(uri.fsPath),
+      description: path.relative(folder.uri.fsPath, uri.fsPath),
+      uri,
+    }));
+    const choice = await vscode.window.showQuickPick(items, { placeHolder: 'Mention a file from this project' });
+    if (!choice) return;
+    await this.readAndSendAttachment(choice.uri.fsPath);
+  }
+
+  private async readAndSendAttachment(fsPath: string) {
+    try {
+      const stat = fs.statSync(fsPath);
+      if (stat.size > MAX_ATTACHMENT_BYTES) {
+        vscode.window.showWarningMessage(
+          `${path.basename(fsPath)} is over the 5MB attachment limit — pick a smaller file.`,
+        );
+        return;
+      }
+
+      const ext = path.extname(fsPath).toLowerCase();
+      const name = path.basename(fsPath);
+
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        const buf = fs.readFileSync(fsPath);
+        const mimeType = ext === '.jpg' ? 'image/jpeg' : `image/${ext.slice(1)}`;
+        const attachment: IncomingAttachment = { name, type: 'image', content: buf.toString('base64'), mimeType };
+        this.panel.webview.postMessage({ type: 'attachmentAdded', attachment });
+        return;
+      }
+
+      // Text path: read as utf-8 and reject anything that doesn't look like
+      // text (a stray binary picked by mistake), rather than dumping
+      // garbled bytes into the conversation. A null byte in the first
+      // slice is the standard cheap tell for 'this isn't text' (the same
+      // heuristic git itself uses).
+      const buf = fs.readFileSync(fsPath);
+      if (buf.subarray(0, 8000).includes(0)) {
+        vscode.window.showWarningMessage(`${name} looks like a binary file Rizo can't read as text.`);
+        return;
+      }
+      const text = buf.toString('utf-8');
+      const attachment: IncomingAttachment = { name, type: 'text', content: text };
+      this.panel.webview.postMessage({ type: 'attachmentAdded', attachment });
+    } catch (err: any) {
+      vscode.window.showWarningMessage(`Couldn't attach ${path.basename(fsPath)}: ${err.message}`);
+    }
+  }
+
+  // Flattens stored/API message content down to plain text, for the
+  // summarizer prompt — an attached image becomes a plain marker since the
+  // summary itself never needs to carry the image data forward.
+  private static contentToPlainText(content: string | ContentPart[] | null | undefined): string {
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    return content
+      .map((part) => (part.type === 'text' ? part.text : '[image attached]'))
+      .join(' ')
+      .trim();
+  }
+
+  // Once a thread passes SUMMARIZE_THRESHOLD stored messages, folds
+  // everything older than the last SUMMARY_KEEP_TAIL into a running summary
+  // via a single cheap-tier call, so future turns replay that summary
+  // instead of the full raw history — the point is token cost, not context
+  // quality, so this only touches what gets *sent* to the model; every
+  // message is still stored and still shown in full in the UI. Runs after
+  // the reply is already back with the user (fire-and-forget from
+  // handleSend) so this housekeeping never adds to reply latency, and a
+  // failure here just means "try again next turn," not a broken chat.
+  private async maybeSummarize(apiKey: string) {
+    const thread = loadThread(this.context, this.activeThreadId);
+    if (!thread) return;
+
+    const already = thread.summarizedCount || 0;
+    const total = thread.messages.length;
+    if (total - already < SUMMARIZE_THRESHOLD) return;
+
+    const foldEnd = total - SUMMARY_KEEP_TAIL;
+    const toFold = thread.messages.slice(already, foldEnd);
+    if (toFold.length === 0) return;
+
+    const transcript = toFold
+      .map((m) => `${m.role}: ${ChatPanel.contentToPlainText(m.content)}`)
+      .join('\n\n');
+    const priorSummary = thread.summary ? `Existing summary so far:\n${thread.summary}\n\n` : '';
+
+    const prompt: ChatMessage[] = [
+      {
+        role: 'system',
+        content:
+          'Summarize this conversation excerpt concisely for use as background context in a follow-up request. Preserve concrete facts, decisions, file names, and code details that matter; drop pleasantries. A short paragraph, not a list.',
+      },
+      { role: 'user', content: `${priorSummary}New turns to fold in:\n\n${transcript}` },
+    ];
+
+    try {
+      const { message } = await callOpenRouter(apiKey, MODEL_FOR_TASK.low, prompt);
+      const newSummary = (message.content as string) || thread.summary || '';
+      if (newSummary) updateThreadSummary(this.context, this.activeThreadId, newSummary, foldEnd);
+    } catch {
+      // Best-effort — the thread just keeps replaying full history until
+      // this succeeds on a later turn.
+    }
+  }
+
+  private async handleSend(text: string, attachments: IncomingAttachment[] = []) {
     const apiKey = await this.getApiKey();
     if (!apiKey) {
       this.panel.webview.postMessage({ type: 'error', error: 'No API key provided.' });
@@ -187,23 +356,56 @@ export class ChatPanel {
       ];
       if (skillsContent) systemParts.push(skillsContent);
 
-      // Replay this thread's prior turns (final exchanges only, not tool
-      // calls — see threadStore.ts) so follow-ups have real context.
       const thread = loadThread(this.context, this.activeThreadId);
-      const history: ChatMessage[] = (thread?.messages || []).map((m) => ({ role: m.role, content: m.content }));
+
+      // Once this thread has been folded by maybeSummarize, only replay the
+      // summary plus whatever's newer than what got folded — not the full
+      // raw history. Every message is still stored and still shown in the
+      // UI in full; this only shrinks what gets sent to the model.
+      if (thread?.summary) {
+        systemParts.push(`Summary of earlier parts of this conversation (for background context, don't repeat it back):\n${thread.summary}`);
+      }
+      const summarizedCount = thread?.summarizedCount || 0;
+      const tailMessages = (thread?.messages || []).slice(summarizedCount);
+      const history: ChatMessage[] = tailMessages.map((m) => ({ role: m.role, content: m.content }));
+
+      // Text attachments fold into the message text itself (no "file" part
+      // type in the OpenAI-compatible schema); images become separate
+      // image_url parts. Plain string content when there's nothing to
+      // attach, so the common case doesn't pay for the array wrapper.
+      let userContent: string | ContentPart[] = text;
+      if (attachments.length > 0) {
+        let combinedText = text;
+        const imageParts: ContentPart[] = [];
+        for (const att of attachments) {
+          if (att.type === 'image') {
+            imageParts.push({ type: 'image_url', image_url: { url: `data:${att.mimeType};base64,${att.content}` } });
+          } else {
+            combinedText += `\n\n--- Attached: ${att.name} ---\n${att.content}`;
+          }
+        }
+        userContent = [{ type: 'text', text: combinedText }, ...imageParts];
+      }
 
       const messages: ChatMessage[] = [
         { role: 'system', content: systemParts.join('\n\n---\n\n') },
         ...history,
-        { role: 'user', content: text },
+        { role: 'user', content: userContent },
       ];
+
+      // Vision is needed if this turn attached an image, or if replayed
+      // history carries one from earlier in the thread (a follow-up like
+      // "what's wrong with it" needs the model to still see the image).
+      const hasImage = messages.some(
+        (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
+      );
 
       let answeredBy = '';
       let finalReply = '(no final response — hit the tool-call iteration limit)';
       const totalUsage = emptyUsage();
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages);
+        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage);
         answeredBy = usedModel;
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
@@ -235,7 +437,7 @@ export class ChatPanel {
       // Persist only the final exchange — not the tool-call sub-steps.
       const updated: StoredMessage[] = [
         ...(thread?.messages || []),
-        { role: 'user', content: text },
+        { role: 'user', content: userContent },
         {
           role: 'assistant',
           content: finalReply,
@@ -270,6 +472,10 @@ export class ChatPanel {
         threadTokens: sumThreadTokens(updated),
         threadCost: sumThreadCost(updated),
       });
+
+      // Fire-and-forget: never makes the user wait on housekeeping. See
+      // maybeSummarize's own comment for what this actually does.
+      void this.maybeSummarize(apiKey);
     } catch (err: any) {
       // "User not found" / 401 means OpenRouter didn't recognize the key at
       // all — clear it so the next send re-prompts instead of failing
@@ -288,11 +494,13 @@ export class ChatPanel {
 
   private getHtml(): string {
     const nonce = getNonce();
+    const iconPath = path.join(this.context.extensionPath, 'icon.png');
+    const iconDataUri = `data:image/png;base64,${fs.readFileSync(iconPath).toString('base64')}`;
     return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -337,7 +545,9 @@ export class ChatPanel {
 
   /* Free/Paid segmented control — both options always visible, active one
      highlighted, sits directly above the message area so the current
-     spending mode is never ambiguous. */
+     spending mode is never ambiguous. Brand teal for Paid (the routed,
+     cost-optimized path), amber for Free — same pairing as rizobot.com,
+     no emoji standing in for what the label text already says. */
   #modeBar {
     display: flex;
     justify-content: center;
@@ -352,27 +562,51 @@ export class ChatPanel {
   }
   .modeOption {
     background: transparent;
-    color: var(--vscode-foreground);
+    color: var(--vscode-descriptionForeground);
     border: none;
     border-radius: 999px;
-    padding: 4px 14px;
-    font-size: 12px;
+    padding: 5px 16px;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
     cursor: pointer;
-    opacity: 0.6;
+    transition: background 0.12s ease, color 0.12s ease;
   }
-  .modeOption.active {
-    opacity: 1;
-    background: var(--vscode-badge-background, rgba(128,128,128,0.2));
-    font-weight: 600;
+  .modeOption:hover:not(.active) { color: var(--vscode-foreground); }
+  .modeOption.active { font-weight: 600; }
+  .modeOption[data-mode="free"].active { background: rgba(223, 160, 92, 0.16); color: #DFA05C; }
+  .modeOption[data-mode="paid"].active { background: rgba(76, 163, 158, 0.18); color: #4CA39E; }
+
+  /* --- Empty state --- */
+  #emptyState {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
   }
-  .modeOption[data-mode="free"].active { color: var(--vscode-charts-green, #2ea043); }
-  .modeOption[data-mode="paid"].active { color: var(--vscode-charts-orange, #cc8800); }
+  #emptyState img {
+    width: 56px;
+    height: 56px;
+    filter: drop-shadow(0 0 28px rgba(76, 163, 158, 0.35));
+  }
+  #emptyState .hint {
+    font-size: 12.5px;
+    color: var(--vscode-descriptionForeground);
+    max-width: 340px;
+    line-height: 1.5;
+  }
+  #emptyState .hint strong { color: var(--vscode-foreground); font-weight: 500; }
 
   /* --- Messages --- */
   #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; }
   .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-bottom-left-radius: 4px; }
+  .msg .attachedImg { max-width: 220px; max-height: 220px; border-radius: 8px; display: block; margin-top: 6px; }
   .model-tag {
     display: inline-block;
     font-size: 10px;
@@ -385,17 +619,92 @@ export class ChatPanel {
   }
 
   /* --- Composer --- */
-  #composerWrap { border-top: 1px solid var(--vscode-widget-border); padding: 10px 12px 6px; }
+  #composerWrap { border-top: 1px solid var(--vscode-widget-border); padding: 10px 12px 6px; position: relative; }
+
+  #attachmentChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--vscode-badge-background, rgba(128,128,128,0.15));
+    border-radius: 8px;
+    padding: 3px 6px 3px 3px;
+    font-size: 11px;
+    max-width: 200px;
+  }
+  .chip img { width: 20px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .chip .chipIcon {
+    width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--vscode-editorWidget-background);
+    font-size: 10px;
+  }
+  .chip .chipName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .chipRemove {
+    background: none; border: none; cursor: pointer; color: var(--vscode-descriptionForeground);
+    padding: 0 2px; font-size: 13px; line-height: 1; flex-shrink: 0;
+  }
+  .chip .chipRemove:hover { color: var(--vscode-errorForeground, #f14c4c); }
+
   #composer {
     display: flex;
     align-items: flex-end;
-    gap: 8px;
+    gap: 6px;
     background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border);
     border-radius: 14px;
-    padding: 8px 8px 8px 14px;
+    padding: 8px 8px 8px 8px;
   }
   #composer:focus-within { border-color: var(--vscode-focusBorder); }
+
+  #attachBtn {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+    line-height: 1;
+  }
+  #attachBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); color: var(--vscode-foreground); }
+
+  #attachMenu {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 12px;
+    margin-bottom: 6px;
+    background: var(--vscode-dropdown-background);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    z-index: 10;
+    min-width: 210px;
+  }
+  #attachMenu.open { display: block; }
+  #attachMenu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--vscode-dropdown-foreground);
+    padding: 7px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #attachMenu button:hover { background: var(--vscode-list-hoverBackground); }
+
   #inputBox {
     flex: 1;
     background: transparent;
@@ -441,13 +750,23 @@ export class ChatPanel {
   </div>
   <div id="modeBar">
     <div id="modeSwitch">
-      <button class="modeOption" id="freeOption" data-mode="free">🆓 Free</button>
-      <button class="modeOption" id="paidOption" data-mode="paid">💰 Paid</button>
+      <button class="modeOption" id="freeOption" data-mode="free">Free</button>
+      <button class="modeOption" id="paidOption" data-mode="paid">Paid</button>
     </div>
+  </div>
+  <div id="emptyState">
+    <img src="${iconDataUri}" alt="">
+    <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Everything routes to a model sized for the job, <strong>free</strong> or <strong>paid</strong>, your call above.</div>
   </div>
   <div id="messages"></div>
   <div id="composerWrap">
+    <div id="attachmentChips"></div>
+    <div id="attachMenu">
+      <button id="attachFileOption">Attach file&hellip;</button>
+      <button id="attachWorkspaceOption">Mention file from this project&hellip;</button>
+    </div>
     <div id="composer">
+      <button id="attachBtn" title="Attach">+</button>
       <textarea id="inputBox" placeholder="Message... (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
       <button id="sendBtn" title="Send">➤</button>
     </div>
@@ -479,7 +798,11 @@ export class ChatPanel {
       return parts.join('  ·  ');
     }
 
-    function addMessage(role, text, model, taskType, usage, elapsedMs) {
+    // content is either a plain string, or an array of parts ({type:'text',
+    // text} / {type:'image_url', image_url:{url}}) — the same shape stored
+    // messages and outgoing API calls use, so history replay and a
+    // just-sent message render identically.
+    function addMessage(role, content, model, taskType, usage, elapsedMs) {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
       if (role === 'assistant' && model) {
@@ -489,9 +812,24 @@ export class ChatPanel {
         div.appendChild(tag);
         div.appendChild(document.createElement('br'));
       }
-      const span = document.createElement('span');
-      span.textContent = text;
-      div.appendChild(span);
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (part.type === 'image_url') {
+            const img = document.createElement('img');
+            img.className = 'attachedImg';
+            img.src = part.image_url.url;
+            div.appendChild(img);
+          } else if (part.type === 'text' && part.text) {
+            const span = document.createElement('span');
+            span.textContent = part.text;
+            div.appendChild(span);
+          }
+        }
+      } else {
+        const span = document.createElement('span');
+        span.textContent = content;
+        div.appendChild(span);
+      }
       messagesEl.appendChild(div);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return div;
@@ -508,8 +846,12 @@ export class ChatPanel {
       }
     }
 
+    const emptyStateEl = document.getElementById('emptyState');
+
     function renderMessages(messages) {
       messagesEl.innerHTML = '';
+      emptyStateEl.style.display = messages.length === 0 ? 'flex' : 'none';
+      messagesEl.style.display = messages.length === 0 ? 'none' : 'flex';
       for (const m of messages) {
         addMessage(m.role, m.content, m.model, m.taskType, m.totalTokens ? { totalTokens: m.totalTokens } : null);
       }
@@ -531,17 +873,84 @@ export class ChatPanel {
     }
     inputEl.addEventListener('input', autoGrow);
 
+    // --- Attachments ---
+    const attachBtn = document.getElementById('attachBtn');
+    const attachMenu = document.getElementById('attachMenu');
+    const attachFileOption = document.getElementById('attachFileOption');
+    const attachWorkspaceOption = document.getElementById('attachWorkspaceOption');
+    const attachmentChipsEl = document.getElementById('attachmentChips');
+    let pendingAttachments = [];
+
+    function renderChips() {
+      attachmentChipsEl.innerHTML = '';
+      pendingAttachments.forEach((att, i) => {
+        const chip = document.createElement('div');
+        chip.className = 'chip';
+        if (att.type === 'image') {
+          const img = document.createElement('img');
+          img.src = 'data:' + att.mimeType + ';base64,' + att.content;
+          chip.appendChild(img);
+        } else {
+          const icon = document.createElement('span');
+          icon.className = 'chipIcon';
+          icon.textContent = '▤';
+          chip.appendChild(icon);
+        }
+        const name = document.createElement('span');
+        name.className = 'chipName';
+        name.textContent = att.name;
+        name.title = att.name;
+        chip.appendChild(name);
+        const remove = document.createElement('button');
+        remove.className = 'chipRemove';
+        remove.textContent = '×';
+        remove.title = 'Remove';
+        remove.addEventListener('click', () => {
+          pendingAttachments.splice(i, 1);
+          renderChips();
+        });
+        chip.appendChild(remove);
+        attachmentChipsEl.appendChild(chip);
+      });
+    }
+
+    attachBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      attachMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => attachMenu.classList.remove('open'));
+    attachFileOption.addEventListener('click', () => {
+      attachMenu.classList.remove('open');
+      vscode.postMessage({ type: 'attachFile' });
+    });
+    attachWorkspaceOption.addEventListener('click', () => {
+      attachMenu.classList.remove('open');
+      vscode.postMessage({ type: 'attachWorkspaceFile' });
+    });
+
     function send() {
       const text = inputEl.value.trim();
       if (!text) return;
-      addMessage('user', text);
+      emptyStateEl.style.display = 'none';
+      messagesEl.style.display = 'flex';
+
+      const displayContent = pendingAttachments.length
+        ? [{ type: 'text', text }, ...pendingAttachments.filter((a) => a.type === 'image').map((a) => ({
+            type: 'image_url', image_url: { url: 'data:' + a.mimeType + ';base64,' + a.content },
+          }))]
+        : text;
+      addMessage('user', displayContent);
+
+      const attachments = pendingAttachments;
+      pendingAttachments = [];
+      renderChips();
       inputEl.value = '';
       autoGrow();
       sendBtn.disabled = true;
       // Tool activity stays hidden — this bubble never updates with
       // per-step detail, only gets replaced by the final reply.
       thinkingEl = addMessage('assistant', 'Thinking...');
-      vscode.postMessage({ type: 'send', text });
+      vscode.postMessage({ type: 'send', text, attachments });
     }
 
     sendBtn.addEventListener('click', send);
@@ -570,6 +979,11 @@ export class ChatPanel {
       }
       if (msg.type === 'threadListUpdated') {
         renderThreadList(msg.threads, msg.activeThreadId);
+        return;
+      }
+      if (msg.type === 'attachmentAdded') {
+        pendingAttachments.push(msg.attachment);
+        renderChips();
         return;
       }
       if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }

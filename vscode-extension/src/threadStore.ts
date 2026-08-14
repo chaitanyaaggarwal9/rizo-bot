@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { estimateCost } from './pricing';
+import { ContentPart } from './openrouter';
 
 // Only the final exchange per turn is stored — not tool_calls/tool results
 // from the Stage A5 agent loop. Replaying full tool history (including raw
@@ -12,7 +13,7 @@ import { estimateCost } from './pricing';
 // recovered accurately from the total alone.
 export interface StoredMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
   model?: string;
   taskType?: string;
   promptTokens?: number;
@@ -45,6 +46,14 @@ export interface ThreadMeta {
 
 export interface ThreadData extends ThreadMeta {
   messages: StoredMessage[];
+  // Running summary of everything older than the last `summarizedCount`
+  // messages, folded in once the thread gets long — see
+  // chatPanel.ts's maybeSummarize(). Keeps long threads from replaying
+  // their full raw history (and its token cost) into every new request,
+  // while the UI still shows every message in full — this only affects
+  // what gets sent to the model, never what's stored or displayed.
+  summary?: string;
+  summarizedCount?: number;
 }
 
 function storageRoot(context: vscode.ExtensionContext): string {
@@ -129,6 +138,19 @@ export function saveThreadMessages(context: vscode.ExtensionContext, id: string,
     entry.updatedAt = thread.updatedAt;
     writeIndex(context, index);
   }
+}
+
+export function updateThreadSummary(
+  context: vscode.ExtensionContext,
+  id: string,
+  summary: string,
+  summarizedCount: number,
+): void {
+  const thread = loadThread(context, id);
+  if (!thread) return;
+  thread.summary = summary;
+  thread.summarizedCount = summarizedCount;
+  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 
 export function renameThread(context: vscode.ExtensionContext, id: string, name: string): void {

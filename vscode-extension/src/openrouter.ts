@@ -14,9 +14,22 @@ export interface ToolCall {
   function: { name: string; arguments: string };
 }
 
+// OpenAI-compatible multipart content, for messages that carry an image
+// attachment alongside (or instead of) plain text. A message's content is
+// either a plain string (the common case) or an array of these parts.
+export interface TextContentPart {
+  type: 'text';
+  text: string;
+}
+export interface ImageContentPart {
+  type: 'image_url';
+  image_url: { url: string };
+}
+export type ContentPart = TextContentPart | ImageContentPart;
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 }
@@ -92,7 +105,7 @@ export async function callWithFallback(
   for (const model of chain) {
     try {
       const result = await callOpenRouter(apiKey, model, messages, tools);
-      const hasContent = !!(result.message.content && result.message.content.trim());
+      const hasContent = !!(typeof result.message.content === 'string' && result.message.content.trim());
       const hasToolCalls = !!(result.message.tool_calls && result.message.tool_calls.length > 0);
       if (!hasContent && !hasToolCalls) {
         lastError = `${model} returned an empty reply`;

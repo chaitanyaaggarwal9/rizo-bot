@@ -73,8 +73,8 @@ export class ChatPanel {
       vscode.ViewColumn.Beside,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    // Without this the tab just shows plain text — every other AI panel
-    // (Claude Code, Codex, Cline) shows its mark here instead.
+    // Without this the tab just shows plain text — every other AI chat
+    // panel shows its own icon here instead.
     panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'icon.png'));
 
     ChatPanel.currentPanel = new ChatPanel(panel, context);

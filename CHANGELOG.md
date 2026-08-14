@@ -9,6 +9,8 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-14
+
 ### Added
 - Live tool-call transcript, streaming replies, markdown rendering, and
   a Stop button for the chat — replaces the old opaque "Thinking..."
@@ -145,6 +147,22 @@ an honest gap. Everything before this point lives in git history instead.
   `fs.realpathSync`) and closed two gaps in destructive-command
   detection (colon-refspec branch delete, long-form `rm --recursive
   --force`)
+
+### Fixed
+- The chat panel was completely unusable on load right after the
+  markdown/streaming work above landed — no button worked, Enter
+  inserted a newline instead of sending. Root cause: `getHtml()`'s
+  returned page is itself the body of an outer TypeScript template
+  literal, which processes its own backslash escapes in one pass before
+  the inner webview script ever reaches a browser. Every `\n`/`\s`/`\d`/
+  `\w`/`\*` written directly into `renderMarkdown` got silently
+  corrupted by that outer pass (four placeholder tokens even ended up as
+  literal NUL bytes, which HTML5 parsing replaces during tokenization).
+  `node --check`/`require()` never caught it — reading a `.js` file
+  bypasses HTML tokenization entirely. Rewrote `renderMarkdown` with
+  zero backslash-escape sequences (character classes, `String.fromCharCode`
+  for the newline) and reproduced the exact failure with `jsdom` to
+  confirm the fix before shipping it again
 
 ## [0.1.0] - 2026-08-13
 

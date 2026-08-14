@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { isDestructive } from './destructiveCommands';
+import { scanDangerousPatterns } from './dangerousPatterns';
 
 export interface ToolDefinition {
   type: 'function';
@@ -131,14 +132,33 @@ const ALWAYS_ALLOW_COMMANDS_KEY = 'rizo.alwaysAllowCommands';
 // Shows a native VS Code diff view of the proposed change, then a modal
 // approve/reject prompt. Nothing is written to disk by this function —
 // callers only proceed past it if the return value is true.
+//
+// scanTarget is deliberately separate from oldContent/newContent: it's just
+// the part the model actually wrote (args.content for a new file, or
+// args.new_string for edit_file's surgical replacement), not a full diff —
+// so the security scan below doesn't re-flag pre-existing code elsewhere in
+// a file that's simply being overwritten.
 async function showApprovalDiff(
   context: vscode.ExtensionContext,
   relativePath: string,
   oldContent: string,
   newContent: string,
   isNew: boolean,
+  scanTarget: string,
 ): Promise<boolean> {
-  if (context.workspaceState.get(ALWAYS_ALLOW_EDITS_KEY)) return true;
+  const matches = scanDangerousPatterns(scanTarget);
+
+  if (context.workspaceState.get(ALWAYS_ALLOW_EDITS_KEY)) {
+    // Always Allow skips the dialog entirely, but a dangerous-pattern match
+    // still deserves to be seen — fire a non-blocking toast instead of
+    // going completely dark for a workspace that's already flipped this on.
+    if (matches.length) {
+      vscode.window.showWarningMessage(
+        `⚠️ ${relativePath} (auto-approved): ${matches.map((m) => m.description).join('; ')}`,
+      );
+    }
+    return true;
+  }
 
   const tmpDir = os.tmpdir();
   const base = path.basename(relativePath);
@@ -152,8 +172,12 @@ async function showApprovalDiff(
   try {
     await vscode.commands.executeCommand('vscode.diff', vscode.Uri.file(oldTmp), vscode.Uri.file(newTmp), title);
 
-    const choice = await vscode.window.showInformationMessage(
-      `Apply this change to ${relativePath}?`,
+    const warningPrefix = matches.length
+      ? `⚠️ Patterns worth a second look:\n${matches.map((m) => `• ${m.description}`).join('\n')}\n\n`
+      : '';
+    const showDialog = matches.length ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+    const choice = await showDialog(
+      `${warningPrefix}Apply this change to ${relativePath}?`,
       { modal: true },
       'Approve',
       'Always Allow (this project)',
@@ -170,9 +194,26 @@ async function showApprovalDiff(
   }
 }
 
+// rizo.permissions.autoApproveCommandPatterns — regex strings tested against
+// the full command. A bad/invalid regex from the user is skipped rather
+// than crashing the extension over a settings typo.
+function isAutoApproved(command: string): boolean {
+  const patterns = vscode.workspace
+    .getConfiguration('rizo')
+    .get<string[]>('permissions.autoApproveCommandPatterns', []);
+  return patterns.some((p) => {
+    try {
+      return new RegExp(p).test(command);
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function approveCommand(context: vscode.ExtensionContext, command: string): Promise<boolean> {
-  // Destructive commands always ask, every time — no "always allow" escape
-  // hatch is offered for these, on purpose.
+  // Destructive commands always ask, every time — checked first and
+  // unconditionally, so no setting below (auto-approve patterns, Always
+  // Allow) can ever skip this, on purpose.
   if (isDestructive(command)) {
     const choice = await vscode.window.showWarningMessage(
       `⚠️ This command is hard to reverse once run:\n\n${command}`,
@@ -182,6 +223,7 @@ async function approveCommand(context: vscode.ExtensionContext, command: string)
     return choice === 'Yes, run this destructive command';
   }
 
+  if (isAutoApproved(command)) return true;
   if (context.workspaceState.get(ALWAYS_ALLOW_COMMANDS_KEY)) return true;
 
   const choice = await vscode.window.showInformationMessage(
@@ -220,6 +262,15 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
 }
 
 export async function executeTool(context: vscode.ExtensionContext, name: string, argsJson: string): Promise<string> {
+  // Backstop for rizo.permissions.disabledTools — chatPanel.ts already
+  // filters TOOLS before offering them to the model, so this only matters
+  // if a call somehow still arrives here anyway (stale history, a model
+  // ignoring its tool list).
+  const disabledTools = vscode.workspace.getConfiguration('rizo').get<string[]>('permissions.disabledTools', []);
+  if (disabledTools.includes(name)) {
+    return `Error: the "${name}" tool is disabled for this workspace (rizo.permissions.disabledTools).`;
+  }
+
   let args: any;
   try {
     args = JSON.parse(argsJson);
@@ -239,7 +290,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
         const filePath = resolveSafePath(args.path);
         const isNew = !fs.existsSync(filePath);
         const oldContent = isNew ? '' : fs.readFileSync(filePath, 'utf-8');
-        const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew);
+        const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew, args.content);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, args.content);
@@ -254,7 +305,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
         if (occurrences === 0) return `Error: old_string not found in ${args.path}. No changes made.`;
         if (occurrences > 1) return `Error: old_string appears ${occurrences} times in ${args.path} — must be unique. No changes made.`;
         const newContent = oldContent.replace(args.old_string, args.new_string);
-        const approved = await showApprovalDiff(context, args.path, oldContent, newContent, false);
+        const approved = await showApprovalDiff(context, args.path, oldContent, newContent, false, args.new_string);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
         fs.writeFileSync(filePath, newContent);
         return `Edited ${args.path}.`;

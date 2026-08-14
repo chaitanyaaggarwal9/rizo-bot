@@ -181,6 +181,29 @@ full file read/write and command-running tools:
   (this project)" — destructive ones can't, on purpose. Tool activity
   itself stays hidden behind a plain "Thinking..." until the final
   answer; the approval prompts are unaffected and still show full detail.
+- **Security pattern-scan on diffs** (`src/dangerousPatterns.ts`) — before
+  a write_file/edit_file approval dialog, the proposed change is scanned
+  for ~18 high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
+  `pickle.load`, hardcoded-looking secrets, disabled TLS verification,
+  `curl | sh`, etc.) and folded into the dialog as a warning banner — a
+  deterministic backstop for Security Hygiene's soft guidance, since the
+  model can still miss its own skill. Non-blocking: still just Approve/
+  Always Allow/Reject. Still fires (as a non-modal toast) even when
+  "Always Allow" is already on for that workspace
+- **Configurable permissions** — two VS Code settings:
+  `rizo.permissions.autoApproveCommandPatterns` (regex list; a match skips
+  the run_command approval dialog — has no effect on destructive commands,
+  those always ask) and `rizo.permissions.disabledTools` (refuses listed
+  tools outright, not even offered to the model)
+- **Project-specific instructions** (`src/projectInstructions.ts`) — an
+  optional `.rizo/instructions.md` in your own workspace, read fresh every
+  message (no caching) and appended after the bundled skills — add your
+  own project rules without forking the extension. Unlike skills, not
+  gated to coding-tier messages
+- **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
+  `/test` in the composer expand to a full canned prompt tied to the
+  matching skill (Git Hygiene, Code Review Discipline, Test Discipline)
+  and force the coding tier regardless of keyword match
 - **Attachments** — "Attach file..." (any file via the OS picker) or
   "Mention file from this project..." (workspace quick pick) from the
   composer's `+` button. Text files fold into the message; images become

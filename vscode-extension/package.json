@@ -28,7 +28,24 @@
         "command": "rizo.openChat",
         "title": "Rizo: Open Chat"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Rizo",
+      "properties": {
+        "rizo.permissions.autoApproveCommandPatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Regex patterns tested against the full `run_command` string. A match skips the approval dialog entirely. **Has no effect on destructive commands** (force-push, `reset --hard`, `branch -D`, `rm -rf`, etc.) — those always ask, regardless of this setting."
+        },
+        "rizo.permissions.disabledTools": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["read_file", "write_file", "edit_file", "run_command"] },
+          "default": [],
+          "description": "Tools listed here are refused outright and not offered to the model at all in this workspace."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",

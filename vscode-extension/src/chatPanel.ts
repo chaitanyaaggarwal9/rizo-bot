@@ -9,7 +9,9 @@ import { callOpenRouter, callWithFallback, ChatMessage, ContentPart, Usage } fro
 import { modelForMessage, MODEL_FOR_TASK, TaskType, visionModelForTask } from './modelRouter';
 import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
-import { TOOLS, executeTool } from './tools';
+import { ToolDefinition, TOOLS, executeTool } from './tools';
+import { expandSlashCommand } from './slashCommands';
+import { loadProjectInstructions } from './projectInstructions';
 import {
   StoredMessage,
   DEFAULT_THREAD_NAME,
@@ -190,17 +192,23 @@ export class ChatPanel {
   // visionModelForTask); the free chain has no vision models in it at all
   // today, so an image in free mode fails clearly instead of silently
   // getting ignored by a model that can't see it.
-  private async callModel(apiKey: string, taskType: TaskType, messages: ChatMessage[], hasImage: boolean) {
+  private async callModel(
+    apiKey: string,
+    taskType: TaskType,
+    messages: ChatMessage[],
+    hasImage: boolean,
+    tools: ToolDefinition[],
+  ) {
     if (this.isFreeMode()) {
       if (hasImage) {
         throw new Error(
           "Image attachments need a vision-capable model, and the free tier doesn't currently include one. Switch to Paid mode to use an image in this chat.",
         );
       }
-      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, TOOLS);
+      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, tools);
     }
     const model = hasImage ? visionModelForTask(taskType) : MODEL_FOR_TASK[taskType];
-    return callOpenRouter(apiKey, model, messages, TOOLS);
+    return callOpenRouter(apiKey, model, messages, tools);
   }
 
   // "Attach file...": any file on disk, not limited to the workspace — an
@@ -345,12 +353,20 @@ export class ChatPanel {
     const startedAt = Date.now();
 
     try {
-      const { taskType } = modelForMessage(text);
+      // /commit, /review, /test expand to a canned prompt before anything
+      // else runs — forced onto the coding tier regardless of keyword
+      // match, since typing the command IS the signal. An unrecognized
+      // "/foo" isn't an error, it just falls through as literal text.
+      const slashExpansion = expandSlashCommand(text);
+      const effectiveText = slashExpansion ?? text;
+      const { taskType } = slashExpansion
+        ? { taskType: 'coding' as TaskType }
+        : modelForMessage(effectiveText);
 
       // Only coding-tier messages get skill instructions loaded — general
       // low/medium chat doesn't need engineering-discipline guidance.
       const skillsDir = path.join(this.context.extensionPath, 'skills');
-      const skillsContent = loadSkillsContent(skillsDir, text, taskType);
+      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType);
 
       // Without any system prompt, some models (DeepSeek in particular)
       // default to Chinese on short/ambiguous input — this instruction
@@ -359,6 +375,18 @@ export class ChatPanel {
         'Always respond in English, even if the user writes in another language or the request is ambiguous.',
       ];
       if (skillsContent) systemParts.push(skillsContent);
+
+      // The user's own per-project rules (.rizo/instructions.md), if any —
+      // unlike skills, not gated to taskType 'coding': this is user-authored
+      // project intent that plausibly matters for non-coding replies too.
+      // Zero-cost, silently absent, when the file doesn't exist.
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const projectInstructions = loadProjectInstructions(workspaceRoot);
+      if (projectInstructions) {
+        systemParts.push(
+          `Project-specific instructions (from .rizo/instructions.md in this workspace):\n${projectInstructions}`,
+        );
+      }
 
       const thread = loadThread(this.context, this.activeThreadId);
 
@@ -377,9 +405,9 @@ export class ChatPanel {
       // type in the OpenAI-compatible schema); images become separate
       // image_url parts. Plain string content when there's nothing to
       // attach, so the common case doesn't pay for the array wrapper.
-      let userContent: string | ContentPart[] = text;
+      let userContent: string | ContentPart[] = effectiveText;
       if (attachments.length > 0) {
-        let combinedText = text;
+        let combinedText = effectiveText;
         const imageParts: ContentPart[] = [];
         for (const att of attachments) {
           if (att.type === 'image') {
@@ -404,12 +432,18 @@ export class ChatPanel {
         (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
       );
 
+      // rizo.permissions.disabledTools — filtered out here so the model is
+      // never even offered a disabled tool (no wasted round-trip);
+      // executeTool has its own check as a backstop.
+      const disabledTools = vscode.workspace.getConfiguration('rizo').get<string[]>('permissions.disabledTools', []);
+      const enabledTools = TOOLS.filter((t) => !disabledTools.includes(t.function.name));
+
       let answeredBy = '';
       let finalReply = '(no final response — hit the tool-call iteration limit)';
       const totalUsage = emptyUsage();
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage);
+        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage, enabledTools);
         answeredBy = usedModel;
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
@@ -458,7 +492,7 @@ export class ChatPanel {
       // apps — only when it's still the default name, never overriding a
       // name you set yourself via Rename.
       if ((thread?.messages.length ?? 0) === 0 && thread?.name === DEFAULT_THREAD_NAME) {
-        renameThread(this.context, this.activeThreadId, deriveThreadName(text));
+        renameThread(this.context, this.activeThreadId, deriveThreadName(effectiveText));
         this.panel.webview.postMessage({
           type: 'threadListUpdated',
           threads: listThreads(this.context),

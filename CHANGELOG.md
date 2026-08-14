@@ -10,6 +10,27 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- Four features adapted from patterns in the official `claude-code`
+  repo's examples/plugins (docs only — the CLI itself is closed-source),
+  scoped to the VS Code extension only (`server.js`/`cli.js` have no
+  tool-calling and nothing for these to gate):
+  - `src/dangerousPatterns.ts` — deterministic scan for ~18 high-signal
+    dangerous code patterns, folded into the write_file/edit_file
+    approval dialog as a warning banner (modeled on claude-code's
+    `security-guidance` plugin's regex layer, without its LLM-review
+    layers). Still fires as a non-modal toast under "Always Allow"
+  - `rizo.permissions.autoApproveCommandPatterns` and
+    `rizo.permissions.disabledTools` VS Code settings — the extension's
+    first `contributes.configuration` entry at all. Destructive commands
+    stay non-overridable by either setting, on purpose
+  - `src/projectInstructions.ts` — optional `.rizo/instructions.md` in
+    the user's own workspace, appended after bundled skills, 8KB budget
+  - `src/slashCommands.ts` — `/commit`, `/review`, `/test` expand to a
+    canned prompt tied to the matching skill and force the coding tier
+
+- A visible `// Rizo — Copyright (c) 2026 Chaitanya Aggarwal` header on
+  every first-party source file (root + extension) — a plain-sight
+  provenance marker, follow-up to the Commons Clause license change below
 - `.github/workflows/release.yml` — tag-triggered (`v*.*.*`) Marketplace
   publish: compiles, checks the tag matches `package.json`'s version,
   packages, publishes, attaches the `.vsix` to a GitHub Release. Needs a

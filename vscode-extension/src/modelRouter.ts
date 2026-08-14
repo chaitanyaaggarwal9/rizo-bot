@@ -2,7 +2,7 @@ export type TaskType = 'low' | 'medium' | 'coding';
 
 export const MODEL_FOR_TASK: Record<TaskType, string> = {
   // Was deepseek/deepseek-v3.2 — DeepSeek's routing on OpenRouter was
-  // silently replacing ordinary text ("Chai Agent") with "[PERSON_NAME]",
+  // silently replacing ordinary text ("Rizo") with "[PERSON_NAME]",
   // a PII-redaction artifact. OpenRouter's own privacy policy says they
   // don't filter/sanitize inputs themselves, so this is coming from
   // whichever upstream provider serves DeepSeek V3.2 specifically — not
@@ -13,7 +13,7 @@ export const MODEL_FOR_TASK: Record<TaskType, string> = {
   coding: 'anthropic/claude-sonnet-5', // hard pin — always this model for coding, no fallback
 };
 
-// Ported from the original chai.agent server.js project's models.config.js.
+// Ported from this repo's original server.js backend, models.config.js.
 // Word-boundary matching only — naive substring checks misfire badly
 // ("capital" contains "api", "digital" contains "git", "latest" contains "test").
 const CODING_KEYWORDS = [

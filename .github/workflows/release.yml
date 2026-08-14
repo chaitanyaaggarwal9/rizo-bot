@@ -12,6 +12,12 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # softprops/action-gh-release needs write access to create the release
+    # and upload the .vsix — without this, the default GITHUB_TOKEN is
+    # read-only and that step 403s even though everything before it
+    # (including the actual Marketplace publish) succeeds fine.
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: vscode-extension
@@ -20,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
 

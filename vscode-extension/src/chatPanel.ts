@@ -943,31 +943,46 @@ export class ChatPanel {
     function renderMarkdown(raw) {
       let text = escapeHtml(raw);
 
+      // No backslash-escape sequences anywhere below (no newline, digit,
+      // whitespace, or word-char shorthand, no escaped asterisk) — this
+      // whole script is embedded inside an outer TypeScript template
+      // literal (getHtml()'s return value) back in the extension source,
+      // and THAT literal processes backslash escapes in its own pass
+      // before this code is ever handed to a JS engine as real source: a
+      // literal newline escape in the TS source becomes an actual newline
+      // BYTE, not the original two-character escape, silently corrupting
+      // literal built that way. Character classes ([*] for a literal
+      // asterisk, [0-9] for a digit, [^] for "any character") and a
+      // real newline character built via fromCharCode sidestep the whole
+      // problem — nothing here needs a backslash to survive that pass.
+      const NL = String.fromCharCode(10);
       const TICK = String.fromCharCode(96);
       const FENCE = TICK + TICK + TICK;
+
       const codeBlocks = [];
-      text = text.replace(new RegExp(FENCE + '(\\w*)\\n?([\\s\\S]*?)' + FENCE, 'g'), (_, _lang, code) => {
+      text = text.replace(new RegExp(FENCE + '([A-Za-z0-9_-]*)' + NL + '?([^]*?)' + FENCE, 'g'), (_, _lang, code) => {
         const idx = codeBlocks.length;
-        codeBlocks.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
-        return ' CODEBLOCK' + idx + ' ';
+        const trimmed = code.charAt(code.length - 1) === NL ? code.slice(0, -1) : code;
+        codeBlocks.push('<pre><code>' + trimmed + '</code></pre>');
+        return ' CODEBLOCK' + idx + ' ';
       });
 
       const inlineCodes = [];
-      text = text.replace(new RegExp(TICK + '([^' + TICK + '\\n]+)' + TICK, 'g'), (_, code) => {
+      text = text.replace(new RegExp(TICK + '([^' + TICK + ']+)' + TICK, 'g'), (_, code) => {
         const idx = inlineCodes.length;
         inlineCodes.push('<code>' + code + '</code>');
-        return ' INLINECODE' + idx + ' ';
+        return ' INLINECODE' + idx + ' ';
       });
 
-      text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-      text = text.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-      text = text.replace(/^#{1,6}\s+(.+)$/gm, '<span class="mdHeading">$1</span>');
+      text = text.replace(/[*][*]([^*]+)[*][*]/g, '<strong>$1</strong>');
+      text = text.replace(/[*]([^*]+)[*]/g, '<em>$1</em>');
+      text = text.replace(/^#{1,6} +(.+)$/gm, '<span class="mdHeading">$1</span>');
 
-      const lines = text.split('\n');
+      const lines = text.split(NL);
       const out = [];
       let inList = false;
       for (const line of lines) {
-        const m = line.match(/^[-*]\s+(.+)$/);
+        const m = line.match(/^[-*] +(.+)$/);
         if (m) {
           if (!inList) { out.push('<ul>'); inList = true; }
           out.push('<li>' + m[1] + '</li>');
@@ -977,10 +992,10 @@ export class ChatPanel {
         }
       }
       if (inList) out.push('</ul>');
-      text = out.join('\n');
+      text = out.join(NL);
 
-      text = text.replace(/ INLINECODE(\d+) /g, (_, i) => inlineCodes[Number(i)]);
-      text = text.replace(/ CODEBLOCK(\d+) /g, (_, i) => codeBlocks[Number(i)]);
+      text = text.replace(/ INLINECODE([0-9]+) /g, (_, i) => inlineCodes[Number(i)]);
+      text = text.replace(/ CODEBLOCK([0-9]+) /g, (_, i) => codeBlocks[Number(i)]);
       return text;
     }
 

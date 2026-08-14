@@ -10,8 +10,13 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Case-insensitive matching would make -d trigger this too.
   /git\s+branch\s+.*-D\b/,
   /git\s+push\s+.*--delete/i,
+  // Colon-refspec delete — `git push origin :branch-name` — same effect as
+  // --delete but easy to miss since there's no delete-looking flag at all.
+  /git\s+push\s+\S+\s+:\S+/i,
   /git\s+clean\s+.*-[a-z]*f/i,
   /rm\s+.*-[a-z]*r[a-z]*f|rm\s+.*-[a-z]*f[a-z]*r/i, // rm -rf / -fr in either flag order
+  // Long-form equivalent of -rf, order-independent.
+  /rm\s+(?=.*--recursive)(?=.*--force)/i,
 ];
 
 export function isDestructive(command: string): boolean {

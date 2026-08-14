@@ -88,13 +88,33 @@ function getWorkspaceRoot(): string {
 }
 
 // Resolves a model-supplied relative path and refuses anything that
-// escapes the workspace root (path traversal, absolute paths elsewhere).
+// escapes the workspace root — path traversal, absolute paths elsewhere,
+// AND a symlink that lives inside the workspace but points outside it.
+// The string check alone (path.resolve + startsWith) catches "../.." but
+// not a symlink: fs.readFileSync/writeFileSync follow symlinks at the OS
+// level, so a file that looks like it's inside the workspace can silently
+// read or write somewhere else entirely. realpathSync resolves the actual
+// target; walk up to the nearest existing ancestor first since a new file
+// (write_file creating something that doesn't exist yet) has no realpath
+// of its own to resolve.
 function resolveSafePath(relativePath: string): string {
-  const root = getWorkspaceRoot();
+  const root = fs.realpathSync(getWorkspaceRoot());
   const resolved = path.resolve(root, relativePath);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
     throw new Error(`Path "${relativePath}" resolves outside the workspace root — refusing.`);
   }
+
+  let existingAncestor = resolved;
+  while (!fs.existsSync(existingAncestor)) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) break; // hit the filesystem root — safety net, shouldn't happen
+    existingAncestor = parent;
+  }
+  const realAncestor = fs.realpathSync(existingAncestor);
+  if (realAncestor !== root && !realAncestor.startsWith(root + path.sep)) {
+    throw new Error(`Path "${relativePath}" escapes the workspace root via a symlink — refusing.`);
+  }
+
   return resolved;
 }
 

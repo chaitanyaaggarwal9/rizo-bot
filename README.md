@@ -1,7 +1,7 @@
 # chai-agent
 
-![Server CI](https://github.com/chaitanyaaggarwal9/chai.agent/actions/workflows/ci.yml/badge.svg)
-![VS Code Extension CI](https://github.com/chaitanyaaggarwal9/chai.agent/actions/workflows/vscode-extension-ci.yml/badge.svg)
+![Server CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)
+![VS Code Extension CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/vscode-extension-ci.yml/badge.svg)
 
 A personal AI assistant backend I own end-to-end — no third-party AI
 extension, no vendor lock-in. One small Node.js/Express server, my own
@@ -144,16 +144,20 @@ periodically check https://openrouter.ai/models?max_price=0 and update the
 lists. Use `logs/model-usage.jsonl` to see which models are actually
 performing well for you and manually re-rank them higher.
 
-## VS Code extension
+## VS Code extension — Rizo
 
-`vscode-extension/` is a standalone team-facing extension — same chat-
-over-OpenRouter idea, brought into the editor with an agentic tool-use
+`vscode-extension/` is **Rizo**, a standalone team-facing extension — same
+chat-over-OpenRouter idea, brought into the editor with an agentic tool-use
 loop:
 
 - **Model routing** (`src/modelRouter.ts`) — messages classify into
   low/medium/coding tiers; coding is hard-pinned to Claude Sonnet 5,
   low/medium route to cost-optimized models by keyword signal, falling
   back to word count
+- **Free/Paid switcher** (`src/freeModels.ts`) — a segmented toggle above
+  the chat switches between the cost-optimized paid routing above and a
+  free-tier-only fallback chain (ported from the server's `models.config.js`
+  free-tier list), persisted per-workspace
 - **Skills** (`src/skillsLoader.ts`, `skills/`) — the same per-topic,
   selectively-loaded approach as the server, bundled so every teammate
   gets identical instructions
@@ -161,13 +165,23 @@ loop:
   read-only), `write_file`/`edit_file` (diff preview + modal approval
   before anything touches disk), `run_command` (approval-gated, with an
   elevated warning for destructive-looking commands like force-push,
-  hard reset, `branch -D`, `rm -rf`)
+  hard reset, `branch -D`, `rm -rf`). Non-destructive approvals can be set
+  to "Always Allow (this project)" — destructive ones can't, on purpose.
+  Tool activity itself stays hidden behind a plain "Thinking..." until the
+  final answer; the approval prompts are unaffected and still show full
+  detail.
+- **Cost visibility** (`src/pricing.ts`) — every reply shows tokens used +
+  elapsed time, and the chat as a whole shows a running total of tokens
+  and estimated $ cost (free-tier replies always count as $0)
 - **Threads** (`src/threadStore.ts`) — named conversations persisted to
   VS Code's global storage, auto-titled, switchable from the panel
 - Per-teammate OpenRouter keys are stored via VS Code Secret Storage,
   never in a file
 
-Build it locally:
+**Using it (teammates):** see [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md)
+— install the `.vsix`, add your API key, go.
+
+**Building it (development):**
 
 ```bash
 cd vscode-extension
@@ -177,6 +191,13 @@ npm run compile      # or `npm run watch` while developing
 
 Then launch it from VS Code's Run and Debug panel (`.vscode/launch.json`
 is already set up) to open the Extension Development Host.
+
+**Packaging a `.vsix` for distribution:**
+
+```bash
+cd vscode-extension
+npx vsce package --allow-missing-repository
+```
 
 ## Continuous integration
 

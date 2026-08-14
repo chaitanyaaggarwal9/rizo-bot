@@ -35,3 +35,17 @@ If a reviewer can't hold the whole diff in their head in one sitting, that's a s
 ### 6. Destructive git operations need the same confirm-first habit as any other hard-to-reverse action
 
 `push --force`, `reset --hard`, history rewrites, and branch deletion are all easy to run and hard to undo once someone else has pulled. Confirm before running them on anything shared, not just on your own local branch.
+
+### 7. Before pushing, check the docs are still true
+
+Documentation rots the moment code changes without it. Before `git push`, check whether the change touches what these files claim — create the file if the repo needs it and doesn't have one yet, update it if it exists and is now wrong, leave it alone otherwise:
+
+| Doc | Audience | Update it when | Format |
+|---|---|---|---|
+| `README.md` | New engineer, first hour | Setup steps or architecture change | Free-form, but keep a TOC once it exceeds ~5 sections |
+| `CHANGELOG.md` | Engineers, at every release | Every user-facing change merged to main | [Keep a Changelog](https://keepachangelog.com) — `Added`/`Changed`/`Fixed`/`Removed`, grouped by version |
+| `CONTRIBUTING.md` | External or new contributors, before their first PR | Dev environment setup, test/lint process, or PR process changes | Free-form — cover environment setup, how to run tests, coding standards, PR process |
+
+Don't touch a doc just to touch it — only when the change actually invalidates something it currently claims. A stale-but-confident doc is worse than no doc, because it actively misleads instead of leaving an honest gap.
+
+When creating `CHANGELOG.md` for the first time, start it from the current change forward. Don't invent entries for past releases you weren't there for — a fabricated history is worse than starting the log today and saying so.

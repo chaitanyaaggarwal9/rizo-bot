@@ -52,6 +52,20 @@ const SKILL_KEYWORDS = {
     'code review', 'code reviews', 'review this pr', 'review my pr',
     'pr review', 'pr reviews',
   ],
+  'web-design-taste.md': [
+    'website', 'websites', 'web app', 'web apps', 'webapp', 'webapps',
+    'web page', 'web pages', 'webpage', 'webpages', 'landing page',
+    'landing pages', 'mobile app', 'mobile apps', 'frontend', 'front-end',
+    'next.js', 'nextjs', 'tailwind', 'wireframe', 'wireframes', 'mockup',
+    'mockups', 'redesign', 'redesigns', 'design system', 'design systems',
+    'ui', 'ux',
+  ],
+  'ui-library-picks.md': [
+    'component', 'components', 'toast', 'toasts', 'command menu',
+    'command palette', 'drag and drop', 'virtualization', 'dropdown',
+    'dropdowns', 'modal', 'modals', 'dialog', 'dialogs', 'chart', 'charts',
+    'state management', 'dark mode',
+  ],
 };
 
 // Naive substring matching misfires: "capital" contains "api", "digital"

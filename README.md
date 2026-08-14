@@ -83,7 +83,9 @@ your message
 │   ├── test-discipline.md
 │   ├── security-hygiene.md
 │   ├── typescript-taste.md
-│   └── code-review-discipline.md
+│   ├── code-review-discipline.md
+│   ├── web-design-taste.md
+│   └── ui-library-picks.md
 ├── cli.js                  Terminal client — npm run chat (interactive or one-shot)
 ├── public/
 │   └── index.html            Browser chat UI, served at /
@@ -153,7 +155,11 @@ performing well for you and manually re-rank them higher.
 
 `vscode-extension/` is **Rizo**, a standalone BYOK extension — same
 chat-over-OpenRouter idea, brought into the editor with an agentic tool-use
-loop:
+loop. It's the only surface that can actually scaffold and build something
+(the server/CLI only reply in text) — ask it to design or build a website
+or web app and it routes to the coding tier (Claude Sonnet 5 + Coding
+Discipline + Web Design Taste, default stack Next.js/Tailwind/Motion) with
+full file read/write and command-running tools:
 
 - **Model routing** (`src/modelRouter.ts`) — messages classify into
   low/medium/coding tiers; coding is hard-pinned to Claude Sonnet 5,

@@ -34,6 +34,17 @@ const CODING_KEYWORDS = [
   'javascript', 'python', 'react', 'node.js', 'npm', 'git', 'terminal',
   'stack trace', 'commit', 'commits', 'push', 'branch', 'branches',
   'merge', 'pull request', 'pull requests', 'rebase',
+  // Design/build vocabulary — without these, "design me a website" or
+  // "build a mobile app" match nothing above and fall through to the
+  // general list, which also silently skips every skill file (Coding
+  // Discipline, Web Design Taste, ...) since those only load for
+  // taskType 'coding'. See skills.config.js.
+  'html', 'css', 'website', 'websites', 'web app', 'web apps', 'webapp',
+  'webapps', 'web page', 'web pages', 'webpage', 'webpages',
+  'landing page', 'landing pages', 'mobile app', 'mobile apps',
+  'frontend', 'front-end', 'next.js', 'nextjs', 'tailwind', 'component',
+  'components', 'wireframe', 'wireframes', 'mockup', 'mockups',
+  'redesign', 'redesigns', 'design system', 'design systems', 'ui', 'ux',
 ];
 
 // Match whole words only — a naive substring check (e.g. "message.includes(kw)")

@@ -1,0 +1,52 @@
+name: Server CI
+
+# Covers the root Node/Express app (server.js, cli.js, models.config.js,
+# skills.config.js). Ignores vscode-extension/ — that has its own workflow.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'vscode-extension/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'vscode-extension/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # No test suite yet — at minimum, fail fast on a syntax error in any
+      # of the entry-point/config files before it reaches production.
+      - name: Syntax-check source files
+        run: |
+          node --check server.js
+          node --check cli.js
+          node --check models.config.js
+          node --check skills.config.js
+
+      - name: Verify skill files referenced by skills.config.js exist
+        run: |
+          node -e "
+            const { selectSkillFiles } = require('./skills.config');
+            const fs = require('fs');
+            const path = require('path');
+            const files = new Set(selectSkillFiles('debug this git api test', 'coding'));
+            for (const file of files) {
+              const p = path.join(__dirname, 'skills', file);
+              if (!fs.existsSync(p)) {
+                console.error('Missing skill file:', p);
+                process.exit(1);
+              }
+            }
+            console.log('All referenced skill files exist.');
+          "

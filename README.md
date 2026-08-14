@@ -1,4 +1,4 @@
-# chai-agent
+# rizo-bot
 
 ![Server CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)
 ![VS Code Extension CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/vscode-extension-ci.yml/badge.svg)

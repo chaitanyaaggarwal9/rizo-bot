@@ -1,8 +1,10 @@
 # Contributing
 
 Guide for working on this repo — the Express backend/CLI (root) and the Rizo
-VS Code extension (`vscode-extension/`). Licensed Apache 2.0 (see
-[LICENSE](LICENSE)) — issues and pull requests are welcome. For anything
+VS Code extension (`vscode-extension/`). Licensed Apache 2.0 + Commons
+Clause (see [LICENSE](LICENSE)) — source-available, free to use and
+modify, resale not permitted. Issues and pull requests are welcome; by
+opening one you're contributing under that same license. For anything
 beyond a small fix, open an issue first so we can agree on the approach
 before you put time into an implementation.
 

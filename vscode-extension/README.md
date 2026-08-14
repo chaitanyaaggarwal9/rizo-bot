@@ -19,4 +19,7 @@ Short version: install → `Cmd+Shift+P` / `Ctrl+Shift+P` → **"Rizo: Open Chat
 
 ## License
 
-Apache License 2.0 — see [LICENSE](https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE).
+Apache License 2.0, modified by the [Commons Clause](https://commonsclause.com)
+— see [LICENSE](https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE).
+Free to use, modify, and share; the Commons Clause withholds the right to
+sell it. Source-available, not OSI-certified "open source."

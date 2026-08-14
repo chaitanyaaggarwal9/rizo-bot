@@ -94,7 +94,7 @@ your message
 ├── vscode-extension/        Standalone VS Code extension — see below
 ├── website/                 Marketing site (rizobot.com) — see website/README.md
 ├── .github/workflows/       CI: server sanity checks + extension build
-├── LICENSE                  Apache License 2.0
+├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
 └── .gitignore                Excludes node_modules/, .env, logs/, .DS_Store
 ```
 
@@ -249,6 +249,15 @@ first for anything beyond a small fix.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE). Free to use, modify, and
-redistribute, including commercially; just carry the copyright/license
-notice and don't use the "Rizo" name to imply endorsement of a fork.
+Apache License 2.0, modified by the [Commons
+Clause](https://commonsclause.com) — see [LICENSE](LICENSE). Free to use,
+read, modify, and redistribute for any non-commercial purpose; the one
+thing the Commons Clause withholds is the right to **sell** it — the
+software itself, or a product/service whose value comes substantially
+from it. Also don't use the "Rizo" name to imply endorsement of a fork.
+
+This makes the project source-available rather than OSI-certified "open
+source" (the official Open Source Definition doesn't permit restricting
+commercial use) — full source stays public and forkable, resale just
+isn't licensed. `package.json`'s `license` field reads `SEE LICENSE IN
+LICENSE` since Commons Clause has no registered SPDX identifier.

@@ -63,6 +63,15 @@ an honest gap. Everything before this point lives in git history instead.
 - `vscode-extension/package.json`'s `description` reworded (dropped "Team",
   now leads with BYOK), `categories` gains `Chat`, `publisher` field is a
   placeholder (`PUBLISHER_ID_HERE`) pending a real Marketplace publisher id
+- **License gains the Commons Clause**, on top of the Apache License 2.0
+  it already switched to below: still free to use, read, modify, and
+  redistribute, but the Commons Clause specifically withholds the right
+  to sell the software (or a product/service whose value comes
+  substantially from it) — makes the project source-available rather than
+  OSI-certified "open source," which by definition can't restrict
+  commercial use. `package.json` license fields (root + `vscode-extension`)
+  changed to `SEE LICENSE IN LICENSE`, since Commons Clause has no
+  registered SPDX identifier
 - **License switched from proprietary "all rights reserved" back to
   Apache License 2.0**, and the repo/extension are going public — BYOK
   (bring your own OpenRouter key) means there's no shared account or

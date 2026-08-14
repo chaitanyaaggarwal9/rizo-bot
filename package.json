@@ -8,7 +8,7 @@
     "start": "node server.js",
     "chat": "node cli.js"
   },
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1"

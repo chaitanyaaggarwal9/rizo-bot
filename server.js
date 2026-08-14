@@ -1,3 +1,7 @@
+// Rizo — Copyright (c) 2026 Chaitanya Aggarwal
+// Licensed under the Apache License, Version 2.0, modified by the
+// Commons Clause (no resale) — see LICENSE for the full terms.
+
 require('dotenv').config();
 const express = require('express');
 const fs = require('fs');

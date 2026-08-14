@@ -1,3 +1,7 @@
+// Rizo — Copyright (c) 2026 Chaitanya Aggarwal
+// Licensed under the Apache License, Version 2.0, modified by the
+// Commons Clause (no resale) — see LICENSE for the full terms.
+
 import { ToolDefinition } from './tools';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';

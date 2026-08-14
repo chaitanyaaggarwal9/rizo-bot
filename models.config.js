@@ -1,3 +1,7 @@
+// Rizo — Copyright (c) 2026 Chaitanya Aggarwal
+// Licensed under the Apache License, Version 2.0, modified by the
+// Commons Clause (no resale) — see LICENSE for the full terms.
+
 // Free-tier model routing config, ranked by known capability.
 //
 // ⚠️ THESE MODEL IDS GO STALE. OpenRouter adds/removes/renames free-tier

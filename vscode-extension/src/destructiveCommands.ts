@@ -1,3 +1,7 @@
+// Rizo — Copyright (c) 2026 Chaitanya Aggarwal
+// Licensed under the Apache License, Version 2.0, modified by the
+// Commons Clause (no resale) — see LICENSE for the full terms.
+
 // Patterns that are hard to reverse once run — per Git Hygiene's own rule,
 // these get an elevated warning instead of the same casual prompt as
 // something like `npm test`. Pure logic, no vscode dependency, so it's

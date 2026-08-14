@@ -87,6 +87,7 @@ your message
 ├── logs/
 │   └── model-usage.jsonl     Auto-generated: one line per request (model, task type, attempts)
 ├── vscode-extension/        Standalone VS Code extension — see below
+├── website/                 Marketing site (rizobot.com) — see website/README.md
 ├── .github/workflows/       CI: server sanity checks + extension build
 ├── LICENSE                  Apache License 2.0
 └── .gitignore                Excludes node_modules/, .env, logs/, .DS_Store
@@ -176,11 +177,12 @@ loop:
   and estimated $ cost (free-tier replies always count as $0)
 - **Threads** (`src/threadStore.ts`) — named conversations persisted to
   VS Code's global storage, auto-titled, switchable from the panel
-- Per-teammate OpenRouter keys are stored via VS Code Secret Storage,
+- BYOK — your own OpenRouter key, stored via VS Code Secret Storage,
   never in a file
 
 **Using it:** see [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md)
-— install the `.vsix`, add your API key, go.
+— install from the Marketplace, add your API key, go. Marketing site:
+[`website/`](website/) (deploys to rizobot.com).
 
 **Building it (development):**
 

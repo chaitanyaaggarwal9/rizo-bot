@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rizo — BYOK AI coding assistant for VS Code</title>
+<meta name="description" content="Rizo routes every request to a model sized for the job — trivial, general, or coding — through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
+<link rel="icon" href="favicon.png" type="image/png">
+
+<meta property="og:title" content="Rizo — BYOK AI coding assistant for VS Code">
+<meta property="og:description" content="One key. Three model tiers. Routed to the right model, every time.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rizobot.com">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="#top">
+      <img src="favicon.png" alt="">
+      Rizo
+    </a>
+    <div class="nav-links">
+      <a href="#routing">How it routes</a>
+      <a href="#safety">Safety</a>
+      <a href="#byok">BYOK</a>
+      <a href="https://github.com/chaitanyaaggarwal9/rizo-bot">GitHub</a>
+    </div>
+    <div class="nav-cta">
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" type="button">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <a class="btn btn-primary btn-sm" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="container hero-grid">
+    <div>
+      <span class="eyebrow">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4l10 8-10 8V4z"/></svg>
+        VS Code extension · Bring your own key
+      </span>
+      <h1>Your OpenRouter key. Routed to the right model, every time.</h1>
+      <p class="hero-sub">Rizo classifies every request — trivial, general, or coding — and sends it to a model sized for the job, so you're not paying Claude-Sonnet prices to say hi. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
+        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55v-2.17c-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.82 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.55A10.52 10.52 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <div class="install-cmd">
+        <code>code --install-extension ChaitanyaAggarwal.rizo</code>
+        <button class="copy-btn" id="copy-install" type="button" aria-label="Copy install command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+
+      <div class="diagram-wrap">
+        <span class="diagram-label">Live routing — paid mode</span>
+        <svg id="routing-diagram" viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: a message is classified as trivial, general, or coding, then routed to gpt-5-nano, gemini-2.5-flash, or claude-sonnet-5 respectively">
+          <!-- input node -->
+          <rect class="node-box" x="16" y="112" width="120" height="40" rx="3"></rect>
+          <text class="node-text" x="76" y="136" font-size="13" text-anchor="middle">your message</text>
+
+          <!-- classifier -->
+          <rect class="node-box" x="196" y="112" width="120" height="40" rx="3"></rect>
+          <text class="node-text" x="256" y="136" font-size="13" text-anchor="middle">classifier</text>
+
+          <!-- paths -->
+          <path class="node-path" id="path-1" d="M316,120 C 420,120 420,40 520,40"></path>
+          <path class="node-path" id="path-2" d="M316,132 C 420,132 420,132 520,132"></path>
+          <path class="node-path" id="path-3" d="M316,144 C 420,144 420,224 520,224"></path>
+
+          <!-- flowing dots (animated via CSS along paths using offset-path fallback + JS timers) -->
+          <circle class="flow-dot" r="3.2" id="dot-1"></circle>
+          <circle class="flow-dot" r="3.2" id="dot-2"></circle>
+          <circle class="flow-dot" r="3.2" id="dot-3"></circle>
+
+          <!-- model nodes -->
+          <rect class="node-box" x="520" y="20" width="300" height="40" rx="3"></rect>
+          <text class="node-text" x="536" y="36" font-size="12">trivial → openai/gpt-5-nano</text>
+          <text class="node-price" x="536" y="52" font-size="11">$0.05 / $0.40 per M tok</text>
+
+          <rect class="node-box" x="520" y="112" width="300" height="40" rx="3"></rect>
+          <text class="node-text" x="536" y="128" font-size="12">general → google/gemini-2.5-flash</text>
+          <text class="node-price" x="536" y="144" font-size="11">$0.30 / $2.50 per M tok</text>
+
+          <rect class="node-box tier-coding" x="520" y="204" width="300" height="40" rx="3"></rect>
+          <text class="node-text" x="536" y="220" font-size="12">coding → anthropic/claude-sonnet-5</text>
+          <text class="node-price" x="536" y="236" font-size="11">$2.00 / $10.00 per M tok · hard-pinned</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="routing">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">How it routes</span>
+      <h2>Three tiers, one hard rule for code</h2>
+      <p>Every message is classified by keyword (word-boundary matched — "capital" doesn't misfire on "api") into one of three tiers. Coding is hard-pinned to Claude Sonnet 5, no fallback, because that's the one place a cheaper model isn't worth the risk.</p>
+    </div>
+
+    <div class="table-wrap reveal">
+      <table>
+        <thead>
+          <tr><th>Tier</th><th>Trigger</th><th>Model</th><th>Prompt / Completion (per M tok)</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill pill-trivial">Trivial</span></td>
+            <td>short, low-effort messages</td>
+            <td class="model">openai/gpt-5-nano</td>
+            <td class="price">$0.05 / $0.40</td>
+          </tr>
+          <tr>
+            <td><span class="pill pill-general">General</span></td>
+            <td>everyday questions, explanation, reasoning</td>
+            <td class="model">google/gemini-2.5-flash</td>
+            <td class="price">$0.30 / $2.50</td>
+          </tr>
+          <tr>
+            <td><span class="pill pill-coding">Coding</span></td>
+            <td>code, debugging, git, terminal, APIs</td>
+            <td class="model">anthropic/claude-sonnet-5</td>
+            <td class="price">$2.00 / $10.00</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note reveal">Pricing is what OpenRouter charges for these models as of this writing — check openrouter.ai/models for current rates.</p>
+  </div>
+</section>
+
+<section id="free-paid">
+  <div class="container mode-demo">
+    <div class="reveal">
+      <span class="section-kicker">Free / Paid</span>
+      <h2>A real switch, not a lower limit</h2>
+      <p class="table-note" style="margin-top:14px; font-size:0.95rem;">One pill above the composer, no restart, no separate account.</p>
+      <div class="toggle-mock" style="margin-top:24px;">
+        <span class="active-paid">Paid</span>
+        <span>Free</span>
+      </div>
+    </div>
+    <div class="mode-cards reveal">
+      <div class="mode-card">
+        <h4><span class="dot dot-paid"></span> Paid — cost-optimized routing</h4>
+        <p>The three-tier routing above. Small model for easy questions, mid-tier for general reasoning, Claude Sonnet 5 for coding. Billed by OpenRouter per token, at their published rate — Rizo adds nothing.</p>
+      </div>
+      <div class="mode-card">
+        <h4><span class="dot dot-free"></span> Free — always $0</h4>
+        <p>Routes through a ranked chain of free-tier OpenRouter models instead, with automatic fallback to the next one in the list on any error, rate limit, or empty reply — and a final backstop (<code>openrouter/free</code>) so something always answers. No credit required.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Safety</span>
+      <h2>Nothing happens without your click</h2>
+      <p>Every file write and every shell command stops for approval first. A malicious repo can prompt-inject the model into <em>attempting</em> a bad tool call — it can't click "Approve" for it.</p>
+    </div>
+
+    <ul class="safety-list reveal">
+      <li>
+        <span class="tag">Diff first</span>
+        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Every write shows a real diff</strong><span style="color:var(--text-dim); font-size:0.95rem;">VS Code's native diff view, before a single byte touches disk.</span></div>
+      </li>
+      <li class="destructive">
+        <span class="tag">Always asks</span>
+        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Destructive commands never get a bypass</strong><span style="color:var(--text-dim); font-size:0.95rem;"><code>git push --force</code>, <code>reset --hard</code>, <code>branch -D</code>, <code>rm -rf</code> and its long-form/colon-refspec equivalents get an elevated warning every single time — "Always Allow" is deliberately not offered for these.</span></div>
+      </li>
+      <li>
+        <span class="tag always">Scoped</span>
+        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">"Always Allow" is per-workspace</strong><span style="color:var(--text-dim); font-size:0.95rem;">Trusting one project never carries over into another — VS Code scopes it for us.</span></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="byok">
+  <div class="container byok-grid">
+    <div class="reveal">
+      <span class="section-kicker">BYOK</span>
+      <h2>Bring your own key</h2>
+      <div class="byok-steps" style="margin-top:24px;">
+        <div class="byok-step">
+          <span class="num">01</span>
+          <p><strong>Sign up at openrouter.ai</strong>Free account, add credit or use the free-tier models with none.</p>
+        </div>
+        <div class="byok-step">
+          <span class="num">02</span>
+          <p><strong>Paste your key into Rizo, once</strong>Stored in your OS keychain via VS Code's own Secret Storage — never written to a file.</p>
+        </div>
+        <div class="byok-step">
+          <span class="num">03</span>
+          <p><strong>OpenRouter bills you directly</strong>For exactly what you use. Rizo has no server sitting in between and never sees a cent of it.</p>
+        </div>
+      </div>
+    </div>
+    <div class="byok-promise reveal">
+      <h3>What this means in practice</h3>
+      <ul>
+        <li>No shared account, no per-seat pricing, no markup on top of OpenRouter's rate</li>
+        <li>Your key never leaves your machine except to call OpenRouter directly</li>
+        <li>Free mode needs no credit at all — a real way to try it with $0 at risk</li>
+        <li>Open source, Apache 2.0 — the routing and safety logic above is exactly what's in the repo, not a claim to take on faith</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Also</span>
+      <h2>The rest of it</h2>
+    </div>
+    <div class="grid-2 reveal">
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <h3>Named threads</h3>
+        <p>Separate conversations, each with its own history. Auto-named from the first message, renameable any time.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <h3>Cost you can see</h3>
+        <p>Running token count and estimated dollar cost shown live under the composer, for the whole chat — not buried in a dashboard.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+        <h3>Terminal &amp; git, agentically</h3>
+        <p>Runs commands in your workspace root with a 60s timeout and a capped output buffer — bounded, not a runaway loop.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21 8 13.5 2.5 9h7z"/></svg>
+        <h3>Open source</h3>
+        <p>Apache License 2.0. Fork it, read the routing logic, send a PR — nothing about how it decides where your money goes is hidden.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cta-final">
+  <div class="container">
+    <div class="cta-band reveal">
+      <h2>Bring a key. See what it costs.</h2>
+      <div class="cta-band-actions">
+        <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
+        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">Read the source</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-brand">
+      <img src="assets/logo-word-light.png" alt="Rizo" class="logo-lockup logo-lockup-light">
+      <img src="assets/logo-word-dark.png" alt="Rizo" class="logo-lockup logo-lockup-dark">
+      <span class="footer-tagline">Developer <em>AI</em> Assistant</span>
+    </div>
+    <div class="footer-inner">
+      <span>Apache License 2.0 · Rizo</span>
+      <div class="footer-links">
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot">GitHub</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE">License</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md">Docs</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues">Issues</a>
+        <a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Marketplace</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

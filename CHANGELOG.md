@@ -10,6 +10,13 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- `website/` — the marketing site (deploys to rizobot.com via Vercel,
+  see `website/README.md`). Static HTML/CSS/JS, no framework. Hero
+  features a live diagram of the actual task-routing mechanism rather
+  than generic marketing art; content (routing table, pricing, safety
+  list) is pulled directly from `vscode-extension/src/*.ts`, not
+  aspirational copy. Palette and wordmark built from the real Rizo logo
+  (teal `#009C96` sampled directly from the source file, not guessed)
 - `vscode-extension/README.md` — the actual Marketplace listing page
   (features, getting-started link, license); didn't exist before, so
   `vsce package`/`publish` had nothing to show on the extension's page

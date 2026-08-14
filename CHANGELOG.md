@@ -24,9 +24,8 @@ an honest gap. Everything before this point lives in git history instead.
   `vscode-extension/package.json`, pointing at the now-public repo
 - `.github/CODEOWNERS`, PR template, bug report + feature request issue
   templates, `dependabot.yml` (weekly grouped updates, root + extension +
-  Actions), and a `stale-issues` workflow — shaped after Cline's own
-  `.github/` setup, scaled down to what this repo actually has (no
-  JetBrains/CLI/SDK targets, no test suite yet to gate on)
+  Actions), and a `stale-issues` workflow, scaled to what this repo
+  actually has (no JetBrains/CLI/SDK targets, no test suite yet to gate on)
 
 ### Changed
 - `vscode-extension/package.json`'s `description` reworded (dropped "Team",
@@ -35,8 +34,8 @@ an honest gap. Everything before this point lives in git history instead.
 - **License switched from proprietary "all rights reserved" back to
   Apache License 2.0**, and the repo/extension are going public — BYOK
   (bring your own OpenRouter key) means there's no shared account or
-  billing surface to protect, and a public repo is how Cline earns the
-  trust this project is trying to match. `package.json` license fields
+  billing surface to protect, and public source code is part of the
+  trust a BYOK tool needs to earn. `package.json` license fields
   updated (`vscode-extension` drops `"private": true` too), CONTRIBUTING
   reframed to welcome outside PRs, ONBOARDING rewritten for
   Marketplace-install + self-serve OpenRouter signup instead of

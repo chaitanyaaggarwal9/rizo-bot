@@ -334,7 +334,7 @@ p { margin: 0; }
   stroke: var(--border);
   stroke-width: 1;
 }
-.node-box.node-locked { stroke: var(--accent); }
+.node-box.tier-coding { stroke: var(--accent); }
 
 .node-text {
   font-family: var(--font-mono);
@@ -416,6 +416,18 @@ tr:last-child td { border-bottom: none; }
 td.model { color: var(--accent-bright); }
 td.price { font-variant-numeric: tabular-nums; color: var(--text-dim); }
 
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.pill-coding { background: var(--accent-soft); color: var(--accent-bright); }
+.pill-general { background: var(--gold-soft); color: var(--gold); }
+.pill-trivial { background: var(--surface-2); color: var(--text-dim); }
+
 .table-note {
   font-family: var(--font-mono);
   font-size: 0.82rem;
@@ -447,7 +459,8 @@ td.price { font-variant-numeric: tabular-nums; color: var(--text-dim); }
   border-radius: 16px;
   color: var(--text-faint);
 }
-.toggle-mock span.active { background: var(--accent); color: #08201D; }
+.toggle-mock span.active-paid { background: var(--accent); color: #08201D; }
+.toggle-mock span.active-free { background: var(--gold); color: #241705; }
 
 .mode-cards {
   display: grid;
@@ -471,8 +484,8 @@ td.price { font-variant-numeric: tabular-nums; color: var(--text-dim); }
 }
 .mode-card p { color: var(--text-dim); font-size: 0.98rem; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.dot-a { background: var(--accent); }
-.dot-b { background: var(--gold); }
+.dot-paid { background: var(--accent); }
+.dot-free { background: var(--gold); }
 
 /* feature grid */
 
@@ -480,16 +493,6 @@ td.price { font-variant-numeric: tabular-nums; color: var(--text-dim); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
-}
-
-/* interface screenshots — real captures from the running extension */
-.screenshot {
-  width: 100%;
-  height: auto;
-  display: block;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
 }
 
 .feature-card {

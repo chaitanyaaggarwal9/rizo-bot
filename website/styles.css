@@ -217,8 +217,20 @@ p { margin: 0; }
 .hero-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 56px;
+  gap: 40px;
   align-items: center;
+}
+
+.hero-visual {
+  display: flex;
+  justify-content: center;
+}
+
+.hero-mascot {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  filter: drop-shadow(0 0 40px rgba(76, 163, 158, 0.28));
 }
 
 .eyebrow {
@@ -305,7 +317,7 @@ p { margin: 0; }
   margin-bottom: 4px;
 }
 
-#routing-diagram { width: 100%; height: auto; min-width: 640px; }
+#routing-diagram { width: 100%; height: auto; min-width: 740px; }
 
 .node-path {
   fill: none;
@@ -679,7 +691,8 @@ footer {
 }
 
 @media (min-width: 860px) {
-  .hero-grid { grid-template-columns: minmax(0, 1fr); }
+  .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); }
+  .hero-mascot { max-width: 300px; }
   .mode-demo { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); }
 }
 

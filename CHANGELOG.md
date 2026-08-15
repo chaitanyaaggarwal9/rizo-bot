@@ -9,6 +9,8 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-14
+
 ### Changed
 - Model selection is now an explicit, per-chat, company-locked choice
   instead of automatic per-message routing — the keyword/word-count
@@ -86,7 +88,16 @@ an honest gap. Everything before this point lives in git history instead.
   Dead CSS for the removed tier pills and the old two-state toggle
   (`.pill-coding`/`.pill-general`/`.pill-trivial`, `.toggle-mock
   .active-paid`/`.active-free`, `.dot-paid`/`.dot-free`) removed or
-  renamed to match
+  renamed to match. The two `#interface` placeholders were later filled
+  in with real screenshots of the running extension
+- `website/` hero diagram extended to four sequential stages (New chat →
+  Pick a provider → Claude, locked in → which variant answers) instead
+  of jumping straight to the locked-in state — it was skipping the two
+  steps that are actually the point. Hero also gained a real two-column
+  layout at ≥860px (text + the extension's own mascot image, same teal
+  drop-shadow treatment as its empty-state), replacing a large area of
+  unused whitespace next to a headline the existing `max-width: 15ch`
+  rule wrapped narrower than intended
 
 ## [0.3.1] - 2026-08-14
 

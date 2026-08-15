@@ -157,18 +157,33 @@ performing well for you and manually re-rank them higher.
 chat-over-OpenRouter idea, brought into the editor with an agentic tool-use
 loop. It's the only surface that can actually scaffold and build something
 (the server/CLI only reply in text) — ask it to design or build a website
-or web app and it routes to the coding tier (Claude Sonnet 5 + Coding
-Discipline + Web Design Taste, default stack Next.js/Tailwind/Motion) with
-full file read/write and command-running tools:
+or web app and, on the Claude provider, it gets Coding Discipline + Web
+Design Taste (default stack Next.js/Tailwind/Motion) with full file
+read/write and command-running tools:
 
-- **Model routing** (`src/modelRouter.ts`) — messages classify into
-  low/medium/coding tiers; coding is hard-pinned to Claude Sonnet 5,
-  low/medium route to cost-optimized models by keyword signal, falling
-  back to word count
-- **Free/Paid switcher** (`src/freeModels.ts`) — a segmented toggle above
-  the chat switches between the cost-optimized paid routing above and a
-  free-tier-only fallback chain (ported from the server's `models.config.js`
-  free-tier list), persisted per-workspace
+- **Provider picker** (`src/providers.ts`) — a new chat opens with a
+  one-time choice of company: Claude, Gemini, OpenAI, DeepSeek, Kimi, or
+  Free. That choice locks in for the thread's whole life
+  (`ThreadData.provider`/`.model` in `src/threadStore.ts`) and starts on
+  that company's cheapest variant; the in-chat switcher only ever offers
+  that same company's other variants, never a different one — this
+  replaced an earlier design where every message got auto-classified and
+  routed independently, which turned out to reclassify follow-ups mid-task
+  and leave the next model with no ground truth for what a *different*
+  model had already changed on disk. `src/modelRouter.ts` now only
+  classifies coding-vs-general for skill selection (see below) and the
+  Free provider's fallback chain — never which model answers
+- **Effort switcher** (`src/openrouter.ts`'s `ReasoningEffort`) — a second
+  pill (Low/Medium/High, default Medium) maps to OpenRouter's unified
+  `reasoning.effort` field, which each provider translates into its own
+  reasoning budget. This is the actual per-turn cost dial — *how hard* the
+  already-picked model thinks, never *which* model answers. Hidden
+  entirely for the one variant that doesn't support it (`ModelVariant.
+  reasoning` in `providers.ts`; currently only Free's rotating Auto model)
+- **Usage tracking** (`src/usageStore.ts`) — a running today's-tokens /
+  this-month's-cost readout, top-left of the panel, aggregated across
+  every thread and every provider; resets itself lazily (no cron/startup
+  hook) whenever the stored day/month no longer matches the current one
 - **Skills** (`src/skillsLoader.ts`, `skills/`) — the same per-topic,
   selectively-loaded approach as the server, bundled into the extension so
   every install gets identical instructions
@@ -203,14 +218,16 @@ full file read/write and command-running tools:
 - **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
   `/test` in the composer expand to a full canned prompt tied to the
   matching skill (Git Hygiene, Code Review Discipline, Test Discipline)
-  and force the coding tier regardless of keyword match
+  and force the 'coding' classification (so the right skill files load)
+  regardless of keyword match
 - **Attachments** — "Attach file..." (any file via the OS picker) or
   "Mention file from this project..." (workspace quick pick) from the
   composer's `+` button. Text files fold into the message; images become
-  real vision attachments, auto-routing low/medium tier up to a
-  vision-capable model for that request (coding tier already handles
-  vision). Free mode has no vision model in its chain, so an image there
-  fails with a clear message instead of being silently ignored
+  real vision attachments. Checked against the current variant's own
+  vision flag (`ModelVariant.vision` in `providers.ts`) before sending —
+  a non-vision variant (DeepSeek, Kimi, or Free's Auto model) fails with a
+  clear message telling you to switch variants, instead of the image being
+  silently dropped or the request erroring opaquely
 - **Live tool-call transcript** — a line appears the moment a tool call
   starts ("Reading src/x.ts", "Running: git status") and updates once it
   resolves, replacing the old static "Thinking..." placeholder. Shows
@@ -218,10 +235,10 @@ full file read/write and command-running tools:
   output still only appears once it finishes
 - **Streaming replies** — text and tool-call arguments arrive
   incrementally (server-sent events under the hood) instead of the whole
-  reply appearing at once. If a model fails mid-stream after already
-  showing some text, the partial text is discarded and the next model in
-  the fallback chain starts a clean reply, rather than the two answers
-  visibly running together
+  reply appearing at once. On the Free provider, if a model fails
+  mid-stream after already showing some text, the partial text is
+  discarded and the next model in its fallback chain starts a clean reply,
+  rather than the two answers visibly running together
 - **Markdown rendering** — fenced code blocks, inline code, bold/italic,
   lists, and headers (flattened to bold — a full heading reads oversized
   in a chat bubble) render properly instead of showing literal backticks
@@ -241,7 +258,8 @@ full file read/write and command-running tools:
   elapsed time, and the chat as a whole shows a running total of tokens
   and estimated $ cost (free-tier replies always count as $0)
 - **Threads** (`src/threadStore.ts`) — named conversations persisted to
-  VS Code's global storage, auto-titled, switchable from the panel
+  VS Code's global storage, auto-titled, switchable from the panel,
+  renameable, and deletable (modal confirm first — no undo)
 - BYOK — your own OpenRouter key, stored via VS Code Secret Storage,
   never in a file
 

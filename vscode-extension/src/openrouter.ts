@@ -65,8 +65,6 @@ function extractUsage(data: any): Usage {
   };
 }
 
-export type ReasoningEffort = 'low' | 'medium' | 'high';
-
 export interface CallOptions {
   signal?: AbortSignal;
   // Fired once per streamed text chunk, in order, as it arrives.
@@ -77,17 +75,6 @@ export interface CallOptions {
   // partial text it displayed rather than let a second model's reply get
   // appended onto the first's orphaned fragment.
   onRestart?: () => void;
-  // How hard THIS model thinks — the token-cost dial, orthogonal to which
-  // model is answering (see providers.ts / chatPanel.ts's effort switcher).
-  // OpenRouter's unified `reasoning.effort` field translates this into
-  // whatever the underlying provider actually expects (a literal effort
-  // enum for OpenAI-style models, a thinking-token budget for
-  // Anthropic/Gemini) — one field here covers every provider rather than
-  // this file needing to know each one's native shape. Omitted entirely
-  // for models that don't support reasoning at all (chatPanel.ts checks
-  // ModelVariant.reasoning before setting this) so the request body never
-  // carries a field an unsupporting model might reject.
-  reasoningEffort?: ReasoningEffort;
 }
 
 export async function callOpenRouter(
@@ -105,7 +92,6 @@ export async function callOpenRouter(
     stream_options: { include_usage: true },
   };
   if (tools && tools.length) body.tools = tools;
-  if (options?.reasoningEffort) body.reasoning = { effort: options.reasoningEffort };
 
   const response = await fetch(OPENROUTER_URL, {
     method: 'POST',

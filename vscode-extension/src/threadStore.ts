@@ -58,17 +58,6 @@ export interface ThreadData extends ThreadMeta {
   // what gets sent to the model, never what's stored or displayed.
   summary?: string;
   summarizedCount?: number;
-  // Set once, from the new-chat provider picker, and never changed to a
-  // different company for this thread's lifetime — see providers.ts. The
-  // in-chat switcher only ever offers other variants within this same
-  // provider. Undefined means "not picked yet" — the webview shows the
-  // picker instead of the composer until this is set.
-  provider?: string;
-  model?: string;
-  // How hard the current model thinks — independent of provider/variant,
-  // adjustable per turn via the Effort switcher next to the model pill.
-  // Undefined is treated as providers.ts's DEFAULT_EFFORT ('medium').
-  effort?: 'low' | 'medium' | 'high';
 }
 
 function storageRoot(context: vscode.ExtensionContext): string {
@@ -132,19 +121,6 @@ export function createThread(context: vscode.ExtensionContext, name = 'New Chat'
   return thread;
 }
 
-// Removes the thread file and its index entry. Silently no-ops on an
-// already-missing file (e.g. a double-click on Delete) rather than
-// throwing — the end state ("this thread doesn't exist") is what the
-// caller actually wants either way.
-export function deleteThread(context: vscode.ExtensionContext, id: string): void {
-  try {
-    fs.unlinkSync(threadFilePath(context, id));
-  } catch {
-    // already gone
-  }
-  writeIndex(context, readIndex(context).filter((t) => t.id !== id));
-}
-
 export function loadThread(context: vscode.ExtensionContext, id: string): ThreadData | undefined {
   try {
     return JSON.parse(fs.readFileSync(threadFilePath(context, id), 'utf-8'));
@@ -166,26 +142,6 @@ export function saveThreadMessages(context: vscode.ExtensionContext, id: string,
     entry.updatedAt = thread.updatedAt;
     writeIndex(context, index);
   }
-}
-
-// Sets (or changes the variant within) this thread's locked provider — the
-// only writer of ThreadData.provider/model. Called from the provider picker
-// (first pick) and the in-chat variant switcher (same-provider swap only;
-// chatPanel.ts is what enforces the "same provider" restriction before
-// calling this).
-export function setThreadModel(context: vscode.ExtensionContext, id: string, provider: string, model: string): void {
-  const thread = loadThread(context, id);
-  if (!thread) return;
-  thread.provider = provider;
-  thread.model = model;
-  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
-}
-
-export function setThreadEffort(context: vscode.ExtensionContext, id: string, effort: 'low' | 'medium' | 'high'): void {
-  const thread = loadThread(context, id);
-  if (!thread) return;
-  thread.effort = effort;
-  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 
 export function updateThreadSummary(

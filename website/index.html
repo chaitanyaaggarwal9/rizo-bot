@@ -4,11 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rizo: BYOK AI coding assistant for VS Code</title>
-<meta name="description" content="Rizo routes every request (trivial, general, or coding) to a model sized for the job, through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
+<meta name="description" content="Rizo lets you pick a provider — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — for each chat, switch cost tier within it any time, and dial reasoning effort up or down per turn, all through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
 <link rel="icon" href="favicon.png" type="image/png">
 
 <meta property="og:title" content="Rizo: BYOK AI coding assistant for VS Code">
-<meta property="og:description" content="One key. Three model tiers. Routed to the right model, every time.">
+<meta property="og:description" content="One key. Six providers. One locked per chat, so cost control never costs you context.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rizobot.com">
 
@@ -27,7 +27,8 @@
       Rizo
     </a>
     <div class="nav-links">
-      <a href="#routing">How it routes</a>
+      <a href="#providers">Providers</a>
+      <a href="#effort">Effort</a>
       <a href="#safety">Safety</a>
       <a href="#byok">BYOK</a>
       <a href="https://github.com/chaitanyaaggarwal9/rizo-bot">GitHub</a>
@@ -65,20 +66,6 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
-  <div class="container hero-grid">
-    <div>
-      <span class="eyebrow">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4l10 8-10 8V4z"/></svg>
-        VS Code extension · Bring your own key
-      </span>
-      <h1>Your OpenRouter key. Routed to the right model, every time.</h1>
-      <p class="hero-sub">Rizo classifies every request as trivial, general, or coding, and sends it to a model sized for the job, so you're not paying Claude-Sonnet prices to say hi. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
-      <div class="hero-ctas">
-        <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
-        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55v-2.17c-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.82 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.55A10.52 10.52 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
-          View on GitHub
-        </a>
       </div>
 
       <div class="hero-visual">
@@ -97,16 +84,6 @@
         <line class="node-path" x1="126" y1="132" x2="158" y2="132"></line>
         <rect class="node-box" x="158" y="112" width="150" height="40" rx="3"></rect>
         <text class="node-text" x="233" y="136" font-size="13" text-anchor="middle">Pick a provider</text>
-      <div class="diagram-wrap">
-        <span class="diagram-label">Live routing: paid mode</span>
-        <svg id="routing-diagram" viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: a message is classified as trivial, general, or coding, then routed to gpt-5-nano, gemini-2.5-flash, or claude-sonnet-5 respectively">
-          <!-- input node -->
-          <rect class="node-box" x="16" y="112" width="120" height="40" rx="3"></rect>
-          <text class="node-text" x="76" y="136" font-size="13" text-anchor="middle">your message</text>
-
-          <!-- classifier -->
-          <rect class="node-box" x="196" y="112" width="120" height="40" rx="3"></rect>
-          <text class="node-text" x="256" y="136" font-size="13" text-anchor="middle">classifier</text>
 
         <!-- step 3: locked provider -->
         <line class="node-path" x1="308" y1="132" x2="340" y2="132"></line>
@@ -135,83 +112,100 @@
         <text class="node-text" x="656" y="220" font-size="12">Opus 5 · complex tasks</text>
         <text class="node-price" x="656" y="236" font-size="11">$12.00 / $60.00 per M tok</text>
       </svg>
-          <!-- model nodes -->
-          <rect class="node-box" x="520" y="20" width="300" height="40" rx="3"></rect>
-          <text class="node-text" x="536" y="36" font-size="12">trivial → openai/gpt-5-nano</text>
-          <text class="node-price" x="536" y="52" font-size="11">$0.05 / $0.40 per M tok</text>
-
-          <rect class="node-box" x="520" y="112" width="300" height="40" rx="3"></rect>
-          <text class="node-text" x="536" y="128" font-size="12">general → google/gemini-2.5-flash</text>
-          <text class="node-price" x="536" y="144" font-size="11">$0.30 / $2.50 per M tok</text>
-
-          <rect class="node-box tier-coding" x="520" y="204" width="300" height="40" rx="3"></rect>
-          <text class="node-text" x="536" y="220" font-size="12">coding → anthropic/claude-sonnet-5</text>
-          <text class="node-price" x="536" y="236" font-size="11">$2.00 / $10.00 per M tok · hard-pinned</text>
-        </svg>
-      </div>
     </div>
   </div>
 </header>
 
-<section id="routing">
+<section id="providers">
   <div class="container">
     <div class="section-head reveal">
-      <span class="section-kicker">How it routes</span>
-      <h2>Three tiers, one hard rule for code</h2>
-      <p>Every message is classified by keyword (word-boundary matched, so "capital" doesn't misfire on "api") into one of three tiers. Coding is hard-pinned to Claude Sonnet 5, no fallback, because that's the one place a cheaper model isn't worth the risk.</p>
+      <span class="section-kicker">Providers</span>
+      <h2>Pick a company, then relax</h2>
+      <p>A new chat opens with a one-time choice: Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free. That company is locked in for the whole chat — the in-chat switcher only ever offers its own variants, never a different one. One tool-calling convention, one system-prompt format, one context window, for the life of the conversation. Want a different company? Start a new chat.</p>
     </div>
 
     <div class="table-wrap reveal">
       <table>
         <thead>
-          <tr><th>Tier</th><th>Trigger</th><th>Model</th><th>Prompt / Completion (per M tok)</th></tr>
+          <tr><th>Provider</th><th>Starts on</th><th>Also switch to</th><th>Also switch to</th></tr>
         </thead>
         <tbody>
           <tr>
-            <td><span class="pill pill-trivial">Trivial</span></td>
-            <td>short, low-effort messages</td>
-            <td class="model">openai/gpt-5-nano</td>
-            <td class="price">$0.05 / $0.40</td>
+            <td class="model">Claude</td>
+            <td class="price">Haiku 4.5</td>
+            <td class="price">Sonnet 5</td>
+            <td class="price">Opus 5</td>
           </tr>
           <tr>
-            <td><span class="pill pill-general">General</span></td>
-            <td>everyday questions, explanation, reasoning</td>
-            <td class="model">google/gemini-2.5-flash</td>
-            <td class="price">$0.30 / $2.50</td>
+            <td class="model">Gemini</td>
+            <td class="price">Flash Lite</td>
+            <td class="price">Flash</td>
+            <td class="price">Pro</td>
           </tr>
           <tr>
-            <td><span class="pill pill-coding">Coding</span></td>
-            <td>code, debugging, git, terminal, APIs</td>
-            <td class="model">anthropic/claude-sonnet-5</td>
-            <td class="price">$2.00 / $10.00</td>
+            <td class="model">OpenAI</td>
+            <td class="price">GPT-5 Nano</td>
+            <td class="price">GPT-5 Mini</td>
+            <td class="price">GPT-5</td>
+          </tr>
+          <tr>
+            <td class="model">DeepSeek</td>
+            <td class="price">V3.2 Exp</td>
+            <td class="price">V3.2</td>
+            <td class="price">R1</td>
+          </tr>
+          <tr>
+            <td class="model">Kimi</td>
+            <td class="price">K2 Turbo</td>
+            <td class="price">K2</td>
+            <td class="price">K2 Thinking</td>
+          </tr>
+          <tr>
+            <td class="model">Free</td>
+            <td class="price" colspan="3">Auto — best available free model, no cost</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="table-note reveal">Pricing is what OpenRouter charges for these models as of this writing. Check openrouter.ai/models for current rates.</p>
+    <p class="table-note reveal">Every provider starts a new chat on its cheapest variant. Model IDs and pricing are checked against openrouter.ai/models periodically — see the source for exact figures.</p>
   </div>
 </section>
 
-<section id="free-paid">
+<section id="effort">
   <div class="container mode-demo">
     <div class="reveal">
-      <span class="section-kicker">Free / Paid</span>
-      <h2>A real switch, not a lower limit</h2>
-      <p class="table-note" style="margin-top:14px; font-size:0.95rem;">One pill above the composer, no restart, no separate account.</p>
+      <span class="section-kicker">Effort</span>
+      <h2>Same model, different depth</h2>
+      <p class="table-note" style="margin-top:14px; font-size:0.95rem;">A second pill next to the model switcher, adjustable any time, no restart.</p>
       <div class="toggle-mock" style="margin-top:24px;">
-        <span class="active-paid">Paid</span>
-        <span>Free</span>
+        <span>Low</span>
+        <span class="active">Medium</span>
+        <span>High</span>
       </div>
     </div>
     <div class="mode-cards reveal">
       <div class="mode-card">
-        <h4><span class="dot dot-paid"></span> Paid: cost-optimized routing</h4>
-        <p>The three-tier routing above. Small model for easy questions, mid-tier for general reasoning, Claude Sonnet 5 for coding. Billed by OpenRouter per token, at their published rate. Rizo adds nothing.</p>
+        <h4><span class="dot dot-a"></span> Which model answers never changes</h4>
+        <p>Effort controls how hard the model you already picked thinks — it maps straight to OpenRouter's unified <code>reasoning.effort</code> field, which each provider translates into its own native reasoning budget. It's not a second router: the company and variant you're on stay exactly the same.</p>
       </div>
       <div class="mode-card">
-        <h4><span class="dot dot-free"></span> Free: always $0</h4>
-        <p>Routes through a ranked chain of free-tier OpenRouter models instead, with automatic fallback to the next one in the list on any error, rate limit, or empty reply, plus a final backstop (<code>openrouter/free</code>) so something always answers. No credit required.</p>
+        <h4><span class="dot dot-b"></span> Usage you can see, top-left</h4>
+        <p>Today's token count and this month's estimated cost, running totals across every chat and every provider, reset automatically at midnight and on the 1st. Per-chat totals sit under the composer too — nothing buried in a separate dashboard.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="interface">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Interface</span>
+      <h2>What picking and switching actually looks like</h2>
+      <p>The provider picker on a new chat, and the model + effort pills once you're in one.</p>
+    </div>
+    <div class="grid-2 reveal">
+      <img class="screenshot" src="assets/screenshot-provider-picker.png" alt="Rizo's new-chat provider picker, showing Claude, Gemini, OpenAI, DeepSeek, Kimi, and Free as options, each labeled with the variant it starts on">
+      <img class="screenshot" src="assets/screenshot-model-effort.png" alt="Rizo's chat header with the model pill (OpenAI · GPT-5 Nano) and Effort pill (Medium) shown side by side above the composer">
     </div>
   </div>
 </section>
@@ -266,7 +260,7 @@
       <ul>
         <li>No shared account, no per-seat pricing, no markup on top of OpenRouter's rate</li>
         <li>Your key never leaves your machine except to call OpenRouter directly</li>
-        <li>Free mode needs no credit at all: a real way to try it with $0 at risk</li>
+        <li>The Free provider needs no credit at all: a real way to try it with $0 at risk</li>
         <li>Open source, Apache 2.0: the routing and safety logic above is exactly what's in the repo, not a claim to take on faith</li>
       </ul>
     </div>
@@ -283,12 +277,12 @@
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         <h3>Named threads</h3>
-        <p>Separate conversations, each with its own history. Auto-named from the first message, renameable any time.</p>
+        <p>Separate conversations, each with its own history and its own locked-in provider. Auto-named from the first message, renameable, deletable — with a confirm dialog, since there's no undo.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <h3>Cost you can see</h3>
-        <p>Running token count and estimated dollar cost shown live under the composer, for the whole chat, not buried in a dashboard.</p>
+        <p>Per-chat token/cost totals under the composer, plus a running today/this-month readout at the top of the panel across every chat and provider — not buried in a dashboard.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l6-6-6-6M12 19h8"/></svg>

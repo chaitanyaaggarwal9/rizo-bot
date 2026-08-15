@@ -43,6 +43,28 @@
 </nav>
 
 <header class="hero" id="top">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4l10 8-10 8V4z"/></svg>
+          VS Code extension · Bring your own key
+        </span>
+        <h1>Pick a provider. Stay in it. Dial the cost yourself.</h1>
+        <p class="hero-sub">Each chat locks to one company — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — so switching cost tiers mid-task never means a different model losing the thread. Swap variants inside that company any time, and turn reasoning effort up or down per message. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
+          <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55v-2.17c-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.82 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.55A10.52 10.52 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="install-cmd">
+          <code>code --install-extension ChaitanyaAggarwal.rizo</code>
+          <button class="copy-btn" id="copy-install" type="button" aria-label="Copy install command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
   <div class="container hero-grid">
     <div>
       <span class="eyebrow">
@@ -58,13 +80,23 @@
           View on GitHub
         </a>
       </div>
-      <div class="install-cmd">
-        <code>code --install-extension ChaitanyaAggarwal.rizo</code>
-        <button class="copy-btn" id="copy-install" type="button" aria-label="Copy install command">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </button>
-      </div>
 
+      <div class="hero-visual">
+        <img class="hero-mascot" src="assets/mascot.png" alt="Rizo's mascot — a stylized R character with a teal chevron">
+      </div>
+    </div>
+
+    <div class="diagram-wrap">
+      <span class="diagram-label">New chat → Claude, locked in</span>
+      <svg id="routing-diagram" viewBox="0 0 1000 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: starting a new chat and picking Claude locks that chat to Claude; it can then switch between Haiku 4.5, Sonnet 5, and Opus 5, but never to a different company">
+        <!-- step 1: start -->
+        <rect class="node-box" x="16" y="112" width="110" height="40" rx="3"></rect>
+        <text class="node-text" x="71" y="136" font-size="13" text-anchor="middle">New chat</text>
+
+        <!-- step 2: pick a provider -->
+        <line class="node-path" x1="126" y1="132" x2="158" y2="132"></line>
+        <rect class="node-box" x="158" y="112" width="150" height="40" rx="3"></rect>
+        <text class="node-text" x="233" y="136" font-size="13" text-anchor="middle">Pick a provider</text>
       <div class="diagram-wrap">
         <span class="diagram-label">Live routing: paid mode</span>
         <svg id="routing-diagram" viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram: a message is classified as trivial, general, or coding, then routed to gpt-5-nano, gemini-2.5-flash, or claude-sonnet-5 respectively">
@@ -76,16 +108,33 @@
           <rect class="node-box" x="196" y="112" width="120" height="40" rx="3"></rect>
           <text class="node-text" x="256" y="136" font-size="13" text-anchor="middle">classifier</text>
 
-          <!-- paths -->
-          <path class="node-path" id="path-1" d="M316,120 C 420,120 420,40 520,40"></path>
-          <path class="node-path" id="path-2" d="M316,132 C 420,132 420,132 520,132"></path>
-          <path class="node-path" id="path-3" d="M316,144 C 420,144 420,224 520,224"></path>
+        <!-- step 3: locked provider -->
+        <line class="node-path" x1="308" y1="132" x2="340" y2="132"></line>
+        <rect class="node-box node-locked" x="340" y="112" width="110" height="40" rx="3"></rect>
+        <text class="node-text" x="395" y="136" font-size="13" text-anchor="middle">Claude</text>
 
-          <!-- flowing dots (animated via CSS along paths using offset-path fallback + JS timers) -->
-          <circle class="flow-dot" r="3.2" id="dot-1"></circle>
-          <circle class="flow-dot" r="3.2" id="dot-2"></circle>
-          <circle class="flow-dot" r="3.2" id="dot-3"></circle>
+        <!-- step 4: same-company variants, your call which one answers -->
+        <path class="node-path" id="path-1" d="M450,120 C 540,120 540,40 640,40"></path>
+        <path class="node-path" id="path-2" d="M450,132 C 540,132 540,132 640,132"></path>
+        <path class="node-path" id="path-3" d="M450,144 C 540,144 540,224 640,224"></path>
 
+        <!-- flowing dots (animated via CSS along paths using offset-path fallback + JS timers) -->
+        <circle class="flow-dot" r="3.2" id="dot-1"></circle>
+        <circle class="flow-dot" r="3.2" id="dot-2"></circle>
+        <circle class="flow-dot" r="3.2" id="dot-3"></circle>
+
+        <rect class="node-box node-locked" x="640" y="20" width="320" height="40" rx="3"></rect>
+        <text class="node-text" x="656" y="36" font-size="12">Haiku 4.5 · quick answers (starts here)</text>
+        <text class="node-price" x="656" y="52" font-size="11">$0.25 / $1.25 per M tok</text>
+
+        <rect class="node-box" x="640" y="112" width="320" height="40" rx="3"></rect>
+        <text class="node-text" x="656" y="128" font-size="12">Sonnet 5 · everyday work</text>
+        <text class="node-price" x="656" y="144" font-size="11">$2.00 / $10.00 per M tok</text>
+
+        <rect class="node-box" x="640" y="204" width="320" height="40" rx="3"></rect>
+        <text class="node-text" x="656" y="220" font-size="12">Opus 5 · complex tasks</text>
+        <text class="node-price" x="656" y="236" font-size="11">$12.00 / $60.00 per M tok</text>
+      </svg>
           <!-- model nodes -->
           <rect class="node-box" x="520" y="20" width="300" height="40" rx="3"></rect>
           <text class="node-text" x="536" y="36" font-size="12">trivial → openai/gpt-5-nano</text>

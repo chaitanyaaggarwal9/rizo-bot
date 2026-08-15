@@ -12,8 +12,14 @@ website/
 └── assets/
     ├── logo-full.png        source lockup as provided (unused directly)
     ├── logo-word-light.png  "Rizo}_" wordmark, transparent bg, for light backgrounds
-    └── logo-word-dark.png   same, ink recolored light, for dark backgrounds
+    ├── logo-word-dark.png   same, ink recolored light, for dark backgrounds
+    ├── screenshot-provider-picker.png   #interface — the new-chat provider picker
+    └── screenshot-model-effort.png      #interface — the model + Effort pills in a chat
 ```
+
+Both screenshots are real captures from the running extension, not mockups
+— if the interface changes enough that they go stale, retake and replace
+them rather than leaving an outdated screenshot up.
 
 ## Local preview
 

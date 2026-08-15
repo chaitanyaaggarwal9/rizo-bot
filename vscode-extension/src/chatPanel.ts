@@ -6,12 +6,25 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from './openrouter';
-import { modelForMessage, MODEL_FOR_TASK, TaskType, visionModelForTask } from './modelRouter';
+import { detectTaskType, TaskType } from './modelRouter';
 import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
 import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from './tools';
 import { expandSlashCommand } from './slashCommands';
 import { loadProjectInstructions } from './projectInstructions';
+import {
+  PROVIDERS,
+  PROVIDER_ORDER,
+  EFFORT_LEVELS,
+  EffortLevel,
+  DEFAULT_EFFORT,
+  defaultModelForProvider,
+  isValidProviderModel,
+  findVariant,
+  supportsReasoning,
+} from './providers';
+import { estimateCost } from './pricing';
+import { getUsage, recordUsage } from './usageStore';
 import {
   StoredMessage,
   DEFAULT_THREAD_NAME,
@@ -20,8 +33,11 @@ import {
   loadThread,
   saveThreadMessages,
   renameThread,
+  deleteThread,
   deriveThreadName,
   updateThreadSummary,
+  setThreadModel,
+  setThreadEffort,
   sumThreadTokens,
   sumThreadCost,
 } from './threadStore';
@@ -29,7 +45,12 @@ import {
 const MAX_TOOL_ITERATIONS = 8;
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
-const FREE_MODE_KEY = 'rizo.freeMode';
+
+// Always the cheapest available model, regardless of which provider the
+// user picked for the conversation itself — folding old history into a
+// summary is internal housekeeping (see maybeSummarize), not a user-facing
+// reply, so it shouldn't spend the thread's own (possibly expensive) model.
+const SUMMARY_MODEL = PROVIDERS.openai.variants[0].id;
 
 // Long threads stop replaying their full raw history once they pass this
 // many stored messages — everything older than the last SUMMARY_KEEP_TAIL
@@ -133,10 +154,36 @@ export class ChatPanel {
           case 'renameThread':
             await this.handleRename();
             break;
-          case 'setFreeMode':
-            await this.context.workspaceState.update(FREE_MODE_KEY, !!message.value);
+          case 'deleteThread':
+            await this.handleDeleteThread();
+            break;
+          case 'selectProvider': {
+            // First pick for a brand-new thread — always starts on that
+            // provider's cheapest variant (providers.ts's variants[0]).
+            if (!PROVIDERS[message.provider]) break;
+            setThreadModel(this.context, this.activeThreadId, message.provider, defaultModelForProvider(message.provider));
             this.sendInit();
             break;
+          }
+          case 'selectModel': {
+            // In-chat switcher — only ever a variant within the thread's
+            // already-locked provider. isValidProviderModel is the actual
+            // enforcement; the webview never renders another company's
+            // models into this dropdown in the first place (see getHtml).
+            const thread = loadThread(this.context, this.activeThreadId);
+            if (thread?.provider && isValidProviderModel(thread.provider, message.model)) {
+              setThreadModel(this.context, this.activeThreadId, thread.provider, message.model);
+              this.sendInit();
+            }
+            break;
+          }
+          case 'selectEffort': {
+            if ((EFFORT_LEVELS as readonly string[]).includes(message.effort)) {
+              setThreadEffort(this.context, this.activeThreadId, message.effort);
+              this.sendInit();
+            }
+            break;
+          }
         }
       },
       null,
@@ -146,21 +193,24 @@ export class ChatPanel {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
-  private isFreeMode(): boolean {
-    return this.context.workspaceState.get<boolean>(FREE_MODE_KEY, false);
-  }
-
   private sendInit() {
     const thread = loadThread(this.context, this.activeThreadId);
     const messages = thread?.messages || [];
+    const usage = getUsage(this.context);
     this.panel.webview.postMessage({
       type: 'init',
       threads: listThreads(this.context),
       activeThreadId: this.activeThreadId,
       messages,
-      freeMode: this.isFreeMode(),
+      // Undefined until the provider picker has been used once for this
+      // thread — the webview shows the picker instead of the composer.
+      provider: thread?.provider,
+      model: thread?.model,
+      effort: thread?.effort || DEFAULT_EFFORT,
       threadTokens: sumThreadTokens(messages),
       threadCost: sumThreadCost(messages),
+      dayTokens: usage.dayTokens,
+      monthCost: usage.monthCost,
     });
   }
 
@@ -175,6 +225,26 @@ export class ChatPanel {
       renameThread(this.context, this.activeThreadId, name.trim());
       this.sendInit();
     }
+  }
+
+  // Modal confirm — deleting a chat throws away its whole history with no
+  // undo, so this is deliberately more friction than Rename. If the
+  // deleted thread was the active one, falls back to the next
+  // most-recently-updated thread, or a brand-new one if that was the last
+  // chat left.
+  private async handleDeleteThread() {
+    const thread = loadThread(this.context, this.activeThreadId);
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete "${thread?.name || 'this chat'}"? This can't be undone.`,
+      { modal: true },
+      'Delete',
+    );
+    if (confirm !== 'Delete') return;
+
+    deleteThread(this.context, this.activeThreadId);
+    const remaining = listThreads(this.context);
+    this.activeThreadId = remaining.length > 0 ? remaining[0].id : createThread(this.context).id;
+    this.sendInit();
   }
 
   private async getApiKey(): Promise<string | undefined> {
@@ -195,30 +265,32 @@ export class ChatPanel {
     return key;
   }
 
-  // Picks the paid single-model path or the free fallback-chain path,
-  // depending on the workspace's free/paid toggle. Free mode never touches
-  // a paid model, even for coding — that's the entire point of the toggle.
-  // hasImage bumps the paid path to a vision-capable model (see
-  // visionModelForTask); the free chain has no vision models in it at all
-  // today, so an image in free mode fails clearly instead of silently
-  // getting ignored by a model that can't see it.
+  // The Free provider routes through the same fallback chain it always
+  // did (any individual free model 429s or comes back empty far more often
+  // than a paid one); every other provider is a direct call to the exact
+  // variant the user picked — no fallback, same "hard pin" philosophy the
+  // old coding tier used, just applied to whichever company is active.
+  // hasImage is validated against the variant's vision flag by the caller
+  // (handleSend) before this is ever reached, so a vision-incapable model
+  // never silently gets an image it can't see.
   private async callModel(
     apiKey: string,
+    provider: string,
+    model: string,
     taskType: TaskType,
     messages: ChatMessage[],
     hasImage: boolean,
     tools: ToolDefinition[],
     options: CallOptions = {},
   ) {
-    if (this.isFreeMode()) {
+    if (provider === 'free') {
       if (hasImage) {
         throw new Error(
-          "Image attachments need a vision-capable model, and the free tier doesn't currently include one. Switch to Paid mode to use an image in this chat.",
+          "Image attachments need a vision-capable model, and the Free provider doesn't currently include one. Start a new chat on a different provider to use an image.",
         );
       }
       return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, tools, options);
     }
-    const model = hasImage ? visionModelForTask(taskType) : MODEL_FOR_TASK[taskType];
     return callOpenRouter(apiKey, model, messages, tools, options);
   }
 
@@ -345,7 +417,7 @@ export class ChatPanel {
     ];
 
     try {
-      const { message } = await callOpenRouter(apiKey, MODEL_FOR_TASK.low, prompt);
+      const { message } = await callOpenRouter(apiKey, SUMMARY_MODEL, prompt);
       const newSummary = (message.content as string) || thread.summary || '';
       if (newSummary) updateThreadSummary(this.context, this.activeThreadId, newSummary, foldEnd);
     } catch {
@@ -365,19 +437,32 @@ export class ChatPanel {
     const controller = new AbortController();
     this.activeAbortController = controller;
 
+    const thread = loadThread(this.context, this.activeThreadId);
+    if (!thread?.provider || !thread?.model) {
+      this.panel.webview.postMessage({ type: 'error', error: 'Pick a provider for this chat first.', turnId });
+      return;
+    }
+    const provider = thread.provider;
+    const model = thread.model;
+    const effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
+
     try {
       // /commit, /review, /test expand to a canned prompt before anything
-      // else runs — forced onto the coding tier regardless of keyword
-      // match, since typing the command IS the signal. An unrecognized
-      // "/foo" isn't an error, it just falls through as literal text.
+      // else runs — forced into the 'coding' task type regardless of
+      // keyword match, since typing the command IS the signal. An
+      // unrecognized "/foo" isn't an error, it just falls through as
+      // literal text. taskType no longer picks a model (the provider
+      // picker/switcher does that, explicitly) — it only decides which
+      // skill files load below and, for the Free provider, which fallback
+      // chain to try.
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
-      const { taskType } = slashExpansion
-        ? { taskType: 'coding' as TaskType }
-        : modelForMessage(effectiveText);
+      const taskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
 
-      // Only coding-tier messages get skill instructions loaded — general
-      // low/medium chat doesn't need engineering-discipline guidance.
+      // Only coding-classified messages get skill instructions loaded —
+      // general chat doesn't need engineering-discipline guidance. This
+      // applies the same way regardless of which provider is answering, so
+      // switching companies never costs you the skill files.
       const skillsDir = path.join(this.context.extensionPath, 'skills');
       const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType);
 
@@ -400,8 +485,6 @@ export class ChatPanel {
           `Project-specific instructions (from .rizo/instructions.md in this workspace):\n${projectInstructions}`,
         );
       }
-
-      const thread = loadThread(this.context, this.activeThreadId);
 
       // Once this thread has been folded by maybeSummarize, only replay the
       // summary plus whatever's newer than what got folded — not the full
@@ -444,6 +527,17 @@ export class ChatPanel {
       const hasImage = messages.some(
         (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
       );
+      if (hasImage && provider !== 'free') {
+        const variant = findVariant(provider, model);
+        if (variant?.vision === false) {
+          this.panel.webview.postMessage({
+            type: 'error',
+            turnId,
+            error: `${variant.label} isn't vision-capable — switch to a different ${PROVIDERS[provider].label} variant to use an image in this chat.`,
+          });
+          return;
+        }
+      }
 
       // rizo.permissions.disabledTools — filtered out here so the model is
       // never even offered a disabled tool (no wasted round-trip);
@@ -452,14 +546,24 @@ export class ChatPanel {
       const enabledTools = TOOLS.filter((t) => !disabledTools.includes(t.function.name));
 
       let answeredBy = '';
-      let finalReply = '(no final response — hit the tool-call iteration limit)';
+      // Kept short and explicit on purpose — this exact string gets
+      // persisted and replayed as this turn's assistant reply in every
+      // future turn's history (see threadStore.ts's comment on why only
+      // the final exchange is stored), so a vague placeholder here would
+      // misinform every subsequent turn about what actually happened.
+      let finalReply = "I ran out of steps before finishing (hit the tool-call limit for one turn) — say 'continue' and I'll pick back up.";
       const totalUsage = emptyUsage();
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (this.cancelledTurnId === turnId) break;
 
-        const { model: usedModel, message, usage } = await this.callModel(apiKey, taskType, messages, hasImage, enabledTools, {
+        const { model: usedModel, message, usage } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
           signal: controller.signal,
+          // Dropped for a variant that doesn't support it (providers.ts's
+          // ModelVariant.reasoning === false) rather than sent and possibly
+          // rejected — and callWithFallback (the Free provider's path)
+          // never forwards this field at all regardless, see openrouter.ts.
+          reasoningEffort: supportsReasoning(provider, model) ? effort : undefined,
           onDelta: (chunk) => this.panel.webview.postMessage({ type: 'textDelta', turnId, text: chunk }),
           // A model failed after already streaming some text — the webview
           // needs to clear that partial text before the next model's fresh
@@ -509,6 +613,12 @@ export class ChatPanel {
 
       const elapsedMs = Date.now() - startedAt;
 
+      // Folds this turn's cost into the running today/this-month totals
+      // the header always shows, regardless of which provider answered or
+      // which thread this was — see usageStore.ts.
+      const turnCost = estimateCost(answeredBy, totalUsage.promptTokens, totalUsage.completionTokens);
+      const globalUsage = recordUsage(this.context, totalUsage.totalTokens, turnCost);
+
       // Persist only the final exchange — not the tool-call sub-steps.
       const updated: StoredMessage[] = [
         ...(thread?.messages || []),
@@ -547,6 +657,8 @@ export class ChatPanel {
         elapsedMs,
         threadTokens: sumThreadTokens(updated),
         threadCost: sumThreadCost(updated),
+        dayTokens: globalUsage.dayTokens,
+        monthCost: globalUsage.monthCost,
       });
 
       // Fire-and-forget: never makes the user wait on housekeeping. See
@@ -585,6 +697,22 @@ export class ChatPanel {
     const iconDataUri = `data:image/png;base64,${fs.readFileSync(iconPath).toString('base64')}`;
     const mascotPath = path.join(this.context.extensionPath, 'assets', 'mascot.png');
     const mascotDataUri = `data:image/png;base64,${fs.readFileSync(mascotPath).toString('base64')}`;
+    // Trimmed view of providers.ts handed to the webview once — it renders
+    // the provider picker grid and each provider's own variant dropdown
+    // straight from this, so there's exactly one place (providers.ts) that
+    // defines the catalog and no risk of the webview's copy drifting from
+    // the extension side's enforcement in isValidProviderModel.
+    const providerCatalog = PROVIDER_ORDER.map((id) => ({
+      id,
+      label: PROVIDERS[id].label,
+      variants: PROVIDERS[id].variants.map((v) => ({
+        id: v.id,
+        label: v.label,
+        tagline: v.tagline,
+        reasoning: v.reasoning !== false,
+      })),
+    }));
+    const providerCatalogJson = JSON.stringify(providerCatalog);
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -631,40 +759,112 @@ export class ChatPanel {
     white-space: nowrap;
   }
   .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+  /* Destructive — the only iconBtn that discards data with no undo
+     (handleDeleteThread's modal confirm is the safety net, not this), so
+     it gets the same warning color the errorForeground already uses
+     elsewhere in this stylesheet rather than blending in with New/Rename. */
+  #deleteThreadBtn:hover { background: rgba(241, 76, 76, 0.15); color: var(--vscode-errorForeground, #f14c4c); border-color: rgba(241, 76, 76, 0.4); }
 
-  /* Free/Paid segmented control — both options always visible, active one
-     highlighted, sits directly above the message area so the current
-     spending mode is never ambiguous. Brand teal for Paid (the routed,
-     cost-optimized path), amber for Free — same pairing as rizobot.com,
-     no emoji standing in for what the label text already says. */
-  #modeBar {
-    display: flex;
-    justify-content: center;
-    padding: 8px 12px 0;
+  /* Always-visible spend readout — its own row, top-left, above the
+     thread-picker row, global across every thread and provider (see
+     usageStore.ts). Resets itself (today at midnight, cost on the 1st)
+     with no action needed — the label says "today"/"this month" so
+     that's never ambiguous either. */
+  #usageBar { padding: 8px 12px 0; }
+  #usageStats {
+    font-size: 10.5px;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
   }
-  #modeSwitch {
+
+  /* Model pill — sits where the old Free/Paid toggle did, but now shows
+     "<Provider> · <Variant>" for the thread's locked provider and opens a
+     dropdown of ONLY that provider's own variants. There is no control
+     anywhere in this dropdown that can switch to a different company —
+     that's a one-time choice made once in #providerPicker, when the
+     thread had no provider yet. See providers.ts for why: it keeps every
+     swap within one tool-calling convention/system-prompt format/context
+     window, which cross-company switching was not. */
+  #modelBar { display: flex; justify-content: center; gap: 8px; padding: 8px 12px 0; }
+  #modelPillWrap, #effortPillWrap { position: relative; }
+  #modelPill, #effortPill {
     display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--vscode-foreground);
     border: 1px solid var(--vscode-widget-border);
     border-radius: 999px;
-    padding: 2px;
-    gap: 2px;
-  }
-  .modeOption {
-    background: transparent;
-    color: var(--vscode-descriptionForeground);
-    border: none;
-    border-radius: 999px;
-    padding: 5px 16px;
+    padding: 5px 14px;
     font-size: 11.5px;
     font-weight: 500;
-    letter-spacing: 0.02em;
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
   }
-  .modeOption:hover:not(.active) { color: var(--vscode-foreground); }
-  .modeOption.active { font-weight: 600; }
-  .modeOption[data-mode="free"].active { background: rgba(223, 160, 92, 0.16); color: #DFA05C; }
-  .modeOption[data-mode="paid"].active { background: rgba(76, 163, 158, 0.18); color: #4CA39E; }
+  #modelPill:hover, #effortPill:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+  #modelPill .chev, #effortPill .chev { opacity: 0.6; font-size: 9px; }
+  #modelDropdown, #effortDropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    margin-top: 4px;
+    background: var(--vscode-dropdown-background);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 180px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    z-index: 10;
+  }
+  #modelDropdown { min-width: 220px; }
+  #modelDropdown.open, #effortDropdown.open { display: block; }
+  .variantOption {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 10px;
+    cursor: pointer;
+    color: var(--vscode-dropdown-foreground);
+  }
+  .variantOption:hover { background: var(--vscode-list-hoverBackground); }
+  .variantOption .vLabel { font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .variantOption .vTagline { font-size: 10.5px; color: var(--vscode-descriptionForeground); }
+  .variantOption .vCheck { color: #4CA39E; font-size: 11px; }
+
+  /* Provider picker — replaces the empty state on a brand-new thread until
+     one company is chosen. Deliberately not a dropdown: it's a one-time,
+     deliberate decision, not a quick toggle, so it gets the same visual
+     weight as picking a chat to start. */
+  #providerPicker {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+  #providerPicker.visible { display: flex; }
+  #providerPicker .pickerTitle { font-size: 13.5px; font-weight: 600; }
+  #providerPicker .pickerHint { font-size: 11.5px; color: var(--vscode-descriptionForeground); max-width: 320px; }
+  #providerGrid { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 8px; max-width: 360px; width: 100%; }
+  .providerOption {
+    background: var(--vscode-editorWidget-background);
+    color: var(--vscode-foreground);
+    border: 1px solid var(--vscode-widget-border);
+    border-radius: 10px;
+    padding: 12px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .providerOption:hover { border-color: var(--vscode-focusBorder); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.1)); }
+  .providerOption .pTagline { display: block; margin-top: 3px; font-size: 10px; font-weight: 400; color: var(--vscode-descriptionForeground); }
 
   /* --- Empty state --- */
   #emptyState {
@@ -864,20 +1064,31 @@ export class ChatPanel {
 </style>
 </head>
 <body>
+  <div id="usageBar"><span id="usageStats"></span></div>
   <div id="threadBar">
     <select id="threadSelect"></select>
     <button class="iconBtn" id="newThreadBtn">New</button>
     <button class="iconBtn" id="renameThreadBtn">Rename</button>
+    <button class="iconBtn" id="deleteThreadBtn" title="Delete this chat">Delete</button>
   </div>
-  <div id="modeBar">
-    <div id="modeSwitch">
-      <button class="modeOption" id="freeOption" data-mode="free">Free</button>
-      <button class="modeOption" id="paidOption" data-mode="paid">Paid</button>
+  <div id="modelBar" style="visibility:hidden">
+    <div id="modelPillWrap">
+      <button id="modelPill"><span id="modelPillLabel"></span><span class="chev">&#9662;</span></button>
+      <div id="modelDropdown"></div>
     </div>
+    <div id="effortPillWrap">
+      <button id="effortPill"><span id="effortPillLabel"></span><span class="chev">&#9662;</span></button>
+      <div id="effortDropdown"></div>
+    </div>
+  </div>
+  <div id="providerPicker">
+    <div class="pickerTitle">Choose a provider for this chat</div>
+    <div class="pickerHint">Locked in for this chat once picked — you can switch variants within it anytime, but not to a different provider. Start a new chat for that.</div>
+    <div id="providerGrid"></div>
   </div>
   <div id="emptyState">
     <img src="${mascotDataUri}" alt="">
-    <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Everything routes to a model sized for the job, <strong>free</strong> or <strong>paid</strong>, your call above.</div>
+    <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Every reply in this chat comes from the provider you picked above.</div>
   </div>
   <div id="messages"></div>
   <div id="composerWrap">
@@ -895,15 +1106,36 @@ export class ChatPanel {
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    const PROVIDER_CATALOG = ${providerCatalogJson};
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('inputBox');
     const sendBtn = document.getElementById('sendBtn');
     const threadSelect = document.getElementById('threadSelect');
     const newThreadBtn = document.getElementById('newThreadBtn');
     const renameThreadBtn = document.getElementById('renameThreadBtn');
-    const freeOption = document.getElementById('freeOption');
-    const paidOption = document.getElementById('paidOption');
+    const deleteThreadBtn = document.getElementById('deleteThreadBtn');
+    const usageStatsEl = document.getElementById('usageStats');
+    const modelBarEl = document.getElementById('modelBar');
+    const modelPillEl = document.getElementById('modelPill');
+    const modelPillLabelEl = document.getElementById('modelPillLabel');
+    const modelDropdownEl = document.getElementById('modelDropdown');
+    const effortPillEl = document.getElementById('effortPill');
+    const effortPillLabelEl = document.getElementById('effortPillLabel');
+    const effortDropdownEl = document.getElementById('effortDropdown');
+    const providerPickerEl = document.getElementById('providerPicker');
+    const providerGridEl = document.getElementById('providerGrid');
     const tokenStats = document.getElementById('tokenStats');
+    const EFFORT_LEVELS = [
+      { id: 'low', label: 'Low', tagline: 'Fast, cheapest — trivial follow-ups' },
+      { id: 'medium', label: 'Medium', tagline: 'Balanced — the default' },
+      { id: 'high', label: 'High', tagline: 'Slower, priciest — hard problems' },
+    ];
+    // Which provider/model/effort this thread is currently on — null/default
+    // until the picker has been used once. Everything that gates sending
+    // (the composer) or populates the switchers reads these.
+    let currentProvider = null;
+    let currentModel = null;
+    let currentEffort = 'medium';
     // The one in-flight turn's live state — transcript lines, streamed
     // text, and the eventual final render are three states of this one
     // object/DOM node, not three competing update paths. null whenever
@@ -1003,7 +1235,8 @@ export class ChatPanel {
       sendBtn.textContent = isSending ? '■' : '➤';
       sendBtn.title = isSending ? 'Stop' : 'Send';
       sendBtn.classList.toggle('stopping', isSending);
-      inputEl.disabled = isSending;
+      // Also disabled with no provider picked yet — nothing to send to.
+      inputEl.disabled = isSending || !currentProvider;
     }
 
     // Builds the one bubble a turn lives in for its whole lifecycle:
@@ -1157,9 +1390,149 @@ export class ChatPanel {
       }
     }
 
-    function renderFreeMode(freeMode) {
-      freeOption.classList.toggle('active', freeMode);
-      paidOption.classList.toggle('active', !freeMode);
+    function findProvider(id) {
+      return PROVIDER_CATALOG.find((p) => p.id === id);
+    }
+
+    // Built once — the six providers never change at runtime, only which
+    // one this thread has picked does.
+    function renderProviderGrid() {
+      providerGridEl.innerHTML = '';
+      for (const p of PROVIDER_CATALOG) {
+        const btn = document.createElement('button');
+        btn.className = 'providerOption';
+        btn.textContent = p.label;
+        const tag = document.createElement('span');
+        tag.className = 'pTagline';
+        tag.textContent = p.id === 'free' ? 'No cost, best-effort quality' : p.variants[0].label + ' to start';
+        btn.appendChild(tag);
+        btn.addEventListener('click', () => vscode.postMessage({ type: 'selectProvider', provider: p.id }));
+        providerGridEl.appendChild(btn);
+      }
+    }
+
+    // Rebuilds the switcher dropdown for whichever provider this thread is
+    // locked to — deliberately reads ONLY that one provider's variants
+    // (findProvider(provider).variants), never the full catalog, so there
+    // is no code path in the webview that could render a different
+    // company's models into this list.
+    function renderModelSwitch(provider, model) {
+      if (!provider) {
+        modelBarEl.style.visibility = 'hidden';
+        return;
+      }
+      modelBarEl.style.visibility = 'visible';
+      const p = findProvider(provider);
+      const variant = p && p.variants.find((v) => v.id === model);
+      modelPillLabelEl.textContent = p ? p.label + ' · ' + (variant ? variant.label : '') : '';
+
+      modelDropdownEl.innerHTML = '';
+      if (!p) return;
+      for (const v of p.variants) {
+        const btn = document.createElement('button');
+        btn.className = 'variantOption';
+        const labelRow = document.createElement('span');
+        labelRow.className = 'vLabel';
+        labelRow.textContent = v.label;
+        if (v.id === model) {
+          const check = document.createElement('span');
+          check.className = 'vCheck';
+          check.textContent = '✓';
+          labelRow.appendChild(check);
+        }
+        const tagline = document.createElement('span');
+        tagline.className = 'vTagline';
+        tagline.textContent = v.tagline;
+        btn.appendChild(labelRow);
+        btn.appendChild(tagline);
+        btn.addEventListener('click', () => {
+          modelDropdownEl.classList.remove('open');
+          if (v.id !== model) vscode.postMessage({ type: 'selectModel', model: v.id });
+        });
+        modelDropdownEl.appendChild(btn);
+      }
+    }
+
+    // Hidden entirely (not just disabled) when the current variant's
+    // reasoning flag is false (see providers.ts) — Effort has no
+    // server-side effect there, so showing a control that silently does
+    // nothing would be worse than not showing it. Currently that's only
+    // the Free provider's one Auto variant.
+    function renderEffortSwitch(provider, model, effort) {
+      const p = findProvider(provider);
+      const variant = p && p.variants.find((v) => v.id === model);
+      const supported = !!variant && variant.reasoning;
+      effortPillEl.parentElement.style.display = supported ? '' : 'none';
+      if (!supported) return;
+
+      const current = EFFORT_LEVELS.find((e) => e.id === effort) || EFFORT_LEVELS[1];
+      effortPillLabelEl.textContent = 'Effort: ' + current.label;
+
+      effortDropdownEl.innerHTML = '';
+      for (const e of EFFORT_LEVELS) {
+        const btn = document.createElement('button');
+        btn.className = 'variantOption';
+        const labelRow = document.createElement('span');
+        labelRow.className = 'vLabel';
+        labelRow.textContent = e.label;
+        if (e.id === effort) {
+          const check = document.createElement('span');
+          check.className = 'vCheck';
+          check.textContent = '✓';
+          labelRow.appendChild(check);
+        }
+        const tagline = document.createElement('span');
+        tagline.className = 'vTagline';
+        tagline.textContent = e.tagline;
+        btn.appendChild(labelRow);
+        btn.appendChild(tagline);
+        btn.addEventListener('click', () => {
+          effortDropdownEl.classList.remove('open');
+          if (e.id !== effort) vscode.postMessage({ type: 'selectEffort', effort: e.id });
+        });
+        effortDropdownEl.appendChild(btn);
+      }
+    }
+
+    // The single entry point for "which provider/model/effort is this
+    // thread on" — called from every init/reply so the picker, pills,
+    // dropdowns, and composer-enabled state can never drift out of sync
+    // with each other.
+    function applyProviderState(provider, model, effort) {
+      currentProvider = provider || null;
+      currentModel = model || null;
+      currentEffort = effort || 'medium';
+      providerPickerEl.classList.toggle('visible', !currentProvider);
+      // renderMessages() (called just before this, on every init) already
+      // decided emptyState/messages visibility from the message count —
+      // only override it here for the "no provider yet" case, so the
+      // picker isn't competing with the empty-state hint on screen at once.
+      if (!currentProvider) {
+        emptyStateEl.style.display = 'none';
+        messagesEl.style.display = 'none';
+      }
+      renderModelSwitch(currentProvider, currentModel);
+      renderEffortSwitch(currentProvider, currentModel, currentEffort);
+      setSending(false);
+    }
+
+    modelPillEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      effortDropdownEl.classList.remove('open');
+      modelDropdownEl.classList.toggle('open');
+    });
+    effortPillEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modelDropdownEl.classList.remove('open');
+      effortDropdownEl.classList.toggle('open');
+    });
+    document.addEventListener('click', () => {
+      modelDropdownEl.classList.remove('open');
+      effortDropdownEl.classList.remove('open');
+    });
+
+    function renderUsageStats(dayTokens, monthCost) {
+      usageStatsEl.textContent = 'Today: ' + (dayTokens || 0).toLocaleString() + ' tok  ·  Month: ' + formatCost(monthCost);
     }
 
     function renderThreadStats(totalTokens, totalCost) {
@@ -1281,8 +1654,7 @@ export class ChatPanel {
     });
     newThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'newThread' }));
     renameThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'renameThread' }));
-    freeOption.addEventListener('click', () => vscode.postMessage({ type: 'setFreeMode', value: true }));
-    paidOption.addEventListener('click', () => vscode.postMessage({ type: 'setFreeMode', value: false }));
+    deleteThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'deleteThread' }));
     threadSelect.addEventListener('change', () => {
       vscode.postMessage({ type: 'switchThread', id: threadSelect.value });
     });
@@ -1292,8 +1664,9 @@ export class ChatPanel {
       if (msg.type === 'init') {
         renderThreadList(msg.threads, msg.activeThreadId);
         renderMessages(msg.messages);
-        renderFreeMode(msg.freeMode);
+        applyProviderState(msg.provider, msg.model, msg.effort);
         renderThreadStats(msg.threadTokens, msg.threadCost);
+        renderUsageStats(msg.dayTokens, msg.monthCost);
         return;
       }
       if (msg.type === 'threadListUpdated') {
@@ -1321,6 +1694,7 @@ export class ChatPanel {
       } else if (msg.type === 'reply') {
         finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
         renderThreadStats(msg.threadTokens, msg.threadCost);
+        renderUsageStats(msg.dayTokens, msg.monthCost);
       } else if (msg.type === 'error') {
         activeTurn.el.remove();
         activeTurn = null;
@@ -1331,6 +1705,7 @@ export class ChatPanel {
       // finalized the UI; this is just the extension's confirmation.
     });
 
+    renderProviderGrid();
     vscode.postMessage({ type: 'ready' });
   </script>
 </body>

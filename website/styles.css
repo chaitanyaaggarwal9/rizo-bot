@@ -470,23 +470,14 @@ td.price { font-variant-numeric: tabular-nums; color: var(--text-dim); }
   gap: 20px;
 }
 
-/* interface screenshots — honest placeholders, not faked mockups; see
-   #interface's HTML comments for exactly which file replaces each one. */
-.screenshot-slot {
-  aspect-ratio: 16 / 10;
-  border: 1px dashed var(--border);
+/* interface screenshots — real captures from the running extension */
+.screenshot {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 24px;
-}
-.screenshot-slot-label {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  color: var(--text-faint);
+  box-shadow: var(--shadow-card);
 }
 
 .feature-card {

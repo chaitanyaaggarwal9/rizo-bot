@@ -12,8 +12,17 @@ website/
 └── assets/
     ├── logo-full.png        source lockup as provided (unused directly)
     ├── logo-word-light.png  "Rizo}_" wordmark, transparent bg, for light backgrounds
-    └── logo-word-dark.png   same, ink recolored light, for dark backgrounds
+    ├── logo-word-dark.png   same, ink recolored light, for dark backgrounds
+    ├── screenshot-provider-picker.png   NEEDED — see #interface in index.html
+    └── screenshot-model-effort.png      NEEDED — see #interface in index.html
 ```
+
+The `#interface` section currently shows a labeled placeholder box for each of
+the two screenshots above instead of a real image — per this repo's own Web
+Design Taste skill ("be honest about what's a placeholder"), a fake mockup
+would be worse than an honest gap. Drop the two PNGs into `assets/`, then
+swap each `.screenshot-slot` `<div>` in `index.html` for an `<img>` pointing
+at the file named in the HTML comment right above it.
 
 ## Local preview
 

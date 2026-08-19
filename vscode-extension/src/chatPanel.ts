@@ -1253,6 +1253,15 @@ export class ChatPanel {
     gap: 6px;
     padding: 2px 8px 8px 24px;
   }
+  /* An author-origin display rule beats the UA stylesheet's own
+     [hidden]{display:none} regardless of source order or specificity —
+     without this, .toolBody's own display: flex above silently wins and
+     the body renders every card pre-expanded no matter what JS sets
+     .hidden to. Caught by actually screenshotting the collapsed state
+     rather than trusting "it compiles." No backticks in this comment —
+     this whole block lives inside getHtml()'s own outer TS template
+     literal, and one would silently truncate it. */
+  .toolBody[hidden] { display: none; }
   .toolBodyBlock { display: flex; flex-direction: column; gap: 2px; }
   .toolBodyTag {
     font-size: 9.5px;

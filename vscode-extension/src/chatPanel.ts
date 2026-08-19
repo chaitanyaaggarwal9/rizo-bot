@@ -929,9 +929,22 @@ export class ChatPanel {
   }
   #emptyState .hint strong { color: var(--vscode-foreground); font-weight: 500; }
 
+  /* --- Motion --- */
+  /* Every new-content animation below is opacity-only, 150-200ms,
+     ease-out — no slide/scale. Same shape independently used by both
+     Claude Code's and Codex's own VS Code extensions (checked their
+     shipped webview CSS directly), not a guess at what "smooth" means. */
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pulseThinking { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes blinkCursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .msg, .transcriptLine { animation: none; }
+    .thinkingDot, .streamCursor { animation: none; opacity: 0.6; }
+  }
+
   /* --- Messages --- */
   #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; animation: .18s ease-out fadeIn; }
   .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
   .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-bottom-left-radius: 4px; }
   .msg .attachedImg { max-width: 220px; max-height: 220px; border-radius: 8px; display: block; margin-top: 6px; }
@@ -947,11 +960,38 @@ export class ChatPanel {
     background: rgba(128,128,128,0.08);
     white-space: pre-wrap;
     word-break: break-word;
+    animation: .15s ease-out fadeIn;
   }
   .transcriptLine.running { opacity: 0.75; }
   .transcriptLine.running::after { content: ' …'; }
   .transcriptLine.failed { color: var(--vscode-errorForeground, #f14c4c); }
   .streamedText { display: block; }
+
+  /* "Thinking…" replaced with 3 dots pulsing in sequence — same
+     opacity-oscillation technique both reference extensions use for
+     their own waiting state (Claude: 1.2s cycle; Codex: 1.75-3s), just
+     staggered per-dot here instead of one shared pulse. */
+  .thinkingDots { display: inline-flex; gap: 3px; align-items: center; height: 13px; }
+  .thinkingDot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--vscode-descriptionForeground);
+    animation: 1.2s ease-in-out infinite pulseThinking;
+  }
+  .thinkingDot:nth-child(2) { animation-delay: 0.15s; }
+  .thinkingDot:nth-child(3) { animation-delay: 0.3s; }
+
+  /* Blinking cursor at the trailing edge of actively-streaming text —
+     same 1s linear blink both reference extensions use for theirs.
+     Removed the instant a turn finalizes (see finalizeTurn). */
+  .streamCursor {
+    display: inline-block;
+    width: 2px; height: 1em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: var(--vscode-foreground);
+    animation: 1s linear infinite blinkCursor;
+  }
+
   .stoppedNote { font-size: 11px; opacity: 0.6; font-style: italic; margin-top: 6px; }
 
   /* --- Markdown rendering (assistant replies only) --- */
@@ -1282,6 +1322,10 @@ export class ChatPanel {
     // transcript lines appended as tool calls happen, then streamed text,
     // then (finalizeTurn) the rendered final content — same DOM node
     // throughout, never removed-and-replaced.
+    // The 3-dot pulse standing in for "Thinking…" — same opacity-
+    // oscillation technique as the CSS's .thinkingDot, just markup.
+    const THINKING_HTML = '<span class="thinkingDots"><span class="thinkingDot"></span><span class="thinkingDot"></span><span class="thinkingDot"></span></span>';
+
     function startTurn(turnId) {
       const el = document.createElement('div');
       el.className = 'msg assistant pending';
@@ -1289,12 +1333,16 @@ export class ChatPanel {
       transcriptEl.className = 'transcript';
       const textEl = document.createElement('span');
       textEl.className = 'streamedText';
-      textEl.textContent = 'Thinking…';
+      textEl.innerHTML = THINKING_HTML;
       el.appendChild(transcriptEl);
       el.appendChild(textEl);
       messagesEl.appendChild(el);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      activeTurn = { id: turnId, el, transcriptEl, textEl, toolLines: new Map(), textBuffer: '', hasText: false };
+      // bufferEl is the inner span actually holding streamed text, created
+      // lazily on the first delta (see handleTextDelta) — kept separate
+      // from the trailing .streamCursor span so writing new text never
+      // clobbers the cursor node.
+      activeTurn = { id: turnId, el, transcriptEl, textEl, bufferEl: null, toolLines: new Map(), textBuffer: '', hasText: false };
       return activeTurn;
     }
 
@@ -1320,9 +1368,18 @@ export class ChatPanel {
 
     function handleTextDelta(turnId, text) {
       if (!activeTurn || activeTurn.id !== turnId) return;
-      if (!activeTurn.hasText) { activeTurn.textBuffer = ''; activeTurn.hasText = true; }
+      if (!activeTurn.hasText) {
+        activeTurn.textBuffer = '';
+        activeTurn.hasText = true;
+        // First real token — swap the thinking-dots out for the streamed-
+        // content span + a trailing blinking cursor (same 1s linear blink
+        // pattern Claude Code's and Codex's own extensions both use at
+        // the trailing edge of in-progress text).
+        activeTurn.textEl.innerHTML = '<span class="streamedContent"></span><span class="streamCursor"></span>';
+        activeTurn.bufferEl = activeTurn.textEl.querySelector('.streamedContent');
+      }
       activeTurn.textBuffer += text;
-      activeTurn.textEl.textContent = activeTurn.textBuffer;
+      activeTurn.bufferEl.textContent = activeTurn.textBuffer;
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -1333,7 +1390,8 @@ export class ChatPanel {
       if (!activeTurn || activeTurn.id !== turnId) return;
       activeTurn.textBuffer = '';
       activeTurn.hasText = false;
-      activeTurn.textEl.textContent = 'Thinking…';
+      activeTurn.bufferEl = null;
+      activeTurn.textEl.innerHTML = THINKING_HTML;
     }
 
     // Swaps the streamed plain text over to rendered markdown exactly

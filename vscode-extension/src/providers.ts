@@ -104,6 +104,18 @@ export function defaultModelForProvider(providerId: string): string {
   return PROVIDERS[providerId]?.variants[0]?.id ?? PROVIDERS.free.variants[0].id;
 }
 
+// The smart-starting-variant pick — same company defaultModelForProvider
+// would've picked, but at the tier estimateStartingTier's heuristic
+// thinks the thread's first message actually needs, clamped to however
+// many variants this company actually has (Free has just the one).
+// Never called past a thread's first message — see
+// complexityEstimator.ts's own comment for why that boundary matters.
+export function startingModelForProvider(providerId: string, tier: number): string {
+  const variants = PROVIDERS[providerId]?.variants ?? PROVIDERS.free.variants;
+  const clamped = Math.min(tier, variants.length - 1);
+  return variants[clamped]?.id ?? variants[0].id;
+}
+
 export function isValidProviderModel(providerId: string, modelId: string): boolean {
   return !!PROVIDERS[providerId]?.variants.some((v) => v.id === modelId);
 }

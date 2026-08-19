@@ -959,13 +959,29 @@ export class ChatPanel {
   /* --- Header / thread bar --- */
   #threadBar {
     display: flex;
+    /* Without this, buttons that don't fit are pushed fully off the
+       right edge and become unreachable rather than visible on a second
+       line — a real bug, not hypothetical: on a normal-width sidebar
+       panel the Settings gear (last child) rendered completely outside
+       the viewport, with no scrollbar or any other way to reach it.
+       Caught by actually rendering this at panel width, not by reading
+       the flexbox rule and assuming it'd be fine. */
+    flex-wrap: wrap;
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--vscode-widget-border);
     align-items: center;
   }
+  /* A <select> resists shrinking below its content's width even with
+     min-width: 0 / width: 0 set directly on it — confirmed empirically
+     (a plain flex item shrinks fine; the native form control specifically
+     doesn't, in Chrome/the Electron renderer VS Code webviews use). The
+     fix is this wrapper: a plain div negotiates the flex-shrink instead,
+     then the select just fills width:100% of whatever room that div
+     ends up with, never negotiating its own intrinsic size at all. */
+  #threadSelectWrap { flex: 1; min-width: 0; }
   #threadSelect {
-    flex: 1;
+    width: 100%;
     background: var(--vscode-dropdown-background);
     color: var(--vscode-dropdown-foreground);
     border: 1px solid var(--vscode-dropdown-border);
@@ -984,11 +1000,6 @@ export class ChatPanel {
     white-space: nowrap;
   }
   .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
-  /* Destructive — the only iconBtn that discards data with no undo
-     (handleDeleteThread's modal confirm is the safety net, not this), so
-     it gets the same warning color the errorForeground already uses
-     elsewhere in this stylesheet rather than blending in with New/Rename. */
-  #deleteThreadBtn:hover { background: rgba(241, 76, 76, 0.15); color: var(--vscode-errorForeground, #f14c4c); border-color: rgba(241, 76, 76, 0.4); }
 
   /* Always-visible spend readout — its own row, top-left, above the
      thread-picker row, global across every thread and provider (see
@@ -1043,10 +1054,18 @@ export class ChatPanel {
   #modelDropdown { min-width: 220px; }
   #modelDropdown.open, #effortDropdown.open { display: block; }
 
-  /* Settings — gear icon in threadBar, same dropdown-shell pattern as the
-     model/effort pills above (absolute-positioned panel, not a modal). */
-  #settingsWrap { position: relative; }
-  #settingsPanel {
+  /* Overflow menu — the one "&#8942;" button in threadBar, same
+     dropdown-shell pattern as the model/effort pills above
+     (absolute-positioned panel, not a modal). Rename/Delete/Settings all
+     live here now instead of each being its own always-visible button —
+     threadBar overflowed on a normal-width sidebar panel otherwise (the
+     select's native minimum width alone can eat the room three-plus
+     fixed-width buttons need, min-width:0 and flex-wrap notwithstanding
+     — confirmed by actually rendering it narrow, not by reasoning about
+     flexbox in the abstract). New chat stays its own button since it's
+     the one action used often enough to deserve one click, not two. */
+  #menuWrap { position: relative; }
+  #menuPanel {
     display: none;
     position: absolute;
     top: 100%;
@@ -1060,7 +1079,7 @@ export class ChatPanel {
     box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     z-index: 20;
   }
-  #settingsPanel.open { display: block; }
+  #menuPanel.open { display: block; }
   .settingsRow { padding: 6px 8px; }
   .settingsLabel { font-size: 11px; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
   .settingsBtn {
@@ -1076,6 +1095,11 @@ export class ChatPanel {
     color: var(--vscode-dropdown-foreground);
   }
   .settingsBtn:hover { background: var(--vscode-list-hoverBackground); }
+  /* Carried over from the old standalone #deleteThreadBtn's own hover
+     style — Delete is the one item in this menu that discards data with
+     no undo beyond the modal confirm it still shows, so it keeps its
+     own warning color instead of blending into Rename/everything else. */
+  .dangerBtn:hover { background: rgba(241, 76, 76, 0.15); color: var(--vscode-errorForeground, #f14c4c); }
   .settingsDivider { height: 1px; background: var(--vscode-widget-border); margin: 4px 2px; }
   .segmented { display: flex; border: 1px solid var(--vscode-widget-border); border-radius: 6px; overflow: hidden; }
   .segmentedOption {
@@ -1463,13 +1487,14 @@ export class ChatPanel {
 <body>
   <div id="usageBar"><span id="usageStats"></span></div>
   <div id="threadBar">
-    <select id="threadSelect"></select>
+    <div id="threadSelectWrap"><select id="threadSelect"></select></div>
     <button class="iconBtn" id="newThreadBtn">New</button>
-    <button class="iconBtn" id="renameThreadBtn">Rename</button>
-    <button class="iconBtn" id="deleteThreadBtn" title="Delete this chat">Delete</button>
-    <div id="settingsWrap">
-      <button class="iconBtn" id="settingsBtn" title="Settings">&#9881;</button>
-      <div id="settingsPanel">
+    <div id="menuWrap">
+      <button class="iconBtn" id="menuBtn" title="Rename, delete, settings">&#8942;</button>
+      <div id="menuPanel">
+        <button class="settingsBtn" id="renameThreadBtn">Rename this chat</button>
+        <button class="settingsBtn dangerBtn" id="deleteThreadBtn">Delete this chat</button>
+        <div class="settingsDivider"></div>
         <button class="settingsBtn" id="changeApiKeyBtn">Change OpenRouter API Key&hellip;</button>
         <div class="settingsDivider"></div>
         <div class="settingsRow">
@@ -1480,10 +1505,10 @@ export class ChatPanel {
           </div>
         </div>
         <div class="settingsRow">
-          <div class="settingsLabel">Focus view</div>
+          <div class="settingsLabel" title="Hides the tool-call transcript, showing only your prompts and the final answers">Focus view</div>
           <div class="segmented" id="focusModeSegmented">
             <button class="segmentedOption" data-value="off">Off</button>
-            <button class="segmentedOption" data-value="on">On &mdash; hide tool activity</button>
+            <button class="segmentedOption" data-value="on">On</button>
           </div>
         </div>
         <div class="settingsDivider"></div>
@@ -1546,8 +1571,8 @@ export class ChatPanel {
     const providerGridEl = document.getElementById('providerGrid');
     const tokenStats = document.getElementById('tokenStats');
     const queueNoteEl = document.getElementById('queueNote');
-    const settingsBtn = document.getElementById('settingsBtn');
-    const settingsPanelEl = document.getElementById('settingsPanel');
+    const menuBtn = document.getElementById('menuBtn');
+    const menuPanelEl = document.getElementById('menuPanel');
     const changeApiKeyBtn = document.getElementById('changeApiKeyBtn');
     const openSettingsBtn = document.getElementById('openSettingsBtn');
     const sendKeySegmented = document.getElementById('sendKeySegmented');
@@ -2042,17 +2067,17 @@ export class ChatPanel {
       modelDropdownEl.classList.remove('open');
       effortDropdownEl.classList.toggle('open');
     });
-    settingsBtn.addEventListener('click', (e) => {
+    menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       modelDropdownEl.classList.remove('open');
       effortDropdownEl.classList.remove('open');
-      settingsPanelEl.classList.toggle('open');
+      menuPanelEl.classList.toggle('open');
     });
-    settingsPanelEl.addEventListener('click', (e) => e.stopPropagation());
+    menuPanelEl.addEventListener('click', (e) => e.stopPropagation());
     document.addEventListener('click', () => {
       modelDropdownEl.classList.remove('open');
       effortDropdownEl.classList.remove('open');
-      settingsPanelEl.classList.remove('open');
+      menuPanelEl.classList.remove('open');
     });
 
     function renderSettingsState(sendKey, focusMode) {
@@ -2071,11 +2096,11 @@ export class ChatPanel {
     }
 
     changeApiKeyBtn.addEventListener('click', () => {
-      settingsPanelEl.classList.remove('open');
+      menuPanelEl.classList.remove('open');
       vscode.postMessage({ type: 'changeApiKey' });
     });
     openSettingsBtn.addEventListener('click', () => {
-      settingsPanelEl.classList.remove('open');
+      menuPanelEl.classList.remove('open');
       vscode.postMessage({ type: 'openExtensionSettings' });
     });
     sendKeySegmented.addEventListener('click', (e) => {
@@ -2255,8 +2280,14 @@ export class ChatPanel {
       send();
     });
     newThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'newThread' }));
-    renameThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'renameThread' }));
-    deleteThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'deleteThread' }));
+    renameThreadBtn.addEventListener('click', () => {
+      menuPanelEl.classList.remove('open');
+      vscode.postMessage({ type: 'renameThread' });
+    });
+    deleteThreadBtn.addEventListener('click', () => {
+      menuPanelEl.classList.remove('open');
+      vscode.postMessage({ type: 'deleteThread' });
+    });
     threadSelect.addEventListener('change', () => {
       vscode.postMessage({ type: 'switchThread', id: threadSelect.value });
     });

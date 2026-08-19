@@ -36,6 +36,17 @@ an honest gap. Everything before this point lives in git history instead.
   several turns re-checking the same missing file instead of writing
   it — zero tool errors, nowhere near the iteration cap, invisible to
   either single-turn signal.
+- Effort auto-suggestion (`providers.ts`'s `effortForTier`) — reuses
+  Smart Starting Variant's same message-complexity tier to also pick
+  the Effort level (low/medium/high) for a turn's `reasoning.effort`.
+  Unlike the model pick, this isn't a thread-level identity trait, so
+  it re-evaluates on *every* turn rather than only the first, and
+  never writes the guess back to thread storage — only used for that
+  turn's own call and reflected live on the Effort pill. Permanently
+  deferred the moment you ever pick an effort level yourself from the
+  switcher (same "an explicit choice always wins over a guess" rule as
+  everywhere else), and skipped outright for a variant that ignores
+  effort entirely (the Free provider's one Auto model).
 
 ## [0.4.2] - 2026-08-19
 

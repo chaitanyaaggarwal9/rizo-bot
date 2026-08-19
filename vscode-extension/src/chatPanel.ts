@@ -38,11 +38,20 @@ import {
   updateThreadSummary,
   setThreadModel,
   setThreadEffort,
+  upgradeThreadTaskType,
   sumThreadTokens,
   sumThreadCost,
 } from './threadStore';
 
-const MAX_TOOL_ITERATIONS = 8;
+// 8 was hitting this wall on ordinary multi-file tasks (portfolio-repo
+// incident, Aug 2026) — Codex's own agent core (codex-rs/core) has no
+// small fixed per-turn cap at all, which is a real part of why tools like
+// it don't feel like they're constantly running out of steps. Not going
+// unbounded here though — a genuinely stuck model burning tool calls
+// should still stop and hand back to you rather than run up cost forever;
+// 30 is a generous multiple of what a normal task (read a few files, make
+// a few edits, verify) actually needs.
+const MAX_TOOL_ITERATIONS = 30;
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
 
@@ -436,6 +445,9 @@ export class ChatPanel {
     const startedAt = Date.now();
     const controller = new AbortController();
     this.activeAbortController = controller;
+    // Hoisted above the try so the catch block can still persist it on a
+    // genuine failure (network error, etc.) — see the catch block below.
+    let userContent: string | ContentPart[] | undefined;
 
     const thread = loadThread(this.context, this.activeThreadId);
     if (!thread?.provider || !thread?.model) {
@@ -457,7 +469,14 @@ export class ChatPanel {
       // chain to try.
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
-      const taskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
+      const messageTaskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
+      // Sticky: a short follow-up ("yes", an email address, "continue")
+      // rarely contains a coding keyword on its own, but a task that
+      // started coding-flavored doesn't stop being one — see
+      // upgradeThreadTaskType's comment in threadStore.ts. Persists the
+      // upgrade so it survives past this turn too.
+      const taskType: TaskType = thread.taskType === 'coding' ? 'coding' : messageTaskType;
+      if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, this.activeThreadId, 'coding');
 
       // Only coding-classified messages get skill instructions loaded —
       // general chat doesn't need engineering-discipline guidance. This
@@ -501,7 +520,7 @@ export class ChatPanel {
       // type in the OpenAI-compatible schema); images become separate
       // image_url parts. Plain string content when there's nothing to
       // attach, so the common case doesn't pay for the array wrapper.
-      let userContent: string | ContentPart[] = effectiveText;
+      userContent = effectiveText;
       if (attachments.length > 0) {
         let combinedText = effectiveText;
         const imageParts: ContentPart[] = [];
@@ -667,7 +686,10 @@ export class ChatPanel {
     } catch (err: any) {
       // Stop was clicked — the webview already showed "Stopped." locally
       // (see send()'s cancel handling), this just confirms the extension
-      // side actually unwound rather than silently continuing.
+      // side actually unwound rather than silently continuing. Deliberately
+      // NOT persisted below — an aborted turn is an intentional user
+      // action with its own UX (the "Stopped." note), not a failure the
+      // next turn needs a history record of.
       if (err.name === 'AbortError') {
         this.panel.webview.postMessage({ type: 'cancelled', turnId });
       } else if (/user not found|401|unauthorized/i.test(err.message)) {
@@ -675,13 +697,12 @@ export class ChatPanel {
         // at all — clear it so the next send re-prompts instead of failing
         // forever on a bad stored key.
         await this.context.secrets.delete(SECRET_KEY);
-        this.panel.webview.postMessage({
-          type: 'error',
-          turnId,
-          error: `${err.message} — cleared the stored key. Send your message again to re-enter it.`,
-        });
+        const error = `${err.message} — cleared the stored key. Send your message again to re-enter it.`;
+        this.panel.webview.postMessage({ type: 'error', turnId, error });
+        this.persistFailedTurn(userContent, error);
       } else {
         this.panel.webview.postMessage({ type: 'error', turnId, error: err.message });
+        this.persistFailedTurn(userContent, `Error: ${err.message}`);
       }
     } finally {
       // Only clear if this turn still owns the controller — a rapid
@@ -689,6 +710,24 @@ export class ChatPanel {
       // out the newer turn's own controller.
       if (this.activeAbortController === controller) this.activeAbortController = undefined;
     }
+  }
+
+  // A turn that throws (network error, etc.) used to vanish from history
+  // entirely — saveThreadMessages only ever ran on the success path, so
+  // the *next* turn's context had a silent gap where "you asked X, it
+  // failed" should have been. userContent is undefined only if the error
+  // happened before the message was even built (e.g. no API key) — nothing
+  // to record in that case, so this just no-ops.
+  private persistFailedTurn(userContent: string | ContentPart[] | undefined, errorText: string) {
+    if (userContent === undefined) return;
+    const thread = loadThread(this.context, this.activeThreadId);
+    if (!thread) return;
+    const updated: StoredMessage[] = [
+      ...thread.messages,
+      { role: 'user', content: userContent },
+      { role: 'assistant', content: errorText },
+    ];
+    saveThreadMessages(this.context, this.activeThreadId, updated);
   }
 
   private getHtml(): string {

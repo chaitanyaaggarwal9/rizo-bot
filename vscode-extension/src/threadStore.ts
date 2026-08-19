@@ -69,6 +69,15 @@ export interface ThreadData extends ThreadMeta {
   // adjustable per turn via the Effort switcher next to the model pill.
   // Undefined is treated as providers.ts's DEFAULT_EFFORT ('medium').
   effort?: 'low' | 'medium' | 'high';
+  // Sticky, monotonic: once a message in this thread classifies as
+  // 'coding', the thread stays 'coding' for the rest of its life, even
+  // when a later message ("yes", an email address, "continue") doesn't
+  // itself contain a trigger word — see chatPanel.ts's handleSend. Without
+  // this, skill-file loading (loadSkillsContent) was reclassified fresh
+  // per message with no memory of an in-progress task, and a mid-task
+  // follow-up could silently lose Coding Discipline for the rest of the
+  // conversation. Undefined/'general' means "not upgraded yet."
+  taskType?: 'coding' | 'general';
 }
 
 function storageRoot(context: vscode.ExtensionContext): string {
@@ -185,6 +194,17 @@ export function setThreadEffort(context: vscode.ExtensionContext, id: string, ef
   const thread = loadThread(context, id);
   if (!thread) return;
   thread.effort = effort;
+  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
+}
+
+// Upgrades the thread to 'coding' the first time any message earns it —
+// never downgrades back to 'general'. No-op if the thread is already
+// 'coding' (avoids a pointless disk write on every single turn).
+export function upgradeThreadTaskType(context: vscode.ExtensionContext, id: string, taskType: 'coding' | 'general'): void {
+  if (taskType !== 'coding') return;
+  const thread = loadThread(context, id);
+  if (!thread || thread.taskType === 'coding') return;
+  thread.taskType = 'coding';
   fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 

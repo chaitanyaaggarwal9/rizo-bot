@@ -2186,6 +2186,42 @@ export class ChatPanel {
       vscode.postMessage({ type: 'attachWorkspaceFile' });
     });
 
+    // Cmd/Ctrl+V with an image on the clipboard (a screenshot, a copied
+    // image) attaches it the same way "Attach file..." does — there was
+    // no paste handling here at all before, so the only way to attach an
+    // image was through the OS file picker even though every other part
+    // of the attachment pipeline (pendingAttachments, renderChips, the
+    // vision-capability check) already fully supports it. 5MB cap
+    // mirrors readAndSendAttachment's own limit on the extension side.
+    const MAX_PASTED_IMAGE_BYTES = 5 * 1024 * 1024;
+    inputEl.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        if (file.size > MAX_PASTED_IMAGE_BYTES) {
+          addMessage('assistant', 'That pasted image is over the 5MB limit — try a smaller one.');
+          continue;
+        }
+        e.preventDefault();
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result;
+          const comma = dataUrl.indexOf(',');
+          pendingAttachments.push({
+            name: 'Pasted image',
+            type: 'image',
+            mimeType: file.type,
+            content: dataUrl.slice(comma + 1),
+          });
+          renderChips();
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
     function renderQueueNote() {
       queueNoteEl.textContent = messageQueue.length
         ? messageQueue.length + ' message' + (messageQueue.length > 1 ? 's' : '') + ' queued — sends once this reply finishes'

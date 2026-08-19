@@ -11,7 +11,7 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 - **Streaming replies with a live tool-call transcript** — see what's actually happening (which file, which command) as it happens, instead of a blank "Thinking..." bubble
 - **Markdown rendering** — code blocks, lists, bold/italic render properly in replies
 - **Stop button** — cancel an in-flight reply any time
-- **File & image attachments**, **multiple named threads** (renameable, deletable with a confirm dialog — and undoable, via an "Undo" toast or the Reopen Closed Session command), and automatic summarization once a chat gets long
+- **File & image attachments** (pick from disk, mention a workspace file, or paste an image straight from the clipboard), **multiple named threads** (renameable, deletable with a confirm dialog — and undoable, via an "Undo" toast or the Reopen Closed Session command), and automatic summarization once a chat gets long
 - **Message queueing** — type a follow-up while Rizo's still working; it sends once the current reply finishes instead of the input locking
 
 **Safety & control**

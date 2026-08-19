@@ -9,6 +9,26 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Added
+- Smart starting variant (`src/complexityEstimator.ts`) — a thread's
+  first message now picks which variant *within its already-locked
+  provider* to start on, instead of always defaulting to that
+  company's cheapest model. A cheap keyword/shape heuristic (no model
+  call) scores the message for coding-flavor, code blocks, stack
+  traces, attachments, length, and "big ask" phrasing
+  (refactor/redesign/migrate/rewrite/etc.); runs once, only before a
+  thread's first send, and only when the model is still sitting at
+  the picker's own default — an explicit manual pick always wins over
+  a guess.
+- Auto-escalation retry — when a turn hits the tool-call iteration cap
+  without finishing, or keeps re-hitting the same failing tool call
+  three times in a row before giving up, the reply now carries a
+  one-click "↑ Retry with {strongest variant}" button (only shown when
+  there's actually a stronger variant left in that provider to offer).
+  Clicking it reuses the existing model-switcher's own code path to
+  re-lock the thread to that variant, then resends — same
+  company-lock rule as everywhere else, no cross-provider escalation.
+
 ## [0.4.2] - 2026-08-19
 
 ### Added

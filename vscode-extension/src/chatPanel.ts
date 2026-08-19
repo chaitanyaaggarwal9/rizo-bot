@@ -775,6 +775,19 @@ export class ChatPanel {
       let finalReply = "I ran out of steps before finishing (hit the tool-call limit for one turn) — say 'continue' and I'll pick back up.";
       const totalUsage = emptyUsage();
 
+      // Struggle evidence for the auto-escalation prompt below — two
+      // deliberately cheap, deterministic signals (no extra model call,
+      // same "pure logic" approach as complexityEstimator.ts) that this
+      // turn needed more than the current variant had:
+      //   - completedNormally stays false only when the loop falls through
+      //     the iteration cap without ever getting a tool-call-free reply.
+      //   - maxConsecutiveToolErrors catches the other failure shape: the
+      //     model gives up and answers anyway after repeatedly hitting the
+      //     same broken approach, well before the cap.
+      let completedNormally = false;
+      let consecutiveToolErrors = 0;
+      let maxConsecutiveToolErrors = 0;
+
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (this.cancelledTurnId === turnId) break;
 
@@ -798,6 +811,7 @@ export class ChatPanel {
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
           finalReply = message.content || '';
+          completedNormally = true;
           break;
         }
 
@@ -823,18 +837,42 @@ export class ChatPanel {
             detail: summary.detail,
           });
           const result = await executeTool(this.context, toolCall.function.name, toolCall.function.arguments);
+          const toolOk = !result.startsWith('Error:');
           this.panel.webview.postMessage({
             type: 'toolEnd',
             turnId,
             callId: toolCall.id,
-            ok: !result.startsWith('Error:'),
+            ok: toolOk,
             resultDetail: summarizeToolResult(result),
           });
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
+          consecutiveToolErrors = toolOk ? 0 : consecutiveToolErrors + 1;
+          maxConsecutiveToolErrors = Math.max(maxConsecutiveToolErrors, consecutiveToolErrors);
         }
       }
 
       const elapsedMs = Date.now() - startedAt;
+
+      // Auto-escalation offer — Roadmap Priority 2. A user-initiated Stop
+      // isn't struggle, it's just Stop, so that's excluded outright. Beyond
+      // that: either the loop never got a tool-call-free reply before the
+      // cap, or it kept re-hitting the same broken tool call three times in
+      // a row before giving up. Only surfaced when there's actually a
+      // stronger variant left in *this* provider to offer — same company-
+      // lock rule as everywhere else (providers.ts) — so Free (one variant)
+      // and an already-top-tier turn never show a button that does nothing.
+      const wasCancelled = this.cancelledTurnId === turnId;
+      const struggled = !wasCancelled && (!completedNormally || maxConsecutiveToolErrors >= 3);
+      let escalationModel: string | undefined;
+      let escalationLabel: string | undefined;
+      if (struggled && provider !== 'free') {
+        const variants = PROVIDERS[provider]?.variants || [];
+        const top = variants[variants.length - 1];
+        if (top && top.id !== model) {
+          escalationModel = top.id;
+          escalationLabel = top.label;
+        }
+      }
 
       // Folds this turn's cost into the running today/this-month totals
       // the header always shows, regardless of which provider answered or
@@ -882,6 +920,8 @@ export class ChatPanel {
         currentModel: model,
         taskType,
         reply: finalReply,
+        escalationModel,
+        escalationLabel,
         usage: totalUsage,
         elapsedMs,
         threadTokens: sumThreadTokens(updated),
@@ -1377,6 +1417,22 @@ export class ChatPanel {
     color: var(--vscode-badge-foreground, inherit);
   }
 
+  .retryEscalateBtn {
+    margin-top: 8px;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--vscode-button-background);
+    background: transparent;
+    color: var(--vscode-button-background);
+    cursor: pointer;
+  }
+  .retryEscalateBtn:hover:not(:disabled) {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+  }
+  .retryEscalateBtn:disabled { opacity: 0.6; cursor: default; }
+
   /* --- Composer --- */
   #composerWrap { border-top: 1px solid var(--vscode-widget-border); padding: 10px 12px 6px; position: relative; }
 
@@ -1862,7 +1918,7 @@ export class ChatPanel {
     // once, using the server's authoritative final string rather than the
     // client's own concatenated deltas — a dropped/reordered textDelta
     // can't cause drift this way.
-    function finalizeTurn(turnId, replyText, model, taskType, usage, elapsedMs) {
+    function finalizeTurn(turnId, replyText, model, taskType, usage, elapsedMs, escalationModel, escalationLabel) {
       if (!activeTurn || activeTurn.id !== turnId) return;
       const turn = activeTurn;
       turn.el.classList.remove('pending');
@@ -1875,6 +1931,33 @@ export class ChatPanel {
         turn.el.insertBefore(tag, br);
       }
       turn.textEl.innerHTML = renderMarkdown(replyText || '');
+      // Live-only affordance for the turn that just struggled — not part
+      // of the persisted transcript, same as the "Stopped." note never
+      // survives a reload either. One click re-locks the thread to the
+      // stronger variant (reusing the exact same 'selectModel' path the
+      // switcher dropdown uses) and resends, so there's exactly one code
+      // path for "this thread's model just changed," not two.
+      if (escalationModel && escalationLabel) {
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.className = 'retryEscalateBtn';
+        retryBtn.textContent = '↑ Retry with ' + escalationLabel;
+        retryBtn.addEventListener('click', () => {
+          retryBtn.disabled = true;
+          retryBtn.textContent = 'Retrying with ' + escalationLabel + '…';
+          vscode.postMessage({ type: 'selectModel', model: escalationModel });
+          const retryText = 'Please try that again with more capability — take another look and finish it properly.';
+          addMessage('user', retryText);
+          if (activeTurn) {
+            messageQueue.push({ text: retryText, attachments: [] });
+            renderQueueNote();
+          } else {
+            dispatchTurn(retryText, []);
+          }
+        });
+        turn.el.appendChild(document.createElement('br'));
+        turn.el.appendChild(retryBtn);
+      }
       activeTurn = null;
       dispatchNextQueued();
     }
@@ -2399,7 +2482,7 @@ export class ChatPanel {
       } else if (msg.type === 'textReset') {
         handleTextReset(msg.turnId);
       } else if (msg.type === 'reply') {
-        finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
+        finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs, msg.escalationModel, msg.escalationLabel);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
         // Catches the pill up immediately if the smart-starting-variant

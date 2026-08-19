@@ -110,7 +110,19 @@ function gitignoreExcludeGlobs(folder: vscode.Uri): string[] {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
-      .map((line) => (line.endsWith('/') ? `**/${line}**` : `**/${line}`));
+      // Most real .gitignore entries for a directory have no trailing
+      // slash ('node_modules', 'dist', not 'dist/') — gitignore itself
+      // matches those against files and directories alike. A bare
+      // `**/dist` glob only matches something literally named "dist",
+      // not anything *inside* it, so a no-trailing-slash directory entry
+      // was silently not excluding its own contents. Emitting both forms
+      // for every line, regardless of trailing slash, covers "is a file
+      // named this" and "is a directory named this" without needing to
+      // stat the filesystem to tell which one a given line means.
+      .flatMap((line) => {
+        const name = line.replace(/\/+$/, '');
+        return [`**/${name}`, `**/${name}/**`];
+      });
   } catch {
     return [];
   }
@@ -253,14 +265,14 @@ export class ChatPanel {
               await vscode.workspace
                 .getConfiguration('rizo')
                 .update('composer.sendKey', message.value, vscode.ConfigurationTarget.Global);
-              this.sendInit();
+              this.sendSettingsUpdate();
             }
             break;
           case 'setFocusMode':
             await vscode.workspace
               .getConfiguration('rizo')
               .update('view.focusMode', !!message.value, vscode.ConfigurationTarget.Global);
-            this.sendInit();
+            this.sendSettingsUpdate();
             break;
           case 'openExtensionSettings':
             await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:ChaitanyaAggarwal.rizo');
@@ -301,6 +313,20 @@ export class ChatPanel {
     });
   }
 
+  // A Settings-panel toggle used to go through sendInit(), which also
+  // re-renders the whole message list and resets activeTurn/messageQueue
+  // client-side — fine on a fresh init, but flipping a setting mid-turn
+  // silently dropped the in-flight reply's tracking and let a second
+  // send() start a concurrent handleSend() for the same thread. This only
+  // ever touches the two settings values, never messages/turn state.
+  private sendSettingsUpdate() {
+    this.panel.webview.postMessage({
+      type: 'settingsUpdate',
+      sendKey: vscode.workspace.getConfiguration('rizo').get<string>('composer.sendKey', 'enter'),
+      focusMode: vscode.workspace.getConfiguration('rizo').get<boolean>('view.focusMode', false),
+    });
+  }
+
   private async handleRename() {
     const thread = loadThread(this.context, this.activeThreadId);
     const name = await vscode.window.showInputBox({
@@ -336,22 +362,29 @@ export class ChatPanel {
     this.sendInit();
 
     if (thread) {
+      // Bound to this exact thread via the closure, not "whatever's in
+      // the shared stash" — VS Code stacks multiple non-modal toasts, so
+      // an older toast's Undo is still clickable after a second delete
+      // has already overwritten LAST_DELETED_THREAD_KEY with a different
+      // thread. Going through the closure instead means clicking *this*
+      // toast always restores *this* thread, regardless of what happened
+      // to the shared stash in the meantime.
       vscode.window.showInformationMessage(`Deleted "${thread.name}".`, 'Undo').then((choice) => {
-        if (choice === 'Undo') this.restoreLastDeleted();
+        if (choice === 'Undo') this.restoreSpecificThread(thread);
       });
     }
   }
 
-  // The "Undo" toast above and the standing rizo.reopenClosedSession
-  // command (see extension.ts) both land here. Only ever restores the one
-  // most-recently-deleted thread — see LAST_DELETED_THREAD_KEY's comment.
-  public async restoreLastDeleted() {
-    const thread = this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY);
-    if (!thread) {
-      vscode.window.showInformationMessage('No recently closed chat to reopen.');
-      return;
+  // Shared by the Undo toast above (bound to the exact thread that toast
+  // is about) and restoreLastDeleted below (best-effort "whatever I most
+  // recently deleted," for the standing command).
+  private async restoreSpecificThread(thread: ThreadData) {
+    // Only clear the stash if it's still this same thread — a second
+    // delete may have already overwritten it with a different one, which
+    // this restore has no business touching.
+    if (this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY)?.id === thread.id) {
+      await this.context.globalState.update(LAST_DELETED_THREAD_KEY, undefined);
     }
-    await this.context.globalState.update(LAST_DELETED_THREAD_KEY, undefined);
     restoreThread(this.context, thread);
     this.activeThreadId = thread.id;
     // Self-healing even without this (activeThreadId is already updated
@@ -360,6 +393,19 @@ export class ChatPanel {
     // postMessage on a cold panel — see addFileToThread's comment.
     await this.ready;
     this.sendInit();
+  }
+
+  // The standing rizo.reopenClosedSession command (extension.ts) lands
+  // here — "whatever I most recently deleted," last-one-wins if more than
+  // one delete happened since. The Undo toast bypasses this entirely and
+  // restores its own specific thread directly (see handleDeleteThread).
+  public async restoreLastDeleted() {
+    const thread = this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY);
+    if (!thread) {
+      vscode.window.showInformationMessage('No recently closed chat to reopen.');
+      return;
+    }
+    await this.restoreSpecificThread(thread);
   }
 
   private async getApiKey(): Promise<string | undefined> {
@@ -528,8 +574,8 @@ export class ChatPanel {
   // the reply is already back with the user (fire-and-forget from
   // handleSend) so this housekeeping never adds to reply latency, and a
   // failure here just means "try again next turn," not a broken chat.
-  private async maybeSummarize(apiKey: string) {
-    const thread = loadThread(this.context, this.activeThreadId);
+  private async maybeSummarize(apiKey: string, threadId: string) {
+    const thread = loadThread(this.context, threadId);
     if (!thread) return;
 
     const already = thread.summarizedCount || 0;
@@ -557,7 +603,7 @@ export class ChatPanel {
     try {
       const { message } = await callOpenRouter(apiKey, SUMMARY_MODEL, prompt);
       const newSummary = (message.content as string) || thread.summary || '';
-      if (newSummary) updateThreadSummary(this.context, this.activeThreadId, newSummary, foldEnd);
+      if (newSummary) updateThreadSummary(this.context, threadId, newSummary, foldEnd);
     } catch {
       // Best-effort — the thread just keeps replaying full history until
       // this succeeds on a later turn.
@@ -565,6 +611,15 @@ export class ChatPanel {
   }
 
   private async handleSend(text: string, turnId: string, attachments: IncomingAttachment[] = []) {
+    // Captured once, up front, and used for every read/write this turn
+    // does — never this.activeThreadId again after this line. A turn can
+    // outlive the panel's "current" thread (the user switches threads,
+    // or deletes this one, while a reply is still in flight); without
+    // this, the turn-start snapshot of messages gets saved under
+    // whatever thread happens to be active when the turn *finishes*,
+    // silently corrupting an unrelated thread's history.
+    const threadId = this.activeThreadId;
+
     const apiKey = await this.getApiKey();
     if (!apiKey) {
       this.panel.webview.postMessage({ type: 'error', error: 'No API key provided.', turnId });
@@ -578,7 +633,7 @@ export class ChatPanel {
     // genuine failure (network error, etc.) — see the catch block below.
     let userContent: string | ContentPart[] | undefined;
 
-    const thread = loadThread(this.context, this.activeThreadId);
+    const thread = loadThread(this.context, threadId);
     if (!thread?.provider || !thread?.model) {
       this.panel.webview.postMessage({ type: 'error', error: 'Pick a provider for this chat first.', turnId });
       return;
@@ -605,7 +660,7 @@ export class ChatPanel {
       // upgradeThreadTaskType's comment in threadStore.ts. Persists the
       // upgrade so it survives past this turn too.
       const taskType: TaskType = thread.taskType === 'coding' ? 'coding' : messageTaskType;
-      if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, this.activeThreadId, 'coding');
+      if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, threadId, 'coding');
 
       // Only coding-classified messages get skill instructions loaded —
       // general chat doesn't need engineering-discipline guidance. This
@@ -781,13 +836,13 @@ export class ChatPanel {
           totalTokens: totalUsage.totalTokens,
         },
       ];
-      saveThreadMessages(this.context, this.activeThreadId, updated);
+      saveThreadMessages(this.context, threadId, updated);
 
       // Auto-name the thread from its first message, same as most chat
       // apps — only when it's still the default name, never overriding a
       // name you set yourself via Rename.
       if ((thread?.messages.length ?? 0) === 0 && thread?.name === DEFAULT_THREAD_NAME) {
-        renameThread(this.context, this.activeThreadId, deriveThreadName(effectiveText));
+        renameThread(this.context, threadId, deriveThreadName(effectiveText));
         this.panel.webview.postMessage({
           type: 'threadListUpdated',
           threads: listThreads(this.context),
@@ -811,7 +866,7 @@ export class ChatPanel {
 
       // Fire-and-forget: never makes the user wait on housekeeping. See
       // maybeSummarize's own comment for what this actually does.
-      void this.maybeSummarize(apiKey);
+      void this.maybeSummarize(apiKey, threadId);
     } catch (err: any) {
       // Stop was clicked — the webview already showed "Stopped." locally
       // (see send()'s cancel handling), this just confirms the extension
@@ -828,10 +883,10 @@ export class ChatPanel {
         await this.context.secrets.delete(SECRET_KEY);
         const error = `${err.message} — cleared the stored key. Send your message again to re-enter it.`;
         this.panel.webview.postMessage({ type: 'error', turnId, error });
-        this.persistFailedTurn(userContent, error);
+        this.persistFailedTurn(threadId, userContent, error);
       } else {
         this.panel.webview.postMessage({ type: 'error', turnId, error: err.message });
-        this.persistFailedTurn(userContent, `Error: ${err.message}`);
+        this.persistFailedTurn(threadId, userContent, `Error: ${err.message}`);
       }
     } finally {
       // Only clear if this turn still owns the controller — a rapid
@@ -847,16 +902,16 @@ export class ChatPanel {
   // failed" should have been. userContent is undefined only if the error
   // happened before the message was even built (e.g. no API key) — nothing
   // to record in that case, so this just no-ops.
-  private persistFailedTurn(userContent: string | ContentPart[] | undefined, errorText: string) {
+  private persistFailedTurn(threadId: string, userContent: string | ContentPart[] | undefined, errorText: string) {
     if (userContent === undefined) return;
-    const thread = loadThread(this.context, this.activeThreadId);
+    const thread = loadThread(this.context, threadId);
     if (!thread) return;
     const updated: StoredMessage[] = [
       ...thread.messages,
       { role: 'user', content: userContent },
       { role: 'assistant', content: errorText },
     ];
-    saveThreadMessages(this.context, this.activeThreadId, updated);
+    saveThreadMessages(this.context, threadId, updated);
   }
 
   private getHtml(): string {
@@ -2089,6 +2144,13 @@ export class ChatPanel {
       }
       if (msg.type === 'threadListUpdated') {
         renderThreadList(msg.threads, msg.activeThreadId);
+        return;
+      }
+      if (msg.type === 'settingsUpdate') {
+        // Deliberately not renderMessages()/applyProviderState() here —
+        // see sendSettingsUpdate's comment. A settings change mid-turn
+        // must never touch activeTurn or the message queue.
+        renderSettingsState(msg.sendKey, msg.focusMode);
         return;
       }
       if (msg.type === 'attachmentAdded') {

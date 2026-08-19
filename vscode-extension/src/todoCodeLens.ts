@@ -14,6 +14,18 @@ import * as vscode from 'vscode';
 const TODO_PATTERN = /\b(TODO|FIXME)\b:?\s*(.*)$/i;
 
 export class TodoCodeLensProvider implements vscode.CodeLensProvider {
+  // VS Code only re-queries provideCodeLenses for an already-open,
+  // unedited document when this fires — without it, toggling
+  // rizo.todoCodeLens.enabled off left stale lenses visible until the
+  // user edited or reopened the file. registerTodoCodeLens wires this to
+  // the config-change listener below.
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+
+  refresh(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     if (!vscode.workspace.getConfiguration('rizo').get<boolean>('todoCodeLens.enabled', true)) return [];
 
@@ -35,7 +47,11 @@ export class TodoCodeLensProvider implements vscode.CodeLensProvider {
 }
 
 export function registerTodoCodeLens(context: vscode.ExtensionContext): vscode.Disposable {
-  const disposable = vscode.languages.registerCodeLensProvider({ scheme: 'file' }, new TodoCodeLensProvider());
-  context.subscriptions.push(disposable);
-  return disposable;
+  const provider = new TodoCodeLensProvider();
+  const providerDisposable = vscode.languages.registerCodeLensProvider({ scheme: 'file' }, provider);
+  const configDisposable = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('rizo.todoCodeLens.enabled')) provider.refresh();
+  });
+  context.subscriptions.push(providerDisposable, configDisposable);
+  return providerDisposable;
 }

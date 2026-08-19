@@ -455,6 +455,19 @@ export class ChatPanel {
     await this.readAndSendAttachment(fsPath);
   }
 
+  // Entry point for the TODO CodeLens ("Implement with Rizo") — fills the
+  // composer and focuses it, but deliberately does NOT send automatically.
+  // A one-click "go implement this" is what Codex's own CodeLens does, but
+  // that also means one accidental/curious click spends real tokens on
+  // whichever paid model the active thread is on with zero review. Prefill
+  // + let the user hit Send themselves is the same non-auto-send precedent
+  // "Mention file from this project..." already sets for pending content.
+  public async prefillComposer(text: string) {
+    this.panel.reveal();
+    await this.ready;
+    this.panel.webview.postMessage({ type: 'prefillComposer', text });
+  }
+
   private async readAndSendAttachment(fsPath: string) {
     try {
       const stat = fs.statSync(fsPath);
@@ -2081,6 +2094,12 @@ export class ChatPanel {
       if (msg.type === 'attachmentAdded') {
         pendingAttachments.push(msg.attachment);
         renderChips();
+        return;
+      }
+      if (msg.type === 'prefillComposer') {
+        inputEl.value = msg.text;
+        autoGrow();
+        inputEl.focus();
         return;
       }
 

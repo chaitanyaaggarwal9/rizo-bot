@@ -42,6 +42,24 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /\beval\s+/i,
 ];
 
+// Zero-width/formatting characters plus bidi embedding/override/isolate
+// controls — the exact class of attack Claude Code shipped a fix for
+// ("commands padded with tabs or invisible Unicode can no longer hide
+// part of the command from the approval dialog"; checked its changelog).
+// Two distinct risks, both closed by the same check: (1) a zero-width
+// character inserted mid-keyword (e.g. between "git" and "push") breaks
+// the \s+ patterns above without breaking how the string looks, evading
+// every regex above; (2) a bidi override can make the *rendered* dialog
+// text read differently from the bytes that actually execute — a
+// "Trojan Source"-style spoof, not a matching problem at all. A
+// legitimate, hand-typed command essentially never contains these, so
+// presence alone is treated as destructive — not just stripped before
+// matching, since stripping would quietly normalize away the one signal
+// that something's off, the same "can't see what's actually running"
+// principle the shell-indirection patterns above already use.
+const INVISIBLE_UNICODE = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/;
+
 export function isDestructive(command: string): boolean {
+  if (INVISIBLE_UNICODE.test(command)) return true;
   return DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
 }

@@ -90,6 +90,26 @@ function emptyUsage(): Usage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 }
 
+// Merges the workspace's root .gitignore into "Mention file from this
+// project..."'s exclude pattern — findFiles' own `exclude` param only ever
+// means the files.exclude setting (VS Code API docs: "not search.exclude"),
+// it doesn't consult .gitignore at all on its own. Simple line-by-line glob
+// conversion, not a full gitignore parser (no negation, no nested
+// .gitignore files) — good enough to keep a project's own build output/
+// vendored deps out of the picker, not a guarantee of exact git semantics.
+function gitignoreExcludeGlobs(folder: vscode.Uri): string[] {
+  try {
+    const content = fs.readFileSync(path.join(folder.fsPath, '.gitignore'), 'utf-8');
+    return content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => (line.endsWith('/') ? `**/${line}**` : `**/${line}`));
+  } catch {
+    return [];
+  }
+}
+
 export class ChatPanel {
   public static currentPanel: ChatPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
@@ -366,11 +386,11 @@ export class ChatPanel {
       vscode.window.showWarningMessage('No workspace folder is open.');
       return;
     }
-    const files = await vscode.workspace.findFiles(
-      '**/*',
-      '{**/node_modules/**,**/.git/**,**/out/**,**/dist/**,**/build/**}',
-      500,
-    );
+    const exclude = `{${[
+      '**/node_modules/**', '**/.git/**', '**/out/**', '**/dist/**', '**/build/**',
+      ...gitignoreExcludeGlobs(folder.uri),
+    ].join(',')}}`;
+    const files = await vscode.workspace.findFiles('**/*', exclude, 500);
     const items = files.map((uri) => ({
       label: path.basename(uri.fsPath),
       description: path.relative(folder.uri.fsPath, uri.fsPath),

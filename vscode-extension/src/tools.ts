@@ -9,6 +9,7 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import { isDestructive } from './destructiveCommands';
 import { scanDangerousPatterns } from './dangerousPatterns';
+import { redactSecrets } from './outputRedaction';
 
 export interface ToolDefinition {
   type: 'function';
@@ -74,7 +75,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'run_command',
       description:
-        'Run a shell command in the workspace root — git, npm, tests, build scripts, etc. Requires user approval before running. Commands that look destructive (force-push, hard reset, branch deletion, rm -rf) get an extra emphasized warning, per Git Hygiene\'s rule that hard-to-reverse operations need the same confirm-first habit as any other risky action.',
+        'Run a shell command in the workspace root — git, npm, tests, build scripts, etc. Requires user approval before running. Commands that look destructive (force-push, hard reset, branch deletion, rm -rf) or that hide what they actually run (piping a remote download into a shell, `bash -c "..."`, `eval`) get an extra emphasized warning, per Git Hygiene\'s rule that hard-to-reverse or opaque operations need the same confirm-first habit as any other risky action.',
       parameters: {
         type: 'object',
         properties: { command: { type: 'string', description: 'The shell command to run' } },
@@ -304,9 +305,22 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   const root = getWorkspaceRoot();
   return new Promise((resolve) => {
     exec(command, { cwd: root, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
+      // Unlike read_file (deliberately reads whatever file the model
+      // asked for — reviewed and accepted as this app's designed
+      // behavior, not a gap), a command's output is often an accidental
+      // exposure: `env`, `cat .env`, `aws configure list`, `git log -p`
+      // on a repo with a committed secret — the model's *intent* was
+      // rarely "show me a credential," it just happened to be in the
+      // output. Redacted here so it never enters the model's context
+      // (and from there, thread history on disk, and back out to
+      // OpenRouter) at all, rather than relying on a human to notice it
+      // in the approval prompt — the command's own text is what gets
+      // approved, not its output, so there's no review step for this.
+      const stdoutSafe = stdout ? redactSecrets(stdout) : stdout;
+      const stderrSafe = stderr ? redactSecrets(stderr) : stderr;
       const parts: string[] = [];
-      if (stdout) parts.push(`stdout:\n${stdout}`);
-      if (stderr) parts.push(`stderr:\n${stderr}`);
+      if (stdoutSafe) parts.push(`stdout:\n${stdoutSafe}`);
+      if (stderrSafe) parts.push(`stderr:\n${stderrSafe}`);
       if (error) {
         const killed = (error as any).killed ? ' (killed — likely hit the 60s timeout)' : '';
         parts.push(`exit code: ${(error as any).code ?? 'unknown'}${killed}`);

@@ -188,14 +188,26 @@ read/write and command-running tools:
   selectively-loaded approach as the server, bundled into the extension so
   every install gets identical instructions
 - **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
-  read-only), `write_file`/`edit_file` (diff preview + modal approval
-  before anything touches disk), `run_command` (approval-gated, with an
-  elevated warning for destructive-looking commands like force-push,
-  hard reset, `branch -D`, `rm -rf`, and their long-form/colon-refspec
-  equivalents). Non-destructive approvals can be set to "Always Allow
-  (this project)" — destructive ones can't, on purpose. Tool activity
-  itself stays hidden behind a plain "Thinking..." until the final
-  answer; the approval prompts are unaffected and still show full detail.
+  read-only, reads the live editor buffer directly when a file's open
+  with unsaved changes), `write_file`/`edit_file` (diff preview + modal
+  approval before anything touches disk), `run_command` (approval-gated,
+  with an elevated, non-bypassable warning for destructive-looking
+  commands like force-push, hard reset, `branch -D`, `rm -rf`, and their
+  long-form/colon-refspec equivalents — and separately for shell
+  indirection that hides what's actually running, like a remote script
+  piped into `sh`/`bash`, `eval`, or `base64 -d | sh`, none of which the
+  destructive-pattern check alone can see into). Non-destructive
+  approvals can be set to "Always Allow (this project)" — destructive/
+  opaque ones can't, on purpose. A live tool-call transcript (start line
+  the moment a call is issued, updated once it resolves) replaced the
+  old plain "Thinking..." placeholder — see "Live tool-call transcript"
+  below.
+- **Command-output redaction** (`src/outputRedaction.ts`) — `run_command`'s
+  stdout/stderr is scanned for API keys, tokens, and private keys (an
+  `.env` dump via `cat`, `env`, `aws configure list`, a JWT in a header
+  dump, etc.) and redacted in place before the result ever reaches the
+  model or gets written into thread history — unlike the command's own
+  text, its *output* has no approval step a human could catch this at
 - **Security pattern-scan on diffs** (`src/dangerousPatterns.ts`) — before
   a write_file/edit_file approval dialog, the proposed change is scanned
   for ~18 high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
@@ -259,7 +271,16 @@ read/write and command-running tools:
   and estimated $ cost (free-tier replies always count as $0)
 - **Threads** (`src/threadStore.ts`) — named conversations persisted to
   VS Code's global storage, auto-titled, switchable from the panel,
-  renameable, and deletable (modal confirm first — no undo)
+  renameable, and deletable (modal confirm first, then an "Undo" toast —
+  or the standing Reopen Closed Session command — restores it)
+- **Message queueing** — the composer stays enabled while a turn is
+  running; a follow-up you send while Rizo's still working queues and
+  auto-dispatches once the current reply finishes, instead of doing
+  nothing
+- **Settings panel** (gear icon in the thread bar) — change your
+  OpenRouter API key without clearing it first, Enter vs Ctrl/Cmd+Enter
+  to send, a Focus view toggle that hides the tool-call transcript, and a
+  link into VS Code's own Settings UI for the rest
 - BYOK — your own OpenRouter key, stored via VS Code Secret Storage,
   never in a file
 

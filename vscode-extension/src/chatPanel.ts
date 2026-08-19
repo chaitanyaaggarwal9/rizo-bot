@@ -19,10 +19,12 @@ import {
   EffortLevel,
   DEFAULT_EFFORT,
   defaultModelForProvider,
+  startingModelForProvider,
   isValidProviderModel,
   findVariant,
   supportsReasoning,
 } from './providers';
+import { estimateStartingTier } from './complexityEstimator';
 import { estimateCost } from './pricing';
 import { getUsage, recordUsage } from './usageStore';
 import {
@@ -639,7 +641,7 @@ export class ChatPanel {
       return;
     }
     const provider = thread.provider;
-    const model = thread.model;
+    let model = thread.model;
     const effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
 
     try {
@@ -661,6 +663,22 @@ export class ChatPanel {
       // upgrade so it survives past this turn too.
       const taskType: TaskType = thread.taskType === 'coding' ? 'coding' : messageTaskType;
       if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, threadId, 'coding');
+
+      // Smart starting variant — the original "cheap classifier decides,
+      // then routes" idea, scoped to the one boundary that actually
+      // makes it safe: only a thread's first message, before anything's
+      // sent, never again after. Skipped entirely if the model isn't
+      // still sitting at the picker's own default — that means you
+      // already manually chose a variant before typing, and an explicit
+      // choice always wins over a guess.
+      if (thread.messages.length === 0 && model === defaultModelForProvider(provider)) {
+        const tier = estimateStartingTier(effectiveText, attachments.length > 0, taskType === 'coding');
+        const smarterModel = startingModelForProvider(provider, tier);
+        if (smarterModel !== model) {
+          setThreadModel(this.context, threadId, provider, smarterModel);
+          model = smarterModel;
+        }
+      }
 
       // Only coding-classified messages get skill instructions loaded —
       // general chat doesn't need engineering-discipline guidance. This
@@ -856,6 +874,12 @@ export class ChatPanel {
         type: 'reply',
         turnId,
         model: answeredBy,
+        // Distinct from answeredBy above (that's this turn's own message
+        // tag) — this is the thread's *current* model, which the smart-
+        // starting-variant check just above may have silently upgraded
+        // for the very first turn. Lets the pill catch up immediately
+        // instead of only on the next full re-render.
+        currentModel: model,
         taskType,
         reply: finalReply,
         usage: totalUsage,
@@ -2378,6 +2402,15 @@ export class ChatPanel {
         finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
+        // Catches the pill up immediately if the smart-starting-variant
+        // check silently upgraded this thread's first turn — otherwise
+        // it'd keep showing the picker's original cheap default until
+        // the next full re-render (a thread switch, panel reopen).
+        if (msg.currentModel && msg.currentModel !== currentModel) {
+          currentModel = msg.currentModel;
+          renderModelSwitch(currentProvider, currentModel);
+          renderEffortSwitch(currentProvider, currentModel, currentEffort);
+        }
       } else if (msg.type === 'error') {
         activeTurn.el.remove();
         activeTurn = null;

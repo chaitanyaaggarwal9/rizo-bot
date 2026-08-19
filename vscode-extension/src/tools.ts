@@ -377,6 +377,20 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
       case 'read_file': {
         const filePath = resolveSafePath(args.path);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
+        // Unlike the attachment flow (readAndSendAttachment in
+        // chatPanel.ts), which already rejects binary files with a clear
+        // warning before a human ever sees them, this had no such check
+        // at all — a PDF, image, archive, or any other binary file was
+        // force-decoded as UTF-8 via fs.readFileSync's 'utf-8' encoding
+        // inside currentContent() and handed to the model as garbled
+        // noise with no error, silently wasting tokens on nothing
+        // useful. Same null-byte-in-first-8KB heuristic as the
+        // attachment flow (the standard cheap tell — it's what git
+        // itself uses to decide binary vs text).
+        const head = fs.readFileSync(filePath).subarray(0, 8000);
+        if (head.includes(0)) {
+          return `Error: ${args.path} looks like a binary file — can't read it as text (no PDF/image/archive text extraction here). If you need its contents, ask the user to describe it or attach it as an image if it's a screenshot.`;
+        }
         return currentContent(filePath);
       }
 

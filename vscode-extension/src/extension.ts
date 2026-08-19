@@ -19,8 +19,20 @@ export function activate(context: vscode.ExtensionContext) {
     ChatPanel.createOrShow(context);
     ChatPanel.currentPanel?.restoreLastDeleted();
   });
+  // uri comes from the Explorer/editor-tab context menu VS Code invoked
+  // this from (the clicked resource) — undefined if somehow run from the
+  // command palette instead, where there's no "the file you right-clicked"
+  // to fall back to, so that case just declines rather than guessing.
+  const addFileToThread = vscode.commands.registerCommand('rizo.addFileToThread', (uri?: vscode.Uri) => {
+    if (!uri) {
+      vscode.window.showWarningMessage('Right-click a file in the Explorer or an editor tab to use this.');
+      return;
+    }
+    ChatPanel.createOrShow(context);
+    ChatPanel.currentPanel?.addFileToThread(uri.fsPath);
+  });
 
-  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession);
+  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession, addFileToThread);
 }
 
 export function deactivate() {}

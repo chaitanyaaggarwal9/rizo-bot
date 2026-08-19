@@ -35,8 +35,20 @@
       {
         "command": "rizo.reopenClosedSession",
         "title": "Rizo: Reopen Closed Session"
+      },
+      {
+        "command": "rizo.addFileToThread",
+        "title": "Add File to Rizo Thread"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        { "command": "rizo.addFileToThread", "group": "rizo" }
+      ],
+      "editor/title/context": [
+        { "command": "rizo.addFileToThread", "group": "rizo" }
+      ]
+    },
     "configuration": {
       "title": "Rizo",
       "properties": {

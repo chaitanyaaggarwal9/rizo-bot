@@ -128,6 +128,14 @@ export class ChatPanel {
   // least refuses to start the *next* one.
   private activeAbortController: AbortController | undefined;
   private cancelledTurnId: string | undefined;
+  // Resolves once the webview's own script has sent 'ready' — a fresh
+  // panel's page load is real wall-clock time, so a postMessage sent
+  // right after createOrShow() (e.g. addFileToThread invoked cold, before
+  // Rizo has ever been opened this session) can otherwise race past the
+  // webview's message listener and land in the void with no error and no
+  // visible effect.
+  private readonly ready: Promise<void>;
+  private resolveReady!: () => void;
 
   public static createOrShow(context: vscode.ExtensionContext) {
     if (ChatPanel.currentPanel) {
@@ -167,6 +175,7 @@ export class ChatPanel {
   private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
     this.panel = panel;
     this.context = context;
+    this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
 
     // Pick up the most recently updated thread, or create one if this is
     // the first time the panel has ever been opened.
@@ -180,6 +189,7 @@ export class ChatPanel {
         switch (message.type) {
           case 'ready':
             this.sendInit();
+            this.resolveReady();
             break;
           case 'send':
             await this.handleSend(message.text, message.turnId, message.attachments || []);
@@ -344,6 +354,11 @@ export class ChatPanel {
     await this.context.globalState.update(LAST_DELETED_THREAD_KEY, undefined);
     restoreThread(this.context, thread);
     this.activeThreadId = thread.id;
+    // Self-healing even without this (activeThreadId is already updated
+    // by the time the webview's own 'ready' handler fires its own
+    // sendInit), but awaiting ready first avoids a redundant/out-of-order
+    // postMessage on a cold panel — see addFileToThread's comment.
+    await this.ready;
     this.sendInit();
   }
 
@@ -428,6 +443,16 @@ export class ChatPanel {
     const choice = await vscode.window.showQuickPick(items, { placeHolder: 'Mention a file from this project' });
     if (!choice) return;
     await this.readAndSendAttachment(choice.uri.fsPath);
+  }
+
+  // Entry point for the Explorer/editor-tab "Add File to Rizo Thread"
+  // context-menu command (extension.ts) — same end state as "Mention file
+  // from this project..." (a pending chip in the composer, not an
+  // immediate send), just reachable without opening that menu first.
+  public async addFileToThread(fsPath: string) {
+    this.panel.reveal();
+    await this.ready;
+    await this.readAndSendAttachment(fsPath);
   }
 
   private async readAndSendAttachment(fsPath: string) {

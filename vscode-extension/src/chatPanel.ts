@@ -1135,11 +1135,13 @@ export class ChatPanel {
 
   #statsBar {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 8px;
     padding: 6px 6px 4px;
     font-size: 11px;
     opacity: 0.55;
   }
+  #queueNote { color: var(--vscode-descriptionForeground); }
 </style>
 </head>
 <body>
@@ -1181,7 +1183,7 @@ export class ChatPanel {
       <textarea id="inputBox" placeholder="Message... (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
       <button id="sendBtn" title="Send">➤</button>
     </div>
-    <div id="statsBar"><span id="tokenStats"></span></div>
+    <div id="statsBar"><span id="queueNote"></span><span id="tokenStats"></span></div>
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -1204,6 +1206,7 @@ export class ChatPanel {
     const providerPickerEl = document.getElementById('providerPicker');
     const providerGridEl = document.getElementById('providerGrid');
     const tokenStats = document.getElementById('tokenStats');
+    const queueNoteEl = document.getElementById('queueNote');
     const EFFORT_LEVELS = [
       { id: 'low', label: 'Low', tagline: 'Fast, cheapest — trivial follow-ups' },
       { id: 'medium', label: 'Medium', tagline: 'Balanced — the default' },
@@ -1215,6 +1218,14 @@ export class ChatPanel {
     let currentProvider = null;
     let currentModel = null;
     let currentEffort = 'medium';
+    // Messages typed while a turn is already running — send() pushes here
+    // instead of dispatching immediately (the input box stays enabled
+    // during a turn now, unlike before). dispatchNextQueued() drains one
+    // per turn completion. Cleared (not drained) on Stop — an explicit
+    // cancel is "abandon this direction," not "skip to the next queued
+    // thing." Cleared on thread switch too, since a queue belongs to
+    // whichever thread's turn it was queued behind.
+    let messageQueue = [];
     // The one in-flight turn's live state — transcript lines, streamed
     // text, and the eventual final render are three states of this one
     // object/DOM node, not three competing update paths. null whenever
@@ -1314,8 +1325,11 @@ export class ChatPanel {
       sendBtn.textContent = isSending ? '■' : '➤';
       sendBtn.title = isSending ? 'Stop' : 'Send';
       sendBtn.classList.toggle('stopping', isSending);
-      // Also disabled with no provider picked yet — nothing to send to.
-      inputEl.disabled = isSending || !currentProvider;
+      // Stays enabled while a turn is running now — send() queues instead
+      // of dispatching immediately when one's already in flight (see
+      // messageQueue). Only actually disabled with no provider picked
+      // yet, since there's nothing to send to at all.
+      inputEl.disabled = !currentProvider;
     }
 
     // Builds the one bubble a turn lives in for its whole lifecycle:
@@ -1412,7 +1426,7 @@ export class ChatPanel {
       }
       turn.textEl.innerHTML = renderMarkdown(replyText || '');
       activeTurn = null;
-      setSending(false);
+      dispatchNextQueued();
     }
 
     // content is either a plain string, or an array of parts ({type:'text',
@@ -1477,7 +1491,11 @@ export class ChatPanel {
       // Only called on a context switch (init/new/switch thread), never
       // mid-reply — safe to drop whatever turn belonged to the view being
       // replaced rather than leave the Stop button stuck showing forever.
+      // Queue is thread-scoped too — a message queued behind this thread's
+      // turn doesn't belong in whichever thread you're switching to.
       activeTurn = null;
+      messageQueue = [];
+      renderQueueNote();
       setSending(false);
       messagesEl.innerHTML = '';
       emptyStateEl.style.display = messages.length === 0 ? 'flex' : 'none';
@@ -1698,6 +1716,32 @@ export class ChatPanel {
       vscode.postMessage({ type: 'attachWorkspaceFile' });
     });
 
+    function renderQueueNote() {
+      queueNoteEl.textContent = messageQueue.length
+        ? messageQueue.length + ' message' + (messageQueue.length > 1 ? 's' : '') + ' queued — sends once this reply finishes'
+        : '';
+    }
+
+    // The actual turn-start — startTurn/postMessage — split out of send()
+    // so a queued item can trigger it later via dispatchNextQueued()
+    // without duplicating this.
+    function dispatchTurn(text, attachments) {
+      const turnId = Date.now() + '-' + Math.random().toString(36).slice(2);
+      startTurn(turnId);
+      setSending(true);
+      vscode.postMessage({ type: 'send', text, attachments, turnId });
+    }
+
+    // Called from every turn-completion path (finalizeTurn, the error
+    // handler) except Stop, which clears the queue instead — see
+    // messageQueue's own comment.
+    function dispatchNextQueued() {
+      if (messageQueue.length === 0) { setSending(false); return; }
+      const next = messageQueue.shift();
+      renderQueueNote();
+      dispatchTurn(next.text, next.attachments);
+    }
+
     function send() {
       const text = inputEl.value.trim();
       if (!text) return;
@@ -1709,6 +1753,9 @@ export class ChatPanel {
             type: 'image_url', image_url: { url: 'data:' + a.mimeType + ';base64,' + a.content },
           }))]
         : text;
+      // Rendered immediately either way — queued or not, the message
+      // landed the moment you hit send, same as any chat app. Only when
+      // its reply actually starts is deferred.
       addMessage('user', displayContent);
 
       const attachments = pendingAttachments;
@@ -1717,10 +1764,12 @@ export class ChatPanel {
       inputEl.value = '';
       autoGrow();
 
-      const turnId = Date.now() + '-' + Math.random().toString(36).slice(2);
-      startTurn(turnId);
-      setSending(true);
-      vscode.postMessage({ type: 'send', text, attachments, turnId });
+      if (activeTurn) {
+        messageQueue.push({ text, attachments });
+        renderQueueNote();
+        return;
+      }
+      dispatchTurn(text, attachments);
     }
 
     // sendBtn does double duty: Send when idle, Stop while a turn is in
@@ -1738,6 +1787,11 @@ export class ChatPanel {
         turn.el.appendChild(stoppedEl);
         turn.el.classList.remove('pending');
         activeTurn = null;
+        // An explicit Stop clears anything queued behind it too, rather
+        // than auto-firing the next one — a cancel is "abandon this
+        // direction," not "skip ahead to the next queued thing."
+        messageQueue = [];
+        renderQueueNote();
         setSending(false);
         return;
       }
@@ -1795,8 +1849,8 @@ export class ChatPanel {
       } else if (msg.type === 'error') {
         activeTurn.el.remove();
         activeTurn = null;
-        setSending(false);
         addMessage('assistant', 'Error: ' + msg.error);
+        dispatchNextQueued();
       }
       // 'cancelled' needs no handling — the local Stop click already
       // finalized the UI; this is just the extension's confirmation.

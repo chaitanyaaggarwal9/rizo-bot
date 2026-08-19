@@ -9,6 +9,35 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-19
+
+### Added
+- Command-output redaction (`src/outputRedaction.ts`) — `run_command`'s
+  stdout/stderr is scanned for API keys, tokens, JWTs, and private keys
+  and redacted in place (e.g. `API_KEY=[REDACTED]`) before the result
+  ever reaches the model or gets written into thread history. Covers
+  this extension's own kind of key (`sk-or-v1-...`) along with GitHub,
+  AWS, and generic labeled secrets — the gap this closes: unlike a
+  command's own text, which gets an approval prompt before it runs, its
+  *output* had no review step at all, so `cat .env`, `env`, or
+  `aws configure list` flowed straight into the conversation with zero
+  scrubbing
+- `destructiveCommands.ts` now also flags shell indirection as
+  destructive — piping a remote download into `sh`/`bash`/`zsh`,
+  `bash -c "..."`, `base64 -d | sh`, `eval` — none of which the existing
+  force-push/rm-rf/hard-reset patterns could see into, so a destructive
+  command run this way previously fell through to the casual,
+  Always-Allow-bypassable approval tier instead of the elevated,
+  non-bypassable one
+
+Both came out of a security-review pass looking specifically at what
+Codex's and Claude Code's own shipped security layers cover that
+Rizo's didn't yet (checked their actual settings schema and, for
+Codex, its real open-source `execpolicy` policy engine) — scoped down
+to what's proportionate for this project's size rather than attempting
+their full OS-level command sandboxing, which neither extension's
+approach would be a reasonable solo-maintainer undertaking to replicate.
+
 ## [0.4.1] - 2026-08-19
 
 ### Added

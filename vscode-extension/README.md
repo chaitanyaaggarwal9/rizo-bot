@@ -11,12 +11,14 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 - **Streaming replies with a live tool-call transcript** — see what's actually happening (which file, which command) as it happens, instead of a blank "Thinking..." bubble
 - **Markdown rendering** — code blocks, lists, bold/italic render properly in replies
 - **Stop button** — cancel an in-flight reply any time
-- **File & image attachments**, **multiple named threads** (renameable, deletable — with a confirm dialog, since there's no undo), and automatic summarization once a chat gets long
+- **File & image attachments**, **multiple named threads** (renameable, deletable with a confirm dialog — and undoable, via an "Undo" toast or the Reopen Closed Session command), and automatic summarization once a chat gets long
+- **Message queueing** — type a follow-up while Rizo's still working; it sends once the current reply finishes instead of the input locking
 
 **Safety & control**
 - **File edits with approval** — every write shows a native diff view before anything touches disk; nothing happens without your click
-- **Terminal & git tools** — with an elevated, non-bypassable warning on destructive commands (force-push, hard reset, branch deletion, `rm -rf`)
+- **Terminal & git tools** — with an elevated, non-bypassable warning on destructive commands (force-push, hard reset, branch deletion, `rm -rf`) or ones that hide what they actually run (piping a remote download into a shell, `bash -c "..."`, `eval`)
 - **Security pattern-scan** — a proposed change is checked against ~18 known-dangerous patterns (`eval`, hardcoded secrets, disabled TLS checks, etc.) and flagged right in the approval dialog, before you click
+- **Command-output redaction** — API keys, tokens, and private keys that happen to show up in a command's output (an `.env` dump, `env`, `aws configure list`) are redacted before they ever reach the model or get stored in thread history
 - **Configurable permissions** — auto-approve specific commands by pattern, or disable a tool entirely, via VS Code settings
 
 **Shortcuts**

@@ -23,6 +23,7 @@ import {
   isValidProviderModel,
   findVariant,
   supportsReasoning,
+  effortForTier,
 } from './providers';
 import { estimateStartingTier } from './complexityEstimator';
 import { detectStruggle } from './struggleDetector';
@@ -643,7 +644,7 @@ export class ChatPanel {
     }
     const provider = thread.provider;
     let model = thread.model;
-    const effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
+    let effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
 
     try {
       // /commit, /review, /test expand to a canned prompt before anything
@@ -665,6 +666,12 @@ export class ChatPanel {
       const taskType: TaskType = thread.taskType === 'coding' ? 'coding' : messageTaskType;
       if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, threadId, 'coding');
 
+      // Shared by both auto-suggestions below — same 0/1/2 read on how
+      // demanding this message looks (coding-flavor, code blocks, stack
+      // traces, attachments, length, "big ask" phrasing). Computed once
+      // per turn regardless of which of the two actually end up using it.
+      const messageTier = estimateStartingTier(effectiveText, attachments.length > 0, taskType === 'coding');
+
       // Smart starting variant — the original "cheap classifier decides,
       // then routes" idea, scoped to the one boundary that actually
       // makes it safe: only a thread's first message, before anything's
@@ -673,12 +680,25 @@ export class ChatPanel {
       // already manually chose a variant before typing, and an explicit
       // choice always wins over a guess.
       if (thread.messages.length === 0 && model === defaultModelForProvider(provider)) {
-        const tier = estimateStartingTier(effectiveText, attachments.length > 0, taskType === 'coding');
-        const smarterModel = startingModelForProvider(provider, tier);
+        const smarterModel = startingModelForProvider(provider, messageTier);
         if (smarterModel !== model) {
           setThreadModel(this.context, threadId, provider, smarterModel);
           model = smarterModel;
         }
+      }
+
+      // Effort auto-suggestion — Roadmap Priority 3. Unlike the model
+      // pick above, effort is a pure per-request API parameter, not a
+      // thread-level identity trait, so this re-evaluates on *every*
+      // turn rather than only the first — and deliberately never
+      // persists to threadStore, so it can't fight the next turn's own
+      // fresh guess. Permanently deferred the moment the user ever picks
+      // an effort level themselves (thread.effortManuallySet — see its
+      // own comment), and skipped for a variant that ignores effort
+      // entirely (supportsReasoning), so there's never a pointless
+      // pill flicker for the Free provider's one Auto model.
+      if (!thread.effortManuallySet && supportsReasoning(provider, model)) {
+        effort = effortForTier(messageTier);
       }
 
       // Only coding-classified messages get skill instructions loaded —
@@ -942,6 +962,12 @@ export class ChatPanel {
         // for the very first turn. Lets the pill catch up immediately
         // instead of only on the next full re-render.
         currentModel: model,
+        // Same idea as currentModel, for effort: this turn's own guess
+        // (or the user's earlier manual pick, unchanged) — never what's
+        // in threadStore, since auto-suggestion deliberately never writes
+        // there. Lets the Effort pill reflect what this reply actually
+        // used without waiting on a full re-render.
+        currentEffort: effort,
         taskType,
         reply: finalReply,
         escalationModel,
@@ -2509,12 +2535,17 @@ export class ChatPanel {
         finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs, msg.escalationModel, msg.escalationLabel);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
-        // Catches the pill up immediately if the smart-starting-variant
-        // check silently upgraded this thread's first turn — otherwise
-        // it'd keep showing the picker's original cheap default until
-        // the next full re-render (a thread switch, panel reopen).
-        if (msg.currentModel && msg.currentModel !== currentModel) {
-          currentModel = msg.currentModel;
+        // Catches the pills up immediately if this turn's own model
+        // and/or effort ended up different from what was already shown —
+        // the smart-starting-variant model upgrade (first turn only) or
+        // effort auto-suggestion (every turn, see handleSend) can each
+        // do this silently. Otherwise they'd keep showing the stale value
+        // until the next full re-render (a thread switch, panel reopen).
+        const modelChanged = msg.currentModel && msg.currentModel !== currentModel;
+        const effortChanged = msg.currentEffort && msg.currentEffort !== currentEffort;
+        if (modelChanged) currentModel = msg.currentModel;
+        if (effortChanged) currentEffort = msg.currentEffort;
+        if (modelChanged || effortChanged) {
           renderModelSwitch(currentProvider, currentModel);
           renderEffortSwitch(currentProvider, currentModel, currentEffort);
         }

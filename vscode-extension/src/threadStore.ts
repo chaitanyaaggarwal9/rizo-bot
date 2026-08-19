@@ -81,6 +81,16 @@ export interface ThreadData extends ThreadMeta {
   // adjustable per turn via the Effort switcher next to the model pill.
   // Undefined is treated as providers.ts's DEFAULT_EFFORT ('medium').
   effort?: 'low' | 'medium' | 'high';
+  // True the moment the user ever touches the Effort switcher themselves
+  // (see setThreadEffort — its only caller is that switcher's handler) —
+  // permanently opts this thread out of effort auto-suggestion
+  // (chatPanel.ts's handleSend), same "an explicit choice always wins
+  // over a guess" rule Smart Starting Variant applies to the model pick.
+  // Unlike that one-shot check, effort auto-suggestion re-evaluates every
+  // turn (effort is a per-request parameter, not a thread-level identity
+  // trait) — this flag is what keeps a single manual override from being
+  // silently clobbered by the very next message's guess.
+  effortManuallySet?: boolean;
   // Sticky, monotonic: once a message in this thread classifies as
   // 'coding', the thread stays 'coding' for the rest of its life, even
   // when a later message ("yes", an email address, "continue") doesn't
@@ -220,6 +230,9 @@ export function setThreadEffort(context: vscode.ExtensionContext, id: string, ef
   const thread = loadThread(context, id);
   if (!thread) return;
   thread.effort = effort;
+  // Every call to this function IS the user picking from the Effort
+  // switcher (its only caller) — see effortManuallySet's own comment.
+  thread.effortManuallySet = true;
   fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 

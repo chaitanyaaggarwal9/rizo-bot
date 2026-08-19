@@ -131,3 +131,15 @@ export function supportsReasoning(providerId: string, modelId: string): boolean 
 export const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 export const DEFAULT_EFFORT: EffortLevel = 'medium';
+
+// Effort auto-suggestion's tier -> level mapping (Roadmap Priority 3, see
+// chatPanel.ts's handleSend). Deliberately the same 0/1/2 tier
+// complexityEstimator.ts's estimateStartingTier already produces for Smart
+// Starting Variant, not a second classifier — reasoning depth needed and
+// model strength needed correlate on the same signals (code blocks, stack
+// traces, "refactor the whole thing" phrasing), so one heuristic serves
+// both call sites. EFFORT_LEVELS has exactly 3 entries, one per tier, so
+// this is really just an array index with a defensive clamp.
+export function effortForTier(tier: number): EffortLevel {
+  return EFFORT_LEVELS[Math.min(Math.max(tier, 0), EFFORT_LEVELS.length - 1)];
+}

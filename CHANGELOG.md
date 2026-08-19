@@ -9,6 +9,51 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-19
+
+### Added
+- Message queueing — the composer no longer disables while a turn is
+  running; typing a follow-up and hitting Enter queues it instead of
+  doing nothing, auto-dispatching once the current reply finishes. Stop
+  clears the queue instead of draining it. A small note above the
+  composer shows how many are waiting
+- Settings panel (gear icon in the thread bar): change your OpenRouter
+  API key without clearing it first, Enter vs Ctrl/Cmd+Enter to send
+  (`rizo.composer.sendKey`), a Focus view toggle that hides the tool-call
+  transcript (`rizo.view.focusMode`), and a link into VS Code's native
+  settings for the rest
+- Reopen Closed Session — deleting a thread now shows an Undo toast, plus
+  a standing `Rizo: Reopen Closed Session` command
+- "Add File to Rizo Thread" — right-click a file in the Explorer or an
+  editor tab to attach it, instead of only the composer's `+` menu
+- TODO CodeLens — "Implement with Rizo" above `TODO`/`FIXME` comments in
+  any file, prefills the composer (deliberately doesn't auto-send)
+
+### Changed
+- "Mention file from this project..." now respects the workspace's root
+  `.gitignore`, not just a hardcoded node_modules/.git/out/dist/build list
+- `read_file`/`write_file`/`edit_file` now read a file's live editor
+  buffer directly when one's open, instead of only ever seeing
+  saved-on-disk content
+- This repo's own commits/PRs no longer carry a Co-Authored-By trailer
+  (`.claude/settings.json`'s `attribution` setting)
+
+### Fixed
+- A QA pass (code-review + a dedicated security-review, run against
+  everything above before it shipped) caught and fixed 8 issues: a
+  Settings-panel toggle mid-turn could silently drop an in-flight reply
+  and let two turns run concurrently on the same thread; the TODO
+  CodeLens command crashed if triggered from the Command Palette instead
+  of an actual CodeLens; the `.gitignore` glob conversion missed
+  directory entries without a trailing slash (the common style); an
+  older, still-visible "Undo" toast could restore the wrong thread after
+  a second delete; `handleSend` could save a reply into the wrong
+  thread's file if the active thread changed mid-turn; right-clicking a
+  folder for "Add File to Thread" produced a raw EISDIR error; the TODO
+  CodeLens didn't refresh when its setting was toggled off; and a file's
+  autosave-before-write could persist an unrelated draft to disk even
+  when the user clicked "Reject" on the actual proposed change
+
 ## [0.4.0] - 2026-08-14
 
 ### Changed

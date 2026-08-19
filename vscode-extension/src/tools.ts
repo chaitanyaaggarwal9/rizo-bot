@@ -159,6 +159,20 @@ function resolveSafePath(relativePath: string): string {
   return resolved;
 }
 
+// Autosaves an open, unsaved editor for this path before read_file/
+// write_file/edit_file touch it. Without this, read_file could hand back
+// stale saved-on-disk content while the real content sits unsaved in an
+// open editor, and a write straight to disk under an open dirty editor
+// either gets silently clobbered on the editor's next save or triggers
+// VS Code's own "file changed on disk" conflict prompt. Best-effort: a
+// save can still fail (permissions, read-only file) — that surfaces as a
+// rejected promise, same as any other fs failure these tools already let
+// bubble up as an `Error: ` string via executeTool's catch.
+async function saveIfDirty(filePath: string): Promise<void> {
+  const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === filePath && d.isDirty);
+  if (doc) await doc.save();
+}
+
 // Per-workspace "don't ask me again" flags. Deliberately NOT offered for
 // destructive commands (see approveCommand) — that warning only means
 // something if it can't be permanently silenced.
@@ -319,12 +333,14 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
       case 'read_file': {
         const filePath = resolveSafePath(args.path);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
+        await saveIfDirty(filePath);
         return fs.readFileSync(filePath, 'utf-8');
       }
 
       case 'write_file': {
         const filePath = resolveSafePath(args.path);
         const isNew = !fs.existsSync(filePath);
+        if (!isNew) await saveIfDirty(filePath);
         const oldContent = isNew ? '' : fs.readFileSync(filePath, 'utf-8');
         const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew, args.content);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
@@ -336,6 +352,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
       case 'edit_file': {
         const filePath = resolveSafePath(args.path);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}. Use write_file to create a new file.`;
+        await saveIfDirty(filePath);
         const oldContent = fs.readFileSync(filePath, 'utf-8');
         const occurrences = oldContent.split(args.old_string).length - 1;
         if (occurrences === 0) return `Error: old_string not found in ${args.path}. No changes made.`;

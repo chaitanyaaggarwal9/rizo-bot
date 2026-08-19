@@ -38,6 +38,7 @@ Turn vague asks into something checkable:
 - "Add validation" → write test cases for invalid inputs, then make them pass.
 - "Fix this bug" → write a test that reproduces it first, then fix until that test passes.
 - "Refactor X" → confirm the existing tests (or behavior) still hold before and after.
+- "Build a page/app/script" → after writing it, check that every reference actually resolves — an HTML `<link>`/`<script src>`, an import, a path passed to a tool. A page whose stylesheet or script you never wrote isn't done, it's broken. Create every file you referenced in the same turn; don't stop after the first one and wait to be asked "is it done?" — if you catch yourself re-checking the same missing file across turns instead of writing it, that's the signal to just write it.
 
 For anything with more than one step, state a short plan up front so the success criteria are visible before work starts, not invented retroactively to match whatever got built.
 

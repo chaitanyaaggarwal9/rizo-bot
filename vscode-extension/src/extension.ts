@@ -12,8 +12,15 @@ export function activate(context: vscode.ExtensionContext) {
   const changeApiKey = vscode.commands.registerCommand('rizo.changeApiKey', () => {
     ChatPanel.changeApiKey(context);
   });
+  // Not bound to Cmd/Ctrl+Shift+T — that's VS Code's own "Reopen Closed
+  // Editor" shortcut already; stepping on it wasn't worth the parallel to
+  // Claude Code's binding. Command palette only.
+  const reopenClosedSession = vscode.commands.registerCommand('rizo.reopenClosedSession', () => {
+    ChatPanel.createOrShow(context);
+    ChatPanel.currentPanel?.restoreLastDeleted();
+  });
 
-  context.subscriptions.push(openChat, changeApiKey);
+  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession);
 }
 
 export function deactivate() {}

@@ -26,6 +26,7 @@ import {
 import { estimateCost } from './pricing';
 import { getUsage, recordUsage } from './usageStore';
 import {
+  ThreadData,
   StoredMessage,
   DEFAULT_THREAD_NAME,
   listThreads,
@@ -34,6 +35,7 @@ import {
   saveThreadMessages,
   renameThread,
   deleteThread,
+  restoreThread,
   deriveThreadName,
   updateThreadSummary,
   setThreadModel,
@@ -54,6 +56,10 @@ import {
 const MAX_TOOL_ITERATIONS = 30;
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
+// Holds exactly one thread — whichever was deleted most recently, cleared
+// once restored. Not a stack: Reopen Closed Session only ever means "the
+// last thing I closed," same as a browser's Cmd/Ctrl+Shift+T.
+const LAST_DELETED_THREAD_KEY = 'rizo.lastDeletedThread';
 
 // Always the cheapest available model, regardless of which provider the
 // user picked for the conversation itself — folding old history into a
@@ -298,23 +304,46 @@ export class ChatPanel {
     }
   }
 
-  // Modal confirm — deleting a chat throws away its whole history with no
-  // undo, so this is deliberately more friction than Rename. If the
-  // deleted thread was the active one, falls back to the next
-  // most-recently-updated thread, or a brand-new one if that was the last
-  // chat left.
+  // Modal confirm first (still meaningfully more friction than Rename —
+  // an accidental double-click on Delete shouldn't hinge on noticing a
+  // toast afterward), then an Undo toast for the case you actually
+  // change your mind. If the deleted thread was the active one, falls
+  // back to the next most-recently-updated thread, or a brand-new one if
+  // that was the last chat left.
   private async handleDeleteThread() {
     const thread = loadThread(this.context, this.activeThreadId);
     const confirm = await vscode.window.showWarningMessage(
-      `Delete "${thread?.name || 'this chat'}"? This can't be undone.`,
+      `Delete "${thread?.name || 'this chat'}"?`,
       { modal: true },
       'Delete',
     );
     if (confirm !== 'Delete') return;
 
+    if (thread) await this.context.globalState.update(LAST_DELETED_THREAD_KEY, thread);
     deleteThread(this.context, this.activeThreadId);
     const remaining = listThreads(this.context);
     this.activeThreadId = remaining.length > 0 ? remaining[0].id : createThread(this.context).id;
+    this.sendInit();
+
+    if (thread) {
+      vscode.window.showInformationMessage(`Deleted "${thread.name}".`, 'Undo').then((choice) => {
+        if (choice === 'Undo') this.restoreLastDeleted();
+      });
+    }
+  }
+
+  // The "Undo" toast above and the standing rizo.reopenClosedSession
+  // command (see extension.ts) both land here. Only ever restores the one
+  // most-recently-deleted thread — see LAST_DELETED_THREAD_KEY's comment.
+  public async restoreLastDeleted() {
+    const thread = this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY);
+    if (!thread) {
+      vscode.window.showInformationMessage('No recently closed chat to reopen.');
+      return;
+    }
+    await this.context.globalState.update(LAST_DELETED_THREAD_KEY, undefined);
+    restoreThread(this.context, thread);
+    this.activeThreadId = thread.id;
     this.sendInit();
   }
 

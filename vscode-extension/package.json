@@ -31,6 +31,10 @@
       {
         "command": "rizo.changeApiKey",
         "title": "Rizo: Change OpenRouter API Key"
+      },
+      {
+        "command": "rizo.reopenClosedSession",
+        "title": "Rizo: Reopen Closed Session"
       }
     ],
     "configuration": {

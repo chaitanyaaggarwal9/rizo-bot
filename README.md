@@ -232,9 +232,11 @@ read/write and command-running tools:
   matching skill (Git Hygiene, Code Review Discipline, Test Discipline)
   and force the 'coding' classification (so the right skill files load)
   regardless of keyword match
-- **Attachments** — "Attach file..." (any file via the OS picker) or
+- **Attachments** — "Attach file..." (any file via the OS picker),
   "Mention file from this project..." (workspace quick pick) from the
-  composer's `+` button. Text files fold into the message; images become
+  composer's `+` button, or paste an image directly into the composer
+  (Cmd/Ctrl+V — reuses the same pipeline as the other two, 5MB cap to
+  match). Text files fold into the message; images become
   real vision attachments. Checked against the current variant's own
   vision flag (`ModelVariant.vision` in `providers.ts`) before sending —
   a non-vision variant (DeepSeek, Kimi, or Free's Auto model) fails with a

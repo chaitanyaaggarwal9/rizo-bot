@@ -6,11 +6,14 @@ import * as vscode from 'vscode';
 import { ChatPanel } from './chatPanel';
 
 export function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand('rizo.openChat', () => {
+  const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
     ChatPanel.createOrShow(context);
   });
+  const changeApiKey = vscode.commands.registerCommand('rizo.changeApiKey', () => {
+    ChatPanel.changeApiKey(context);
+  });
 
-  context.subscriptions.push(disposable);
+  context.subscriptions.push(openChat, changeApiKey);
 }
 
 export function deactivate() {}

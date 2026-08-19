@@ -122,6 +122,22 @@ export class ChatPanel {
     ChatPanel.currentPanel = new ChatPanel(panel, context);
   }
 
+  // Always prompts, unlike getApiKey() (an instance method which only
+  // prompts when no key is stored yet) — this is the explicit "I want to
+  // enter a different key" path, from the command palette or the
+  // in-webview Settings panel. A cancelled/empty prompt leaves whatever
+  // key was already stored untouched rather than clearing it.
+  public static async changeApiKey(context: vscode.ExtensionContext): Promise<boolean> {
+    const key = await vscode.window.showInputBox({
+      prompt: 'Enter your OpenRouter API key (get one at openrouter.ai/keys)',
+      password: true,
+      ignoreFocusOut: true,
+    });
+    if (!key) return false;
+    await context.secrets.store(SECRET_KEY, key.trim());
+    return true;
+  }
+
   private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
     this.panel = panel;
     this.context = context;
@@ -193,6 +209,26 @@ export class ChatPanel {
             }
             break;
           }
+          case 'changeApiKey':
+            await ChatPanel.changeApiKey(this.context);
+            break;
+          case 'setSendKey':
+            if (message.value === 'enter' || message.value === 'ctrlEnter') {
+              await vscode.workspace
+                .getConfiguration('rizo')
+                .update('composer.sendKey', message.value, vscode.ConfigurationTarget.Global);
+              this.sendInit();
+            }
+            break;
+          case 'setFocusMode':
+            await vscode.workspace
+              .getConfiguration('rizo')
+              .update('view.focusMode', !!message.value, vscode.ConfigurationTarget.Global);
+            this.sendInit();
+            break;
+          case 'openExtensionSettings':
+            await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:ChaitanyaAggarwal.rizo');
+            break;
         }
       },
       null,
@@ -220,6 +256,12 @@ export class ChatPanel {
       threadCost: sumThreadCost(messages),
       dayTokens: usage.dayTokens,
       monthCost: usage.monthCost,
+      // Real VS Code settings (contributes.configuration), not workspaceState
+      // — so they're editable from either the in-webview Settings panel or
+      // VS Code's own Settings UI, and stay in sync either way (this always
+      // re-reads live rather than caching what the panel last set).
+      sendKey: vscode.workspace.getConfiguration('rizo').get<string>('composer.sendKey', 'enter'),
+      focusMode: vscode.workspace.getConfiguration('rizo').get<boolean>('view.focusMode', false),
     });
   }
 
@@ -856,6 +898,54 @@ export class ChatPanel {
   }
   #modelDropdown { min-width: 220px; }
   #modelDropdown.open, #effortDropdown.open { display: block; }
+
+  /* Settings — gear icon in threadBar, same dropdown-shell pattern as the
+     model/effort pills above (absolute-positioned panel, not a modal). */
+  #settingsWrap { position: relative; }
+  #settingsPanel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: var(--vscode-dropdown-background);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 8px;
+    padding: 6px;
+    min-width: 240px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    z-index: 20;
+  }
+  #settingsPanel.open { display: block; }
+  .settingsRow { padding: 6px 8px; }
+  .settingsLabel { font-size: 11px; color: var(--vscode-descriptionForeground); margin-bottom: 5px; }
+  .settingsBtn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    padding: 7px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--vscode-dropdown-foreground);
+  }
+  .settingsBtn:hover { background: var(--vscode-list-hoverBackground); }
+  .settingsDivider { height: 1px; background: var(--vscode-widget-border); margin: 4px 2px; }
+  .segmented { display: flex; border: 1px solid var(--vscode-widget-border); border-radius: 6px; overflow: hidden; }
+  .segmentedOption {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 5px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--vscode-descriptionForeground);
+  }
+  .segmentedOption:hover:not(.active) { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+  .segmentedOption.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .segmentedOption + .segmentedOption { border-left: 1px solid var(--vscode-widget-border); }
   .variantOption {
     display: flex;
     flex-direction: column;
@@ -951,6 +1041,11 @@ export class ChatPanel {
 
   /* --- Live tool-call transcript --- */
   .transcript { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  /* Focus view (rizo.view.focusMode) — hides tool-call activity, leaving
+     only prompts and final answers. Live tool lines are still created
+     normally underneath; this is purely visual, so turning it off mid-turn
+     doesn't lose anything. */
+  body.focusMode .transcript { display: none; }
   .transcriptLine {
     font-size: 11.5px;
     font-family: var(--vscode-editor-font-family);
@@ -1151,6 +1246,29 @@ export class ChatPanel {
     <button class="iconBtn" id="newThreadBtn">New</button>
     <button class="iconBtn" id="renameThreadBtn">Rename</button>
     <button class="iconBtn" id="deleteThreadBtn" title="Delete this chat">Delete</button>
+    <div id="settingsWrap">
+      <button class="iconBtn" id="settingsBtn" title="Settings">&#9881;</button>
+      <div id="settingsPanel">
+        <button class="settingsBtn" id="changeApiKeyBtn">Change OpenRouter API Key&hellip;</button>
+        <div class="settingsDivider"></div>
+        <div class="settingsRow">
+          <div class="settingsLabel">Send message with</div>
+          <div class="segmented" id="sendKeySegmented">
+            <button class="segmentedOption" data-value="enter">Enter</button>
+            <button class="segmentedOption" data-value="ctrlEnter">Ctrl/Cmd+Enter</button>
+          </div>
+        </div>
+        <div class="settingsRow">
+          <div class="settingsLabel">Focus view</div>
+          <div class="segmented" id="focusModeSegmented">
+            <button class="segmentedOption" data-value="off">Off</button>
+            <button class="segmentedOption" data-value="on">On &mdash; hide tool activity</button>
+          </div>
+        </div>
+        <div class="settingsDivider"></div>
+        <button class="settingsBtn" id="openSettingsBtn">More settings&hellip;</button>
+      </div>
+    </div>
   </div>
   <div id="modelBar" style="visibility:hidden">
     <div id="modelPillWrap">
@@ -1207,6 +1325,17 @@ export class ChatPanel {
     const providerGridEl = document.getElementById('providerGrid');
     const tokenStats = document.getElementById('tokenStats');
     const queueNoteEl = document.getElementById('queueNote');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsPanelEl = document.getElementById('settingsPanel');
+    const changeApiKeyBtn = document.getElementById('changeApiKeyBtn');
+    const openSettingsBtn = document.getElementById('openSettingsBtn');
+    const sendKeySegmented = document.getElementById('sendKeySegmented');
+    const focusModeSegmented = document.getElementById('focusModeSegmented');
+    // Mirror rizo.composer.sendKey / rizo.view.focusMode — real VS Code
+    // settings (see sendInit), not workspaceState, so they're also editable
+    // from VS Code's own Settings UI. Defaults match package.json's.
+    let currentSendKey = 'enter';
+    let currentFocusMode = false;
     const EFFORT_LEVELS = [
       { id: 'low', label: 'Low', tagline: 'Fast, cheapest — trivial follow-ups' },
       { id: 'medium', label: 'Medium', tagline: 'Balanced — the default' },
@@ -1641,9 +1770,53 @@ export class ChatPanel {
       modelDropdownEl.classList.remove('open');
       effortDropdownEl.classList.toggle('open');
     });
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modelDropdownEl.classList.remove('open');
+      effortDropdownEl.classList.remove('open');
+      settingsPanelEl.classList.toggle('open');
+    });
+    settingsPanelEl.addEventListener('click', (e) => e.stopPropagation());
     document.addEventListener('click', () => {
       modelDropdownEl.classList.remove('open');
       effortDropdownEl.classList.remove('open');
+      settingsPanelEl.classList.remove('open');
+    });
+
+    function renderSettingsState(sendKey, focusMode) {
+      currentSendKey = sendKey || 'enter';
+      currentFocusMode = !!focusMode;
+      for (const btn of sendKeySegmented.children) {
+        btn.classList.toggle('active', btn.dataset.value === currentSendKey);
+      }
+      for (const btn of focusModeSegmented.children) {
+        btn.classList.toggle('active', btn.dataset.value === (currentFocusMode ? 'on' : 'off'));
+      }
+      document.body.classList.toggle('focusMode', currentFocusMode);
+      inputEl.placeholder = currentSendKey === 'ctrlEnter'
+        ? 'Message... (Ctrl/Cmd+Enter to send, Enter for a new line)'
+        : 'Message... (Enter to send, Shift+Enter for a new line)';
+    }
+
+    changeApiKeyBtn.addEventListener('click', () => {
+      settingsPanelEl.classList.remove('open');
+      vscode.postMessage({ type: 'changeApiKey' });
+    });
+    openSettingsBtn.addEventListener('click', () => {
+      settingsPanelEl.classList.remove('open');
+      vscode.postMessage({ type: 'openExtensionSettings' });
+    });
+    sendKeySegmented.addEventListener('click', (e) => {
+      const btn = e.target.closest('.segmentedOption');
+      if (!btn || btn.dataset.value === currentSendKey) return;
+      vscode.postMessage({ type: 'setSendKey', value: btn.dataset.value });
+    });
+    focusModeSegmented.addEventListener('click', (e) => {
+      const btn = e.target.closest('.segmentedOption');
+      if (!btn) return;
+      const wantsOn = btn.dataset.value === 'on';
+      if (wantsOn === currentFocusMode) return;
+      vscode.postMessage({ type: 'setFocusMode', value: wantsOn });
     });
 
     function renderUsageStats(dayTokens, monthCost) {
@@ -1798,10 +1971,16 @@ export class ChatPanel {
       send();
     });
     inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
+      if (e.key !== 'Enter') return;
+      // rizo.composer.sendKey: 'enter' (default) sends on plain Enter,
+      // Shift+Enter for a newline. 'ctrlEnter' flips that — Enter alone
+      // makes a newline, Ctrl/Cmd+Enter sends — for anyone who writes
+      // multi-line prompts often enough that plain Enter sending is the
+      // annoying default.
+      const wantsSend = currentSendKey === 'ctrlEnter' ? e.ctrlKey || e.metaKey : !e.shiftKey;
+      if (!wantsSend) return;
+      e.preventDefault();
+      send();
     });
     newThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'newThread' }));
     renameThreadBtn.addEventListener('click', () => vscode.postMessage({ type: 'renameThread' }));
@@ -1818,6 +1997,7 @@ export class ChatPanel {
         applyProviderState(msg.provider, msg.model, msg.effort);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
+        renderSettingsState(msg.sendKey, msg.focusMode);
         return;
       }
       if (msg.type === 'threadListUpdated') {

@@ -27,6 +27,10 @@
       {
         "command": "rizo.openChat",
         "title": "Rizo: Open Chat"
+      },
+      {
+        "command": "rizo.changeApiKey",
+        "title": "Rizo: Change OpenRouter API Key"
       }
     ],
     "configuration": {
@@ -43,6 +47,18 @@
           "items": { "type": "string", "enum": ["read_file", "write_file", "edit_file", "run_command"] },
           "default": [],
           "description": "Tools listed here are refused outright and not offered to the model at all in this workspace."
+        },
+        "rizo.composer.sendKey": {
+          "type": "string",
+          "enum": ["enter", "ctrlEnter"],
+          "enumDescriptions": ["Enter sends, Shift+Enter for a new line", "Ctrl/Cmd+Enter sends, Enter alone makes a new line"],
+          "default": "enter",
+          "description": "Which key sends a message from the composer."
+        },
+        "rizo.view.focusMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide tool-call activity in the chat, showing only your prompts and the final answers."
         }
       }
     }

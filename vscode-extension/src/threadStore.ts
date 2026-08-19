@@ -154,6 +154,20 @@ export function deleteThread(context: vscode.ExtensionContext, id: string): void
   writeIndex(context, readIndex(context).filter((t) => t.id !== id));
 }
 
+// Writes a full thread back to disk exactly as handed in, plus its index
+// entry — the "Reopen Closed Session" undo path in chatPanel.ts, which
+// stashes a deleted thread's data before deleteThread() runs. Bumps
+// updatedAt to now so a restored thread sorts back to the top of the list
+// (matching "this just came back"), rather than wherever it was before.
+export function restoreThread(context: vscode.ExtensionContext, thread: ThreadData): void {
+  const restored: ThreadData = { ...thread, updatedAt: new Date().toISOString() };
+  fs.writeFileSync(threadFilePath(context, restored.id), JSON.stringify(restored, null, 2));
+
+  const index = readIndex(context).filter((t) => t.id !== restored.id);
+  index.push({ id: restored.id, name: restored.name, createdAt: restored.createdAt, updatedAt: restored.updatedAt });
+  writeIndex(context, index);
+}
+
 export function loadThread(context: vscode.ExtensionContext, id: string): ThreadData | undefined {
   try {
     return JSON.parse(fs.readFileSync(threadFilePath(context, id), 'utf-8'));

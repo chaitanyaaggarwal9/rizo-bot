@@ -33,12 +33,21 @@ export function activate(context: vscode.ExtensionContext) {
     ChatPanel.currentPanel?.addFileToThread(uri.fsPath);
   });
 
-  // line/lineText come from TodoCodeLensProvider's own CodeLens arguments
-  // (todoCodeLens.ts) — not reachable from the command palette on its own,
-  // since there's no "which TODO" to act on without them.
+  // uri/line/lineText come from TodoCodeLensProvider's own CodeLens
+  // arguments (todoCodeLens.ts). Hidden from the command palette
+  // (package.json's commandPalette menu entry, "when": "false") since
+  // there's no "which TODO" to act on from there — but hiding a command
+  // from the palette doesn't stop vscode.commands.executeCommand from
+  // still reaching it (a keybinding, another extension, a stale palette
+  // history entry), so it still needs its own guard, same as
+  // addFileToThread's.
   const implementTodo = vscode.commands.registerCommand(
     'rizo.implementTodo',
-    (uri: vscode.Uri, line: number, lineText: string) => {
+    (uri?: vscode.Uri, line?: number, lineText?: string) => {
+      if (!uri || line === undefined || lineText === undefined) {
+        vscode.window.showWarningMessage('Click "Implement with Rizo" above a TODO/FIXME comment to use this.');
+        return;
+      }
       const relPath = vscode.workspace.asRelativePath(uri);
       const prompt = `Implement this TODO in ${relPath}:${line + 1}:\n\n${lineText.trim()}`;
       ChatPanel.createOrShow(context);

@@ -47,10 +47,14 @@
     ],
     "menus": {
       "explorer/context": [
-        { "command": "rizo.addFileToThread", "group": "rizo" }
+        { "command": "rizo.addFileToThread", "group": "rizo", "when": "!explorerResourceIsFolder" }
       ],
       "editor/title/context": [
         { "command": "rizo.addFileToThread", "group": "rizo" }
+      ],
+      "commandPalette": [
+        { "command": "rizo.addFileToThread", "when": "false" },
+        { "command": "rizo.implementTodo", "when": "false" }
       ]
     },
     "configuration": {

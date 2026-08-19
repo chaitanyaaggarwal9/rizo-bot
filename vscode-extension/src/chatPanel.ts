@@ -25,6 +25,7 @@ import {
   supportsReasoning,
 } from './providers';
 import { estimateStartingTier } from './complexityEstimator';
+import { detectStruggle } from './struggleDetector';
 import { estimateCost } from './pricing';
 import { getUsage, recordUsage } from './usageStore';
 import {
@@ -775,7 +776,7 @@ export class ChatPanel {
       let finalReply = "I ran out of steps before finishing (hit the tool-call limit for one turn) — say 'continue' and I'll pick back up.";
       const totalUsage = emptyUsage();
 
-      // Struggle evidence for the auto-escalation prompt below — two
+      // Struggle evidence for the auto-escalation prompt below — three
       // deliberately cheap, deterministic signals (no extra model call,
       // same "pure logic" approach as complexityEstimator.ts) that this
       // turn needed more than the current variant had:
@@ -784,9 +785,18 @@ export class ChatPanel {
       //   - maxConsecutiveToolErrors catches the other failure shape: the
       //     model gives up and answers anyway after repeatedly hitting the
       //     same broken approach, well before the cap.
+      //   - madeToolCallThisTurn/madeMutatingCallThisTurn feed a *cross-turn*
+      //     check below (against the previous stored assistant turn): a
+      //     turn that pokes around with read-only tools but never writes
+      //     anything looks totally fine on its own — the model that keeps
+      //     re-checking the same broken file across several such turns in a
+      //     row, never fixing it, is exactly the failure mode neither of
+      //     the two single-turn signals above can see.
       let completedNormally = false;
       let consecutiveToolErrors = 0;
       let maxConsecutiveToolErrors = 0;
+      let madeToolCallThisTurn = false;
+      let madeMutatingCallThisTurn = false;
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (this.cancelledTurnId === turnId) break;
@@ -827,6 +837,10 @@ export class ChatPanel {
         // separate, deferred change).
         for (const toolCall of message.tool_calls) {
           if (this.cancelledTurnId === turnId) break;
+          madeToolCallThisTurn = true;
+          if (toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') {
+            madeMutatingCallThisTurn = true;
+          }
           const summary = summarizeToolCall(toolCall.function.name, toolCall.function.arguments);
           this.panel.webview.postMessage({
             type: 'toolStart',
@@ -853,16 +867,24 @@ export class ChatPanel {
 
       const elapsedMs = Date.now() - startedAt;
 
-      // Auto-escalation offer — Roadmap Priority 2. A user-initiated Stop
-      // isn't struggle, it's just Stop, so that's excluded outright. Beyond
-      // that: either the loop never got a tool-call-free reply before the
-      // cap, or it kept re-hitting the same broken tool call three times in
-      // a row before giving up. Only surfaced when there's actually a
-      // stronger variant left in *this* provider to offer — same company-
-      // lock rule as everywhere else (providers.ts) — so Free (one variant)
-      // and an already-top-tier turn never show a button that does nothing.
-      const wasCancelled = this.cancelledTurnId === turnId;
-      const struggled = !wasCancelled && (!completedNormally || maxConsecutiveToolErrors >= 3);
+      // Auto-escalation offer — Roadmap Priority 2 (see struggleDetector.ts
+      // for what actually counts as struggle and why). previousAssistantMsg
+      // reads thread.messages before this turn's own exchange gets appended
+      // a few lines down, so it's genuinely "the turn before this one," not
+      // this one. Only surfaced when there's actually a stronger variant
+      // left in *this* provider to offer — same company-lock rule as
+      // everywhere else (providers.ts) — so Free (one variant) and an
+      // already-top-tier turn never show a button that does nothing.
+      const previousAssistantMsg = [...(thread?.messages || [])].reverse().find((m) => m.role === 'assistant');
+      const struggled = detectStruggle({
+        wasCancelled: this.cancelledTurnId === turnId,
+        completedNormally,
+        maxConsecutiveToolErrors,
+        current: { madeToolCall: madeToolCallThisTurn, madeMutatingCall: madeMutatingCallThisTurn },
+        previous: previousAssistantMsg
+          ? { madeToolCall: !!previousAssistantMsg.madeToolCall, madeMutatingCall: !!previousAssistantMsg.madeMutatingCall }
+          : undefined,
+      });
       let escalationModel: string | undefined;
       let escalationLabel: string | undefined;
       if (struggled && provider !== 'free') {
@@ -892,6 +914,8 @@ export class ChatPanel {
           promptTokens: totalUsage.promptTokens,
           completionTokens: totalUsage.completionTokens,
           totalTokens: totalUsage.totalTokens,
+          madeToolCall: madeToolCallThisTurn,
+          madeMutatingCall: madeMutatingCallThisTurn,
         },
       ];
       saveThreadMessages(this.context, threadId, updated);

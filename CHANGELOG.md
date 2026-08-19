@@ -21,13 +21,21 @@ an honest gap. Everything before this point lives in git history instead.
   the picker's own default — an explicit manual pick always wins over
   a guess.
 - Auto-escalation retry — when a turn hits the tool-call iteration cap
-  without finishing, or keeps re-hitting the same failing tool call
-  three times in a row before giving up, the reply now carries a
-  one-click "↑ Retry with {strongest variant}" button (only shown when
-  there's actually a stronger variant left in that provider to offer).
-  Clicking it reuses the existing model-switcher's own code path to
-  re-lock the thread to that variant, then resends — same
-  company-lock rule as everywhere else, no cross-provider escalation.
+  without finishing, keeps re-hitting the same failing tool call three
+  times in a row before giving up, or (new) shows two turns in a row
+  that both poked around with read-only tools without ever writing
+  anything, the reply now carries a one-click "↑ Retry with {strongest
+  variant}" button (only shown when there's actually a stronger
+  variant left in that provider to offer). Clicking it reuses the
+  existing model-switcher's own code path to re-lock the thread to
+  that variant, then resends — same company-lock rule as everywhere
+  else, no cross-provider escalation. The cross-turn signal
+  (`src/struggleDetector.ts`) closes a real gap the first two missed:
+  a cheap model that writes a broken multi-file page (e.g. an HTML
+  file linking a stylesheet/script it never created) and then spends
+  several turns re-checking the same missing file instead of writing
+  it — zero tool errors, nowhere near the iteration cap, invisible to
+  either single-turn signal.
 
 ## [0.4.2] - 2026-08-19
 

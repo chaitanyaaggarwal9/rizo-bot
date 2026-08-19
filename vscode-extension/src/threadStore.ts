@@ -23,6 +23,18 @@ export interface StoredMessage {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  // Set on assistant turns only — whether this turn called any tool at
+  // all, and whether any of those calls actually mutated something
+  // (write_file/edit_file) rather than just reading/listing. handleSend
+  // compares the current turn's own pair against the *previous* stored
+  // assistant turn's to catch cross-turn stagnation: two turns in a row
+  // that both poked around with tools but never wrote anything — the
+  // "keeps checking the same broken file instead of fixing it" failure
+  // mode a single turn's own tool-error/iteration-cap signals can't see.
+  // Undefined on messages persisted before this existed — deliberately
+  // never treated as false, so old history can't retroactively trigger it.
+  madeToolCall?: boolean;
+  madeMutatingCall?: boolean;
 }
 
 // Sums totalTokens across every assistant message in a thread — the

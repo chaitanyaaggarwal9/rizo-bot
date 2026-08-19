@@ -795,12 +795,14 @@ export class ChatPanel {
         // separate, deferred change).
         for (const toolCall of message.tool_calls) {
           if (this.cancelledTurnId === turnId) break;
+          const summary = summarizeToolCall(toolCall.function.name, toolCall.function.arguments);
           this.panel.webview.postMessage({
             type: 'toolStart',
             turnId,
             callId: toolCall.id,
-            name: toolCall.function.name,
-            argsSummary: summarizeToolCall(toolCall.function.name, toolCall.function.arguments),
+            label: summary.label,
+            title: summary.title,
+            detail: summary.detail,
           });
           const result = await executeTool(this.context, toolCall.function.name, toolCall.function.arguments);
           this.panel.webview.postMessage({
@@ -808,7 +810,7 @@ export class ChatPanel {
             turnId,
             callId: toolCall.id,
             ok: !result.startsWith('Error:'),
-            resultSummary: summarizeToolResult(result),
+            resultDetail: summarizeToolResult(result),
           });
           messages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
         }
@@ -1170,7 +1172,7 @@ export class ChatPanel {
   @keyframes pulseThinking { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @keyframes blinkCursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .msg, .transcriptLine { animation: none; }
+    .msg, .toolCard { animation: none; }
     .thinkingDot, .streamCursor { animation: none; opacity: 0.6; }
   }
 
@@ -1184,24 +1186,92 @@ export class ChatPanel {
   /* --- Live tool-call transcript --- */
   .transcript { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
   /* Focus view (rizo.view.focusMode) — hides tool-call activity, leaving
-     only prompts and final answers. Live tool lines are still created
+     only prompts and final answers. Live tool cards are still created
      normally underneath; this is purely visual, so turning it off mid-turn
      doesn't lose anything. */
   body.focusMode .transcript { display: none; }
-  .transcriptLine {
+
+  /* Two-tier tool card: a single-line header (tag + human-readable intent)
+     always visible, with the exact command/args and result folded away
+     behind a click — same split Claude Code's own transcript uses (its
+     Bash tool takes a required "description" separate from "command" for
+     exactly this reason). Collapsed by default: a turn can now run up to
+     30 tool calls, and showing every raw command/result inline by default
+     was most of what made the old flat transcript read as a wall of text. */
+  .toolCard {
+    border-radius: 6px;
+    background: rgba(128,128,128,0.08);
+    animation: .15s ease-out fadeIn;
+    overflow: hidden;
+  }
+  .toolHeader {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 8px;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .toolHeader:hover { background: rgba(128,128,128,0.1); }
+  .toolStatus { flex-shrink: 0; width: 10px; text-align: center; font-size: 11.5px; }
+  .toolCard.running .toolStatus { opacity: 0.75; }
+  .toolCard.running .toolStatus::after { content: '…'; }
+  .toolCard.failed .toolStatus { color: var(--vscode-errorForeground, #f14c4c); }
+  .toolLabel {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    font-family: var(--vscode-editor-font-family);
+    color: var(--vscode-textLink-foreground);
+    opacity: 0.85;
+  }
+  .toolTitle {
+    flex: 1;
     font-size: 11.5px;
     font-family: var(--vscode-editor-font-family);
     color: var(--vscode-descriptionForeground);
-    padding: 4px 8px;
-    border-radius: 6px;
-    background: rgba(128,128,128,0.08);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toolCard.failed .toolTitle { color: var(--vscode-errorForeground, #f14c4c); }
+  .toolChevron {
+    flex-shrink: 0;
+    font-size: 9px;
+    opacity: 0.5;
+    transition: transform .12s ease;
+  }
+  .toolCard.expanded .toolChevron { transform: rotate(90deg); }
+  .toolBody {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 8px 8px 24px;
+  }
+  .toolBodyBlock { display: flex; flex-direction: column; gap: 2px; }
+  .toolBodyTag {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    opacity: 0.55;
+  }
+  .toolBodyBlock pre {
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 5px;
+    background: var(--vscode-textCodeBlock-background);
+    font-family: var(--vscode-editor-font-family);
+    font-size: 11px;
     white-space: pre-wrap;
     word-break: break-word;
-    animation: .15s ease-out fadeIn;
+    max-height: 260px;
+    overflow-y: auto;
   }
-  .transcriptLine.running { opacity: 0.75; }
-  .transcriptLine.running::after { content: ' …'; }
-  .transcriptLine.failed { color: var(--vscode-errorForeground, #f14c4c); }
   .streamedText { display: block; }
 
   /* "Thinking…" replaced with 3 dots pulsing in sequence — same
@@ -1631,23 +1701,74 @@ export class ChatPanel {
       return activeTurn;
     }
 
-    function handleToolStart(turnId, callId, name, argsSummary) {
+    // Builds one tool-call's two-tier card. bodyEl only gets an IN block
+    // now (if this call has detail — read/write/edit have none, the path
+    // in the title already says it all); handleToolEnd appends the OUT
+    // block once the result's back. Starts collapsed; the header is a
+    // <button> so it's keyboard-toggleable too, not just a click target.
+    function handleToolStart(turnId, callId, label, title, detail) {
       if (!activeTurn || activeTurn.id !== turnId) return;
-      const line = document.createElement('div');
-      line.className = 'transcriptLine running';
-      line.textContent = argsSummary || name;
-      activeTurn.transcriptEl.appendChild(line);
-      activeTurn.toolLines.set(callId, line);
+      const card = document.createElement('div');
+      card.className = 'toolCard running';
+
+      const header = document.createElement('button');
+      header.type = 'button';
+      header.className = 'toolHeader';
+      header.innerHTML =
+        '<span class="toolStatus"></span>' +
+        '<span class="toolLabel"></span>' +
+        '<span class="toolTitle"></span>' +
+        '<span class="toolChevron">▸</span>';
+      header.querySelector('.toolLabel').textContent = label;
+      header.querySelector('.toolTitle').textContent = title;
+
+      const body = document.createElement('div');
+      body.className = 'toolBody';
+      body.hidden = true;
+      if (detail) {
+        const block = document.createElement('div');
+        block.className = 'toolBodyBlock';
+        const tag = document.createElement('span');
+        tag.className = 'toolBodyTag';
+        tag.textContent = 'IN';
+        const pre = document.createElement('pre');
+        pre.textContent = detail;
+        block.appendChild(tag);
+        block.appendChild(pre);
+        body.appendChild(block);
+      }
+
+      header.addEventListener('click', () => {
+        card.classList.toggle('expanded');
+        body.hidden = !card.classList.contains('expanded');
+      });
+
+      card.appendChild(header);
+      card.appendChild(body);
+      activeTurn.transcriptEl.appendChild(card);
+      activeTurn.toolLines.set(callId, { card, body });
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    function handleToolEnd(turnId, callId, ok, resultSummary) {
+    function handleToolEnd(turnId, callId, ok, resultDetail) {
       if (!activeTurn || activeTurn.id !== turnId) return;
-      const line = activeTurn.toolLines.get(callId);
-      if (!line) return;
-      line.classList.remove('running');
-      if (!ok) line.classList.add('failed');
-      line.textContent += (ok ? '  ✓ ' : '  ✗ ') + resultSummary;
+      const entry = activeTurn.toolLines.get(callId);
+      if (!entry) return;
+      entry.card.classList.remove('running');
+      if (!ok) entry.card.classList.add('failed');
+
+      if (resultDetail) {
+        const block = document.createElement('div');
+        block.className = 'toolBodyBlock';
+        const tag = document.createElement('span');
+        tag.className = 'toolBodyTag';
+        tag.textContent = 'OUT';
+        const pre = document.createElement('pre');
+        pre.textContent = resultDetail;
+        block.appendChild(tag);
+        block.appendChild(pre);
+        entry.body.appendChild(block);
+      }
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -2170,9 +2291,9 @@ export class ChatPanel {
       if (!activeTurn || msg.turnId !== activeTurn.id) return;
 
       if (msg.type === 'toolStart') {
-        handleToolStart(msg.turnId, msg.callId, msg.name, msg.argsSummary);
+        handleToolStart(msg.turnId, msg.callId, msg.label, msg.title, msg.detail);
       } else if (msg.type === 'toolEnd') {
-        handleToolEnd(msg.turnId, msg.callId, msg.ok, msg.resultSummary);
+        handleToolEnd(msg.turnId, msg.callId, msg.ok, msg.resultDetail);
       } else if (msg.type === 'textDelta') {
         handleTextDelta(msg.turnId, msg.text);
       } else if (msg.type === 'textReset') {

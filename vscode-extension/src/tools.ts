@@ -78,18 +78,36 @@ export const TOOLS: ToolDefinition[] = [
         'Run a shell command in the workspace root — git, npm, tests, build scripts, etc. Requires user approval before running. Commands that look destructive (force-push, hard reset, branch deletion, rm -rf) or that hide what they actually run (piping a remote download into a shell, `bash -c "..."`, `eval`) get an extra emphasized warning, per Git Hygiene\'s rule that hard-to-reverse or opaque operations need the same confirm-first habit as any other risky action.',
       parameters: {
         type: 'object',
-        properties: { command: { type: 'string', description: 'The shell command to run' } },
-        required: ['command'],
+        properties: {
+          command: { type: 'string', description: 'The shell command to run' },
+          description: {
+            type: 'string',
+            description:
+              'A short (5-10 word), imperative-mood, present-tense summary of what this command does and why, e.g. "Check whether the release tag matches package.json" — NOT a restatement of the command text itself. Shown as the line in the live transcript; the exact command is available on expand.',
+          },
+        },
+        required: ['command', 'description'],
       },
     },
   },
 ];
 
-// For the live tool-call transcript in chatPanel.ts — one line shown the
-// moment a call starts. Best-effort: a malformed args string (still being
+// For the live tool-call transcript in chatPanel.ts's two-tier card: label
+// is the short tool-type tag ("Bash", "Read", ...), title is the one-line
+// human-readable summary always visible, detail is the exact
+// command/args shown only when the card is expanded — same split as
+// Claude Code's own Bash tool (a required "description" parameter
+// separate from "command", specifically so the visible line is intent,
+// not syntax). Best-effort: a malformed args string (still being
 // streamed, or just malformed) falls back to the bare tool name rather
 // than throwing.
-export function summarizeToolCall(name: string, argsJson: string): string {
+export interface ToolCallSummary {
+  label: string;
+  title: string;
+  detail?: string;
+}
+
+export function summarizeToolCall(name: string, argsJson: string): ToolCallSummary {
   let args: any = {};
   try {
     args = JSON.parse(argsJson);
@@ -98,27 +116,34 @@ export function summarizeToolCall(name: string, argsJson: string): string {
   }
   switch (name) {
     case 'read_file':
-      return `Reading ${args.path ?? '(unknown path)'}`;
+      return { label: 'Read', title: args.path ?? '(unknown path)' };
     case 'write_file':
-      return `Writing ${args.path ?? '(unknown path)'}`;
+      return { label: 'Write', title: args.path ?? '(unknown path)' };
     case 'edit_file':
-      return `Editing ${args.path ?? '(unknown path)'}`;
+      return { label: 'Edit', title: args.path ?? '(unknown path)' };
     case 'run_command':
-      return `Running: ${args.command ?? '(unknown command)'}`;
+      // description is a required parameter now, but history replayed
+      // from before this shipped (or a model that just doesn't comply)
+      // won't have one — falls back to showing the command itself as
+      // the title in that case, same as the old single-line behavior.
+      return args.description
+        ? { label: 'Bash', title: args.description, detail: args.command ?? '(unknown command)' }
+        : { label: 'Bash', title: args.command ?? '(unknown command)' };
     default:
-      return name;
+      return { label: name, title: name };
   }
 }
 
-// Never the full result — read_file can return an entire file's contents,
-// run_command's stdout can be large. One collapsed-to-one-line preview.
-const RESULT_SUMMARY_MAX_CHARS = 200;
+// The expanded-detail cap — generous, since this only renders once you
+// click to expand a card, not on every line by default. Still capped:
+// read_file can return an entire file, run_command's stdout can be large,
+// and this ends up in the DOM either way.
+const RESULT_DETAIL_MAX_CHARS = 4000;
 
 export function summarizeToolResult(result: string): string {
-  const oneLine = result.replace(/\s+/g, ' ').trim();
-  return oneLine.length <= RESULT_SUMMARY_MAX_CHARS
-    ? oneLine
-    : oneLine.slice(0, RESULT_SUMMARY_MAX_CHARS) + '…';
+  return result.length <= RESULT_DETAIL_MAX_CHARS
+    ? result
+    : result.slice(0, RESULT_DETAIL_MAX_CHARS) + '\n…(truncated)';
 }
 
 function getWorkspaceRoot(): string {

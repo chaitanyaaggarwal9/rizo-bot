@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { ChatPanel } from './chatPanel';
+import { registerTodoCodeLens } from './todoCodeLens';
 
 export function activate(context: vscode.ExtensionContext) {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
@@ -32,7 +33,21 @@ export function activate(context: vscode.ExtensionContext) {
     ChatPanel.currentPanel?.addFileToThread(uri.fsPath);
   });
 
-  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession, addFileToThread);
+  // line/lineText come from TodoCodeLensProvider's own CodeLens arguments
+  // (todoCodeLens.ts) — not reachable from the command palette on its own,
+  // since there's no "which TODO" to act on without them.
+  const implementTodo = vscode.commands.registerCommand(
+    'rizo.implementTodo',
+    (uri: vscode.Uri, line: number, lineText: string) => {
+      const relPath = vscode.workspace.asRelativePath(uri);
+      const prompt = `Implement this TODO in ${relPath}:${line + 1}:\n\n${lineText.trim()}`;
+      ChatPanel.createOrShow(context);
+      ChatPanel.currentPanel?.prefillComposer(prompt);
+    },
+  );
+  registerTodoCodeLens(context);
+
+  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession, addFileToThread, implementTodo);
 }
 
 export function deactivate() {}

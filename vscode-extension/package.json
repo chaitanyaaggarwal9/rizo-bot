@@ -39,6 +39,10 @@
       {
         "command": "rizo.addFileToThread",
         "title": "Add File to Rizo Thread"
+      },
+      {
+        "command": "rizo.implementTodo",
+        "title": "Implement with Rizo"
       }
     ],
     "menus": {
@@ -75,6 +79,11 @@
           "type": "boolean",
           "default": false,
           "description": "Hide tool-call activity in the chat, showing only your prompts and the final answers."
+        },
+        "rizo.todoCodeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show an \"Implement with Rizo\" CodeLens above TODO/FIXME comments."
         }
       }
     }

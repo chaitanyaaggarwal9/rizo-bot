@@ -3,6 +3,24 @@
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---------- analytics ----------
+  // gtag itself is defined inline in index.html's <head>; guarded here so
+  // this file still works standalone (a local preview with an ad blocker,
+  // a future page that doesn't load the tag) instead of throwing on every
+  // click.
+  function track(event, label) {
+    if (typeof gtag !== 'function') return;
+    gtag('event', event, label ? { label } : undefined);
+  }
+
+  // Every link/button marked data-ga-event in the HTML reports through
+  // here — one listener instead of one per element, see coding-
+  // discipline's rule 2. data-ga-label is optional context (which nav
+  // link, which CTA position) folded into the same event name.
+  document.querySelectorAll('[data-ga-event]').forEach((el) => {
+    el.addEventListener('click', () => track(el.dataset.gaEvent, el.dataset.gaLabel));
+  });
+
   // ---------- theme toggle ----------
   const themeToggle = document.getElementById('theme-toggle');
   const root = document.documentElement;
@@ -19,6 +37,7 @@
     const next = current === 'dark' ? 'light' : 'dark';
     root.setAttribute('data-theme', next);
     localStorage.setItem(STORAGE_KEY, next);
+    track('theme_toggle', next);
   });
 
   // ---------- copy install command ----------
@@ -28,6 +47,7 @@
   copyBtn.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(installCmd);
+      track('copy_install_command');
       const original = copyBtn.innerHTML;
       copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
       copyBtn.setAttribute('aria-label', 'Copied');

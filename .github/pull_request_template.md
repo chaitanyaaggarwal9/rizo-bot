@@ -20,10 +20,11 @@ repeating it — a sentence or two is enough for most PRs. -->
 ### Test Procedure
 
 <!-- How did you verify this? For pure-logic changes (task classification,
-destructive-command detection, pricing, thread storage) a `node -e` check
-against the compiled `out/*.js` is enough — see CONTRIBUTING.md. Anything
-touching the webview, approval dialogs, or file/terminal tools needs a
-manual pass in the Extension Development Host (F5). -->
+model/effort selection, destructive-command detection, pricing, thread
+storage) add or update a test under vscode-extension/src/*.test.ts and run
+`npm test` — see CONTRIBUTING.md. Anything touching the webview, approval
+dialogs, or file/terminal tools needs a manual pass in the Extension
+Development Host (F5). -->
 
 ### Type of Change
 
@@ -40,6 +41,7 @@ manual pass in the Extension Development Host (F5). -->
 
 -   [ ] Changes are limited to a single feature, bugfix, or chore
 -   [ ] `npm run compile` is clean (no TypeScript errors)
+-   [ ] `npm test` is clean (no failing unit tests)
 -   [ ] I checked whether this invalidates anything README.md, CHANGELOG.md,
         or CONTRIBUTING.md currently claims, and updated what's now wrong
 -   [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md)

@@ -31,3 +31,9 @@ jobs:
 
       # Type-checks and builds via tsc — catches TS errors before they land.
       - run: npm run compile
+
+      # Unit tests for every module with no vscode import at module level
+      # (task classification, model/effort selection, destructive-command
+      # detection, dangerous-pattern scanning, secret redaction, pricing,
+      # slash commands, struggle detection) — see vitest.config.mts.
+      - run: npm test

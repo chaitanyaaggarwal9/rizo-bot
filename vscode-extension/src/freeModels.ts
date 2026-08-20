@@ -4,7 +4,6 @@
 
 import { TaskType } from './modelRouter';
 
-// Ported from this repo's original server.js backend, models.config.js.
 // ⚠️ THESE MODEL IDS GO STALE — periodically check
 // https://openrouter.ai/models?max_price=0 and update.
 // Only two buckets (coding/general) — free-tier availability is coarser

@@ -34,6 +34,8 @@ jobs:
 
       - run: npm run compile
 
+      - run: npm test
+
       # Refuses to publish if the tag and package.json disagree — catches
       # "forgot to bump the version" or "tagged the wrong commit" before
       # anything irreversible happens, rather than after. ::error:: makes

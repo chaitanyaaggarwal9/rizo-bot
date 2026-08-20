@@ -2,7 +2,7 @@
   "name": "rizo",
   "displayName": "Rizo",
   "description": "BYOK AI coding assistant — cost-optimized model routing, file edit, terminal, git, all through your own OpenRouter key.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "ChaitanyaAggarwal",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",
@@ -15,11 +15,21 @@
     "url": "https://github.com/chaitanyaaggarwal9/rizo-bot/issues"
   },
   "homepage": "https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md",
-  "keywords": ["ai", "chat", "assistant", "openrouter", "byok", "coding assistant"],
+  "keywords": [
+    "ai",
+    "chat",
+    "assistant",
+    "openrouter",
+    "byok",
+    "coding assistant"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other", "Chat"],
+  "categories": [
+    "Other",
+    "Chat"
+  ],
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -47,14 +57,27 @@
     ],
     "menus": {
       "explorer/context": [
-        { "command": "rizo.addFileToThread", "group": "rizo", "when": "!explorerResourceIsFolder" }
+        {
+          "command": "rizo.addFileToThread",
+          "group": "rizo",
+          "when": "!explorerResourceIsFolder"
+        }
       ],
       "editor/title/context": [
-        { "command": "rizo.addFileToThread", "group": "rizo" }
+        {
+          "command": "rizo.addFileToThread",
+          "group": "rizo"
+        }
       ],
       "commandPalette": [
-        { "command": "rizo.addFileToThread", "when": "false" },
-        { "command": "rizo.implementTodo", "when": "false" }
+        {
+          "command": "rizo.addFileToThread",
+          "when": "false"
+        },
+        {
+          "command": "rizo.implementTodo",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -62,20 +85,36 @@
       "properties": {
         "rizo.permissions.autoApproveCommandPatterns": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "Regex patterns tested against the full `run_command` string. A match skips the approval dialog entirely. **Has no effect on destructive commands** (force-push, `reset --hard`, `branch -D`, `rm -rf`, etc.) — those always ask, regardless of this setting."
         },
         "rizo.permissions.disabledTools": {
           "type": "array",
-          "items": { "type": "string", "enum": ["read_file", "write_file", "edit_file", "run_command"] },
+          "items": {
+            "type": "string",
+            "enum": [
+              "read_file",
+              "write_file",
+              "edit_file",
+              "run_command"
+            ]
+          },
           "default": [],
           "description": "Tools listed here are refused outright and not offered to the model at all in this workspace."
         },
         "rizo.composer.sendKey": {
           "type": "string",
-          "enum": ["enter", "ctrlEnter"],
-          "enumDescriptions": ["Enter sends, Shift+Enter for a new line", "Ctrl/Cmd+Enter sends, Enter alone makes a new line"],
+          "enum": [
+            "enter",
+            "ctrlEnter"
+          ],
+          "enumDescriptions": [
+            "Enter sends, Shift+Enter for a new line",
+            "Ctrl/Cmd+Enter sends, Enter alone makes a new line"
+          ],
           "default": "enter",
           "description": "Which key sends a message from the composer."
         },
@@ -94,12 +133,15 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
     "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
     "typescript": "^5.4.0",
-    "@vscode/vsce": "^3.2.0"
+    "vitest": "^4.1.11"
   }
 }

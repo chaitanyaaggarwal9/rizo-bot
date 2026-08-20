@@ -12,8 +12,7 @@ const BASE_SKILL = 'coding-discipline.md';
 
 // More specific than the low/medium/coding split in modelRouter.ts — this
 // decides WHICH coding skill(s) apply, not whether the request is coding-
-// related at all. A message can match more than one. Ported from this
-// repo's original server.js backend, skills.config.js.
+// related at all. A message can match more than one.
 const SKILL_KEYWORDS: Record<string, string[]> = {
   'debugging-discipline.md': [
     'bug', 'bugs', 'debug', 'debugging', 'crash', 'crashes', 'stack trace',

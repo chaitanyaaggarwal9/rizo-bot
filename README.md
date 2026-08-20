@@ -1,305 +1,163 @@
-# rizo-bot
+# Rizo
 
-![Server CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)
 ![VS Code Extension CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/vscode-extension-ci.yml/badge.svg)
 
-A personal AI assistant backend I own end-to-end — no third-party AI
-extension, no vendor lock-in. One small Node.js/Express server, my own
-skill instructions, and free-tier open-weight models routed through
-[OpenRouter](https://openrouter.ai) — plus **Rizo**, a public VS Code
-extension that brings the same routing and skills into the editor, BYOK.
+Rizo is a BYOK AI coding assistant for VS Code — chat, file edits, and
+terminal/git commands, with cost-optimized, company-locked model
+selection. Bring your own [OpenRouter](https://openrouter.ai) API key;
+you're billed directly by OpenRouter for exactly what you use, nothing
+more.
 
 ## Why this exists
 
-I wanted a single backend for three things — general chat, search/research
-questions, and coding help while working in VS Code — that:
+Most AI coding assistants pick one model for everything, or auto-route
+across companies in ways that lose context when the model changes
+mid-task. Rizo's core bet is different: **cost-efficient routing that
+never sacrifices continuity.**
 
-- I fully control (my server, my routing logic, my prompt)
-- Always applies my own instructions (`skills/`) to every request
-- Doesn't depend on a single paid model or vendor
-- Is small enough to read top to bottom in a few minutes
-
-No auth, no database, no framework beyond Express. It's built to be the
-smallest thing that actually works, and easy to extend later.
+- **Company-locked, not model-locked.** Pick Claude, Gemini, OpenAI,
+  DeepSeek, Kimi, or Free once per chat. Every switch inside that chat
+  stays within the same company's own variants — same tool-calling
+  convention, same context window, same pricing model — never a
+  different provider mid-task
+- **Cheap by default, strong when it matters.** A new chat starts on
+  its provider's cheapest variant; a lightweight heuristic can start it
+  stronger when the first message actually calls for it, and offer a
+  one-click escalation if a turn visibly struggles — see
+  [Smart routing](#smart-routing) below
+- **You own the key, you see the cost.** No vendor lock-in, no hidden
+  markup — a running tokens/cost readout is always visible
 
 ## What it can do
 
-- **Chat over HTTP** — `POST /api/chat` takes `{ message }`, returns
-  `{ model, reply }`
-- **Personal instructions on every request, split by topic** — skill files
-  under `skills/` are read fresh from disk each time (no caching, no
-  restart needed). `skills.config.js` decides which ones apply: general/
-  non-coding requests load none, coding requests get the `coding-
-  discipline` base layer plus whichever specific topics (debugging, git,
-  API, testing) match via word-boundary keyword matching — so a one-line
-  question doesn't pay for the full instruction set in its system prompt
-- **Quality-ranked free-model routing** — no single fixed model. Each
-  request is classified as `coding` or `general` by keyword (word-boundary
-  matched, so "capital" doesn't misfire on "api"), then routed through a
-  ranked list of known-good free OpenRouter models for that task type,
-  with automatic fallback to the next model in the list on any error,
-  rate limit (429), or empty reply — and a final fallback to OpenRouter's
-  own free-models router so something always answers
-- **Conversation memory** — the last ~10 turns are kept in memory so
-  follow-up questions have context; `POST /api/reset` clears it
-- **Three interfaces on the same backend**:
-  - a plain HTML/CSS/JS chat page at `/` (scrolling messages, Reset button)
-  - a CLI (`npm run chat`) for quick questions or an interactive REPL,
-    without leaving the terminal
-  - a VS Code extension (`vscode-extension/`), published to the
-    Marketplace as **Rizo** — see
-    [VS Code extension](#vs-code-extension) below
-- **Visibility into what's actually answering** — every request appends a
-  line to `logs/model-usage.jsonl` recording which model responded and how
-  many models it took, so the ranked list in `models.config.js` can be
-  tuned based on real performance instead of guessing
-
-## How a request flows
-
-```
-your message
-  → keyword check: coding-flavored words? → "coding" list, else → "general" list
-  → matching skill files under skills/ read fresh from disk, joined and
-    prepended as the system prompt (none for general requests)
-  → try ranked free model #1 for that task type
-      ok?  → done, log it, reply
-      error / 429 / empty reply? → try ranked free model #2, then #3...
-      all named models failed? → try "openrouter/free" (always answers)
-  → reply returned to whichever client asked (browser, CLI, or the VS Code extension)
-```
-
-## Project structure
-
-```
-.
-├── server.js               Express app — /api/chat, /api/reset, routing + fallback logic
-├── models.config.js        Ranked free-model lists per task type + keyword classifier
-├── skills.config.js        Decides which skill file(s) apply per request, by keyword
-├── skills/
-│   ├── coding-discipline.md      Base layer for every coding-classified request
-│   ├── debugging-discipline.md
-│   ├── git-hygiene.md
-│   ├── backend-api-taste.md
-│   ├── test-discipline.md
-│   ├── security-hygiene.md
-│   ├── typescript-taste.md
-│   ├── code-review-discipline.md
-│   ├── web-design-taste.md
-│   └── ui-library-picks.md
-├── cli.js                  Terminal client — npm run chat (interactive or one-shot)
-├── public/
-│   └── index.html            Browser chat UI, served at /
-├── logs/
-│   └── model-usage.jsonl     Auto-generated: one line per request (model, task type, attempts)
-├── vscode-extension/        Standalone VS Code extension — see below
-├── website/                 Marketing site (rizobot.com) — see website/README.md
-├── .github/workflows/       CI: server sanity checks + extension build
-├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
-└── .gitignore                Excludes node_modules/, .env, logs/, .DS_Store
-```
-
-## Setup
-
-```bash
-npm install
-```
-
-Create a `.env` file in the project root with your OpenRouter API key
-(get one at https://openrouter.ai/keys):
-
-```
-OPENROUTER_API_KEY=sk-or-v1-...
-PORT=3000
-```
-
-`.env` is gitignored — it never gets committed.
-
-## Running it
-
-Start the server:
-
-```bash
-node server.js
-```
-
-**Browser:** open http://localhost:3000
-
-**CLI**, in a separate terminal (server must be running):
-
-```bash
-npm run chat                        # interactive REPL — type messages, "reset" to clear, "exit" to quit
-npm run chat -- "your question"     # one-shot — sends, prints reply, exits
-npm run chat -- --reset             # clears conversation memory and exits
-```
-
-**Reset conversation memory** directly via the API:
-
-```bash
-curl -X POST http://localhost:3000/api/reset
-```
-
-## Configuration
-
-**`skills/*.md`** — your personal instructions, split by topic and
-prepended as the system prompt on every request. Edit and save; no
-restart needed. `skills.config.js` controls which files load for which
-requests (see `SKILL_KEYWORDS` there to add or retune topics).
-
-**`models.config.js`** — the ranked free-model lists and the coding/general
-keyword classifier. ⚠️ Free-tier model IDs on OpenRouter change over time —
-periodically check https://openrouter.ai/models?max_price=0 and update the
-lists. Use `logs/model-usage.jsonl` to see which models are actually
-performing well for you and manually re-rank them higher.
-
-## VS Code extension — Rizo
-
-`vscode-extension/` is **Rizo**, a standalone BYOK extension — same
-chat-over-OpenRouter idea, brought into the editor with an agentic tool-use
-loop. It's the only surface that can actually scaffold and build something
-(the server/CLI only reply in text) — ask it to design or build a website
-or web app and, on the Claude provider, it gets Coding Discipline + Web
-Design Taste (default stack Next.js/Tailwind/Motion) with full file
-read/write and command-running tools:
+### Core chat
 
 - **Provider picker** (`src/providers.ts`) — a new chat opens with a
-  one-time choice of company: Claude, Gemini, OpenAI, DeepSeek, Kimi, or
-  Free. That choice locks in for the thread's whole life
-  (`ThreadData.provider`/`.model` in `src/threadStore.ts`) and starts on
-  that company's cheapest variant; the in-chat switcher only ever offers
-  that same company's other variants, never a different one — this
-  replaced an earlier design where every message got auto-classified and
-  routed independently, which turned out to reclassify follow-ups mid-task
-  and leave the next model with no ground truth for what a *different*
-  model had already changed on disk. `src/modelRouter.ts` now only
-  classifies coding-vs-general for skill selection (see below) and the
-  Free provider's fallback chain — never which model answers
-- **Effort switcher** (`src/openrouter.ts`'s `ReasoningEffort`) — a second
-  pill (Low/Medium/High, default Medium) maps to OpenRouter's unified
-  `reasoning.effort` field, which each provider translates into its own
-  reasoning budget. This is the actual per-turn cost dial — *how hard* the
+  one-time choice of company. That choice locks in for the thread's
+  whole life (`ThreadData.provider`/`.model` in `src/threadStore.ts`)
+  and the in-chat switcher only ever offers that same company's other
+  variants, never a different one
+- **Effort switcher** — a second pill (Low/Medium/High) maps to
+  OpenRouter's unified `reasoning.effort` field — *how hard* the
   already-picked model thinks, never *which* model answers. Hidden
-  entirely for the one variant that doesn't support it (`ModelVariant.
-  reasoning` in `providers.ts`; currently only Free's rotating Auto model)
-- **Usage tracking** (`src/usageStore.ts`) — a running today's-tokens /
-  this-month's-cost readout, top-left of the panel, aggregated across
-  every thread and every provider; resets itself lazily (no cron/startup
-  hook) whenever the stored day/month no longer matches the current one
-- **Skills** (`src/skillsLoader.ts`, `skills/`) — the same per-topic,
-  selectively-loaded approach as the server, bundled into the extension so
-  every install gets identical instructions
+  entirely for a variant that doesn't support it
 - **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
   read-only, reads the live editor buffer directly when a file's open
   with unsaved changes), `write_file`/`edit_file` (diff preview + modal
   approval before anything touches disk), `run_command` (approval-gated,
   with an elevated, non-bypassable warning for destructive-looking
-  commands like force-push, hard reset, `branch -D`, `rm -rf`, and their
-  long-form/colon-refspec equivalents — and separately for shell
-  indirection that hides what's actually running, like a remote script
-  piped into `sh`/`bash`, `eval`, or `base64 -d | sh`, none of which the
-  destructive-pattern check alone can see into). Non-destructive
-  approvals can be set to "Always Allow (this project)" — destructive/
-  opaque ones can't, on purpose. A live tool-call transcript (start line
-  the moment a call is issued, updated once it resolves) replaced the
-  old plain "Thinking..." placeholder — see "Live tool-call transcript"
-  below.
-- **Command-output redaction** (`src/outputRedaction.ts`) — `run_command`'s
-  stdout/stderr is scanned for API keys, tokens, and private keys (an
-  `.env` dump via `cat`, `env`, `aws configure list`, a JWT in a header
-  dump, etc.) and redacted in place before the result ever reaches the
-  model or gets written into thread history — unlike the command's own
-  text, its *output* has no approval step a human could catch this at
-- **Security pattern-scan on diffs** (`src/dangerousPatterns.ts`) — before
-  a write_file/edit_file approval dialog, the proposed change is scanned
-  for ~18 high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
-  `pickle.load`, hardcoded-looking secrets, disabled TLS verification,
-  `curl | sh`, etc.) and folded into the dialog as a warning banner — a
-  deterministic backstop for Security Hygiene's soft guidance, since the
-  model can still miss its own skill. Non-blocking: still just Approve/
-  Always Allow/Reject. Still fires (as a non-modal toast) even when
-  "Always Allow" is already on for that workspace
-- **Configurable permissions** — two VS Code settings:
-  `rizo.permissions.autoApproveCommandPatterns` (regex list; a match skips
-  the run_command approval dialog — has no effect on destructive commands,
-  those always ask) and `rizo.permissions.disabledTools` (refuses listed
-  tools outright, not even offered to the model)
-- **Project-specific instructions** (`src/projectInstructions.ts`) — an
-  optional `.rizo/instructions.md` in your own workspace, read fresh every
-  message (no caching) and appended after the bundled skills — add your
-  own project rules without forking the extension. Unlike skills, not
-  gated to coding-tier messages
-- **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
-  `/test` in the composer expand to a full canned prompt tied to the
-  matching skill (Git Hygiene, Code Review Discipline, Test Discipline)
-  and force the 'coding' classification (so the right skill files load)
-  regardless of keyword match
-- **Attachments** — "Attach file..." (any file via the OS picker),
-  "Mention file from this project..." (workspace quick pick) from the
-  composer's `+` button, or paste an image directly into the composer
-  (Cmd/Ctrl+V — reuses the same pipeline as the other two, 5MB cap to
-  match). Text files fold into the message; images become
-  real vision attachments. Checked against the current variant's own
-  vision flag (`ModelVariant.vision` in `providers.ts`) before sending —
-  a non-vision variant (DeepSeek, Kimi, or Free's Auto model) fails with a
-  clear message telling you to switch variants, instead of the image being
-  silently dropped or the request erroring opaquely
-- **Live tool-call transcript** — a line appears the moment a tool call
-  starts ("Reading src/x.ts", "Running: git status") and updates once it
-  resolves, replacing the old static "Thinking..." placeholder. Shows
-  completed calls, not live shell stdout — a long-running command's
-  output still only appears once it finishes
-- **Streaming replies** — text and tool-call arguments arrive
-  incrementally (server-sent events under the hood) instead of the whole
-  reply appearing at once. On the Free provider, if a model fails
-  mid-stream after already showing some text, the partial text is
-  discarded and the next model in its fallback chain starts a clean reply,
-  rather than the two answers visibly running together
-- **Markdown rendering** — fenced code blocks, inline code, bold/italic,
-  lists, and headers (flattened to bold — a full heading reads oversized
-  in a chat bubble) render properly instead of showing literal backticks
-  and asterisks. Hand-rolled, escape-first, no new dependency, no
-  syntax-highlight colors — applies to assistant replies only
-- **Stop button** — the send button becomes Stop while a turn is in
-  flight; clicking it aborts the wait for a model reply and blocks the
-  next tool-call iteration from starting. An already-running shell
-  command finishes on its own (bounded by the existing 60s timeout
-  either way) and its result is discarded
-- **Per-chat summarization** — past 20 stored messages, everything older
-  than the last 10 folds into a running summary (one cheap-tier call)
-  instead of being replayed in full on every future turn. Every message
-  is still stored and shown in full in the UI; only what gets sent to the
-  model shrinks
-- **Cost visibility** (`src/pricing.ts`) — every reply shows tokens used +
-  elapsed time, and the chat as a whole shows a running total of tokens
-  and estimated $ cost (free-tier replies always count as $0)
-- **Threads** (`src/threadStore.ts`) — named conversations persisted to
-  VS Code's global storage, auto-titled, switchable from the panel,
-  renameable, and deletable (modal confirm first, then an "Undo" toast —
-  or the standing Reopen Closed Session command — restores it)
-- **Message queueing** — the composer stays enabled while a turn is
-  running; a follow-up you send while Rizo's still working queues and
-  auto-dispatches once the current reply finishes, instead of doing
-  nothing
-- **Settings panel** (gear icon in the thread bar) — change your
-  OpenRouter API key without clearing it first, Enter vs Ctrl/Cmd+Enter
-  to send, a Focus view toggle that hides the tool-call transcript, and a
-  link into VS Code's own Settings UI for the rest
-- BYOK — your own OpenRouter key, stored via VS Code Secret Storage,
-  never in a file
+  commands and for shell indirection that hides what's actually
+  running). A live tool-call transcript shows each call as it happens,
+  collapsible for the full input/output
+- **Attachments** — any file via the OS picker, a workspace quick pick,
+  or paste an image directly into the composer. Checked against the
+  current variant's own vision support before sending
+- **Streaming replies**, markdown rendering, a Stop button, message
+  queueing while a turn is in flight, per-chat summarization once a
+  thread gets long, and named/renameable/deletable threads with undo
 
-**Using it:** see [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md)
-— install from the Marketplace, add your API key, go. Marketing site:
+### Smart routing
+
+- **Smart Starting Variant** (`src/complexityEstimator.ts`) — a
+  thread's first message picks which variant *within its already-locked
+  provider* to start on, instead of always defaulting to the cheapest.
+  A cheap keyword/shape heuristic (no extra model call) scores the
+  message for coding-flavor, code blocks, stack traces, attachments,
+  length, and "big ask" phrasing — runs once, only on the first
+  message, and only when you haven't already picked a variant yourself
+- **Effort auto-suggestion** (`effortForTier` in `src/providers.ts`) —
+  reuses that same heuristic to also pick the Effort level, every turn
+  rather than only the first (effort is a per-request parameter, not a
+  thread-level trait). Backs off permanently the moment you pick an
+  effort level yourself
+- **Auto-escalation** (`src/struggleDetector.ts`) — when a turn shows
+  real evidence of struggling (hits the tool-call iteration cap, keeps
+  re-hitting the same failing tool call, or shows two turns in a row
+  that both poked around with tools but never wrote anything), the
+  reply carries a one-click "↑ Retry with {strongest variant}" button —
+  never crossing companies, only offered when a stronger variant
+  actually exists to switch to
+- **Live turn status** — while a turn runs, its bubble shows which
+  variant is actually answering, what it's doing right now, elapsed
+  time, and a running token count — not just a static "thinking"
+  placeholder
+
+### Safety and cost visibility
+
+- **Command-output redaction** (`src/outputRedaction.ts`) —
+  `run_command`'s stdout/stderr is scanned for API keys, tokens, and
+  private keys and redacted in place before the result ever reaches the
+  model or gets written into thread history
+- **Security pattern-scan on diffs** (`src/dangerousPatterns.ts`) —
+  before a write/edit approval dialog, the proposed change is scanned
+  for high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
+  unsafe deserialization, hardcoded-looking secrets, disabled TLS
+  verification, etc.) and folded into the dialog as a warning banner
+- **Configurable permissions** — `rizo.permissions
+  .autoApproveCommandPatterns` (has no effect on destructive commands)
+  and `rizo.permissions.disabledTools`
+- **Cost visibility** (`src/pricing.ts`) — every reply shows tokens
+  used and elapsed time; the chat as a whole and the extension overall
+  both show running token/cost totals
+
+### Personalization
+
+- **Skills** (`src/skillsLoader.ts`, `vscode-extension/skills/`) —
+  per-topic engineering-discipline instructions, selectively loaded by
+  keyword match so a one-line question doesn't pay for the full
+  instruction set
+- **Project-specific instructions** (`src/projectInstructions.ts`) —
+  an optional `.rizo/instructions.md` in your own workspace, read fresh
+  every message and appended after the bundled skills
+- **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
+  `/test` expand to a full canned prompt tied to the matching skill
+
+## Project structure
+
+```
+.
+├── vscode-extension/        Rizo itself — see below
+├── website/                 Marketing site (rizobot.com) — see website/README.md
+├── .github/workflows/       CI: extension build + test, tag-triggered release
+├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
+└── .gitignore
+```
+
+Inside `vscode-extension/`:
+
+```
+vscode-extension/
+├── src/                  Extension source — one module per concern
+│   ├── *.test.ts             Unit tests (vitest) for every pure-logic module
+│   ├── chatPanel.ts           Webview host: panel lifecycle, the send/tool-call loop
+│   ├── tools.ts                read_file / write_file / edit_file / run_command
+│   ├── threadStore.ts          Thread persistence (VS Code global storage)
+│   ├── providers.ts            The company/model catalog + Smart Starting Variant/effort mapping
+│   ├── openrouter.ts           OpenRouter streaming client
+│   └── ...                     See the file list above for the rest
+├── skills/                Engineering-discipline instructions, bundled into the extension
+├── package.json            Extension manifest — commands, settings, contributes
+└── ONBOARDING.md           End-user install/usage guide
+```
+
+## Using it
+
+See [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md) —
+install from the Marketplace, add your API key, go. Marketing site:
 [`website/`](website/) (deploys to rizobot.com).
 
-**Building it (development):**
+## Development
 
 ```bash
 cd vscode-extension
 npm install
 npm run compile      # or `npm run watch` while developing
+npm test             # unit tests (vitest)
 ```
 
-Then launch it from VS Code's Run and Debug panel (`.vscode/launch.json`
-is already set up) to open the Extension Development Host.
+Launch from VS Code's Run and Debug panel (`.vscode/launch.json` is
+already set up) to open the Extension Development Host. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full dev/release workflow.
 
 **Packaging a `.vsix` for distribution:**
 
@@ -312,25 +170,24 @@ npx vsce package --allow-missing-repository
 
 `.github/workflows/` runs on every push/PR to `main`:
 
-- **`ci.yml`** — installs the root project's dependencies and syntax-checks
-  `server.js`, `cli.js`, `models.config.js`, and `skills.config.js`
-- **`vscode-extension-ci.yml`** — installs and type-checks/builds the VS
-  Code extension (`npm run compile`) whenever `vscode-extension/` changes
+- **`vscode-extension-ci.yml`** — installs, type-checks/builds
+  (`npm run compile`), and runs the unit test suite (`npm test`)
+  whenever `vscode-extension/` changes
 - **`stale-issues.yml`** — labels issues stale after 60 days of no
-  activity, closes them after 14 more; runs on a daily schedule, not on push
+  activity, closes them after 14 more; runs on a daily schedule
 - **`release.yml`** — publishes to the Marketplace, tag-triggered
-  (`v*.*.*`) rather than on every push, since a publish is hard to fully
-  undo. Refuses to run if the tag doesn't match `package.json`'s version.
-  See [CONTRIBUTING.md](CONTRIBUTING.md) for the release steps
+  (`v*.*.*`). Compiles, tests, refuses to run if the tag doesn't match
+  `package.json`'s version. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+  the release steps
 
 Dependabot (`.github/dependabot.yml`) opens a weekly grouped PR for
-dependency updates in both `vscode-extension/` and the root project.
+dependency updates.
 
 ## Contributing
 
-Bug reports and feature requests: use the issue templates. Pull requests:
-see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and open an issue
-first for anything beyond a small fix.
+Bug reports and feature requests: use the issue templates. Pull
+requests: see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and
+open an issue first for anything beyond a small fix.
 
 ## License
 
@@ -344,5 +201,6 @@ from it. Also don't use the "Rizo" name to imply endorsement of a fork.
 This makes the project source-available rather than OSI-certified "open
 source" (the official Open Source Definition doesn't permit restricting
 commercial use) — full source stays public and forkable, resale just
-isn't licensed. `package.json`'s `license` field reads `SEE LICENSE IN
-LICENSE` since Commons Clause has no registered SPDX identifier.
+isn't licensed. `vscode-extension/package.json`'s `license` field reads
+`SEE LICENSE IN LICENSE` since Commons Clause has no registered SPDX
+identifier.

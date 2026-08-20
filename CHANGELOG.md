@@ -9,39 +9,7 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
-### Added
-- Live turn status line — while a turn is running, its bubble now shows
-  which model/variant is actually answering, what it's doing right now
-  ("Thinking…", the current tool call's title, "Writing reply…"), a
-  ticking elapsed timer, and a running token count that grows across a
-  turn's tool round-trips — all previously invisible until the whole
-  turn finished (the only place any of it showed up was the model-tag
-  finalizeTurn attaches once everything is already done). Model arrives
-  once a turn's model is finalized (after Smart Starting Variant has
-  had its say); tokens tick up after each tool round-trip; elapsed runs
-  off a plain client-side timer. Cleaned up on every path that can end
-  a turn — normal finish, Stop, an error, switching threads — so
-  nothing keeps ticking against a turn nobody's looking at anymore.
-
-### Fixed
-- SSE stream parsing (`src/openrouter.ts`) rewritten to actually follow
-  the spec: one event's data can legitimately be spread across several
-  consecutive `data:` lines, meant to be joined with `\n` and parsed
-  once a blank line ends the event. The old parser treated every single
-  `data:` line as a complete, independently-parseable JSON chunk on its
-  own — which happened to work for the common one-line-per-event case,
-  but silently dropped a chunk of a streamed tool call's arguments the
-  moment a payload was ever legitimately spread across multiple lines
-  this way. Root cause of a real, reproducible "could not parse tool
-  arguments as JSON" failure: a large `write_file` call (e.g. a
-  multi-hundred-line HTML/CSS/JS game file) kept failing and getting
-  silently regenerated from scratch on every retry, burning full
-  generation tokens each time. `tools.ts`'s error message for a
-  genuine (non-framing) JSON failure also no longer dumps the entire
-  raw argument blob back into the tool result — a short excerpt plus
-  JSON.parse's own error and a concrete "try smaller calls" suggestion
-  instead, so a real failure doesn't also inflate the next turn's input
-  tokens for nothing.
+## [0.4.3] - 2026-08-19
 
 ### Added
 - Smart starting variant (`src/complexityEstimator.ts`) — a thread's
@@ -81,6 +49,56 @@ an honest gap. Everything before this point lives in git history instead.
   switcher (same "an explicit choice always wins over a guess" rule as
   everywhere else), and skipped outright for a variant that ignores
   effort entirely (the Free provider's one Auto model).
+- Live turn status line — while a turn is running, its bubble now shows
+  which model/variant is actually answering, what it's doing right now
+  ("Thinking…", the current tool call's title, "Writing reply…"), a
+  ticking elapsed timer, and a running token count that grows across a
+  turn's tool round-trips — all previously invisible until the whole
+  turn finished. Cleaned up on every path that can end a turn — normal
+  finish, Stop, an error, switching threads — so nothing keeps ticking
+  against a turn nobody's looking at anymore.
+- A real unit test suite (`vitest`, `src/*.test.ts`) covering every
+  module with no `vscode` import at module level — task classification,
+  Smart Starting Variant/effort selection, destructive-command
+  detection, dangerous-pattern scanning, secret redaction, pricing,
+  slash commands, and struggle detection. Wired into CI
+  (`vscode-extension-ci.yml`) and as a pre-publish gate
+  (`release.yml`). `npm test` / `npm run test:watch`.
+
+### Fixed
+- SSE stream parsing (`src/openrouter.ts`) rewritten to actually follow
+  the spec: one event's data can legitimately be spread across several
+  consecutive `data:` lines, meant to be joined with `\n` and parsed
+  once a blank line ends the event. The old parser treated every single
+  `data:` line as a complete, independently-parseable JSON chunk on its
+  own — which happened to work for the common one-line-per-event case,
+  but silently dropped a chunk of a streamed tool call's arguments the
+  moment a payload was ever legitimately spread across multiple lines
+  this way. Root cause of a real, reproducible "could not parse tool
+  arguments as JSON" failure: a large `write_file` call (e.g. a
+  multi-hundred-line HTML/CSS/JS game file) kept failing and getting
+  silently regenerated from scratch on every retry, burning full
+  generation tokens each time. `tools.ts`'s error message for a
+  genuine (non-framing) JSON failure also no longer dumps the entire
+  raw argument blob back into the tool result — a short excerpt plus
+  JSON.parse's own error and a concrete "try smaller calls" suggestion
+  instead, so a real failure doesn't also inflate the next turn's input
+  tokens for nothing.
+- `coding-discipline.md` (the base skill loaded on every coding-
+  classified message) now explicitly says a page whose stylesheet or
+  script was never written isn't done, and to create every file
+  referenced in the same turn rather than waiting to be asked — the
+  direct fix for the transcript that motivated the cross-turn
+  stagnation signal above.
+
+### Changed
+- Removed the separate root-level Express/CLI backend (`server.js`,
+  `cli.js`, `models.config.js`, `skills.config.js`, `public/`, root
+  `skills/`) — an older personal prototype that predated the VS Code
+  extension and had gone unmaintained since. Rizo (`vscode-extension/`)
+  is now the only product in this repo; `README.md`/`CONTRIBUTING.md`/
+  `.github/` updated throughout to match, and the backend-only
+  `ci.yml` workflow and its Dependabot entry are gone with it.
 
 ## [0.4.2] - 2026-08-19
 

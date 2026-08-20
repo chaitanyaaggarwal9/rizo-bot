@@ -27,8 +27,22 @@ describe('the provider catalog itself', () => {
     }
   });
 
-  it('free has exactly one variant — the company lock has nothing to switch between', () => {
-    expect(PROVIDERS.free.variants).toHaveLength(1);
+  it('free is the one provider allowed more than 3 variants, and Auto is always first', () => {
+    // Free's variants aren't a cheap-to-strong ladder like every other
+    // provider's — see providers.ts's own comment — so it's exempt from
+    // the "3 tiers" shape the rest of the catalog holds to. Auto being
+    // variants[0] is still load-bearing: defaultModelForProvider and
+    // (via the exclusion in chatPanel.ts) Smart Starting Variant both
+    // depend on it being the fallback/default.
+    expect(PROVIDERS.free.variants.length).toBeGreaterThan(1);
+    expect(PROVIDERS.free.variants[0].id).toBe('openrouter/free');
+  });
+
+  it('every non-free provider has exactly 3 variants, a real cheap-to-strong ladder', () => {
+    for (const id of PROVIDER_ORDER) {
+      if (id === 'free') continue;
+      expect(PROVIDERS[id].variants).toHaveLength(3);
+    }
   });
 });
 
@@ -49,10 +63,8 @@ describe('startingModelForProvider (Smart Starting Variant)', () => {
     expect(startingModelForProvider('claude', 2)).toBe(PROVIDERS.claude.variants[2].id);
   });
 
-  it('clamps to the last variant when a provider has fewer tiers than requested', () => {
-    // Free has exactly one variant — every tier lands on it.
-    expect(startingModelForProvider('free', 0)).toBe(PROVIDERS.free.variants[0].id);
-    expect(startingModelForProvider('free', 2)).toBe(PROVIDERS.free.variants[0].id);
+  it('clamps to the last variant for an out-of-range tier rather than returning undefined', () => {
+    expect(startingModelForProvider('claude', 5)).toBe(PROVIDERS.claude.variants[2].id);
   });
 
   it('never crosses providers — always a variant of the requested company', () => {
@@ -104,6 +116,21 @@ describe('findVariant / supportsReasoning', () => {
 
   it('an unrecognized provider/model pair still returns a defined boolean, not throws', () => {
     expect(supportsReasoning('claude', 'nonexistent')).toBe(true); // findVariant returns undefined -> treated as "not explicitly false"
+  });
+
+  it("Free's 5 named picks (unlike Auto) all support reasoning, since each is one specific real model", () => {
+    for (const v of PROVIDERS.free.variants) {
+      if (v.id === 'openrouter/free') continue;
+      expect(supportsReasoning('free', v.id)).toBe(true);
+    }
+  });
+
+  it('Google Gemma is the one Free pick with real vision support; the rest (including Auto) do not', () => {
+    expect(findVariant('free', 'google/gemma-4-31b-it:free')?.vision).toBe(true);
+    const nonVision = PROVIDERS.free.variants.filter((v) => v.id !== 'google/gemma-4-31b-it:free');
+    for (const v of nonVision) {
+      expect(v.vision).toBe(false);
+    }
   });
 });
 

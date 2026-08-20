@@ -92,15 +92,30 @@ export const PROVIDERS: Record<string, Provider> = {
       { id: 'moonshotai/kimi-k3', label: 'K3', tagline: 'For complex reasoning tasks' },
     ],
   },
-  // Not a real company — routes through freeChainForTaskType's fallback
-  // chain (see chatPanel.ts's callModel) rather than calling this id
-  // directly. One entry so the picker/switcher UI can treat it uniformly
-  // with every other provider.
+  // Not a real company, and these 6 variants aren't tiers of one lineage
+  // the way every other provider's are — free-tier availability on
+  // OpenRouter comes from a different, shifting set of companies
+  // entirely (no free Claude or Gemini exists), so there's no honest
+  // "cheapest → strongest" ladder to build here. variants[0] (Auto)
+  // stays the default and is what defaultModelForProvider/
+  // startingModelForProvider fall back to; chatPanel.ts's handleSend
+  // explicitly excludes 'free' from Smart Starting Variant's auto-
+  // upgrade for exactly this reason — a 0/1/2 tier has nothing coherent
+  // to map onto 5 unrelated specific picks, so it stays fully manual.
+  // Auto's own routing (callModel, freeChainForTaskType) is unchanged;
+  // picking one of the 5 named models tries it first, then still falls
+  // back through the same taskType-ranked chain if it's down or rate-
+  // limited — an explicit pick doesn't lose Auto's resilience.
   free: {
     id: 'free',
     label: 'Free',
     variants: [
-      { id: 'openrouter/free', label: 'Auto', tagline: 'Best available free model, no cost', vision: false, reasoning: false },
+      { id: 'openrouter/free', label: 'Auto', tagline: 'Best model for the task, picked automatically', vision: false, reasoning: false },
+      { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'NVIDIA Nemotron Ultra', tagline: 'Largest free model, 1M-token context', vision: false },
+      { id: 'openai/gpt-oss-20b:free', label: 'OpenAI GPT-OSS 20B', tagline: "OpenAI's open-weight model", vision: false },
+      { id: 'google/gemma-4-31b-it:free', label: 'Google Gemma 4', tagline: 'Supports image input', vision: true },
+      { id: 'cohere/north-mini-code:free', label: 'Cohere North Mini', tagline: 'Tuned for coding tasks', vision: false },
+      { id: 'z-ai/glm-5.2:free', label: 'Z.ai GLM 5.2', tagline: 'General-purpose, 256K context', vision: false },
     ],
   },
 };

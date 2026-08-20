@@ -449,12 +449,18 @@ export class ChatPanel {
     options: CallOptions = {},
   ) {
     if (provider === 'free') {
-      if (hasImage) {
-        throw new Error(
-          "Image attachments need a vision-capable model, and the Free provider doesn't currently include one. Start a new chat on a different provider to use an image.",
-        );
-      }
-      return callWithFallback(apiKey, freeChainForTaskType(taskType), messages, tools, options);
+      // hasImage's vision-capability check already ran in handleSend
+      // before this was ever called (uniformly for every provider now —
+      // Free isn't a hard block anymore now that Gemma is vision-
+      // capable), so nothing else to check here.
+      const chain = freeChainForTaskType(taskType);
+      // Auto (the default) keeps its exact existing behavior — routed
+      // purely by taskType, same as before this file had any other Free
+      // option. A specific pick goes first, then still falls through the
+      // rest of the same ranked chain if it's down or rate-limited —
+      // still-manual choice, but never less resilient than Auto was.
+      const orderedChain = model === defaultModelForProvider('free') ? chain : [model, ...chain.filter((m) => m !== model)];
+      return callWithFallback(apiKey, orderedChain, messages, tools, options);
     }
     return callOpenRouter(apiKey, model, messages, tools, options);
   }
@@ -693,8 +699,11 @@ export class ChatPanel {
       // sent, never again after. Skipped entirely if the model isn't
       // still sitting at the picker's own default — that means you
       // already manually chose a variant before typing, and an explicit
-      // choice always wins over a guess.
-      if (thread.messages.length === 0 && model === defaultModelForProvider(provider)) {
+      // choice always wins over a guess. Also skipped for Free
+      // entirely — its 6 variants aren't a cheap-to-strong ladder (see
+      // providers.ts), so a 0/1/2 tier has nothing coherent to upgrade
+      // to; Auto's own per-message routing already handles that job.
+      if (provider !== 'free' && thread.messages.length === 0 && model === defaultModelForProvider(provider)) {
         const smarterModel = startingModelForProvider(provider, messageTier);
         if (smarterModel !== model) {
           setThreadModel(this.context, threadId, provider, smarterModel);
@@ -784,7 +793,11 @@ export class ChatPanel {
       const hasImage = messages.some(
         (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
       );
-      if (hasImage && provider !== 'free') {
+      // Used to skip Free outright (every variant was vision:false back
+      // when there was only the one, Auto) — now Google Gemma 4 is a
+      // real vision-capable pick, so Free gets the exact same check as
+      // every other provider instead of a separate hard block.
+      if (hasImage) {
         const variant = findVariant(provider, model);
         if (variant?.vision === false) {
           this.panel.webview.postMessage({
@@ -1436,11 +1449,18 @@ export class ChatPanel {
     letter-spacing: 0.04em;
     opacity: 0.55;
   }
+  /* Fixed terminal colors, not a theme variable — command/file output
+     reads as a terminal specifically because it's NOT theme-blended the
+     way the rest of the panel is; --vscode-textCodeBlock-background
+     used to just tint toward whatever the ambient editor background
+     already was, which in a light theme produced a pale, low-contrast
+     box nothing like an actual black-background/white-text terminal. */
   .toolBodyBlock pre {
     margin: 0;
-    padding: 6px 8px;
+    padding: 8px 10px;
     border-radius: 5px;
-    background: var(--vscode-textCodeBlock-background);
+    background: #0c0c0c;
+    color: #e8e8e8;
     font-family: var(--vscode-editor-font-family);
     font-size: 11px;
     white-space: pre-wrap;

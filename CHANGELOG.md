@@ -9,6 +9,50 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-08-20
+
+### Fixed
+- `MAX_TOKENS` raised from 2048 to 8192. Real incident: a `write_file`
+  call for a genuinely large file (a game engine class, several
+  hundred lines) hit the old cap mid-string on every single retry —
+  "Unterminated string in JSON" from `tools.ts`'s own parser, a
+  "(unknown path)" tool card, and the model regenerating the whole
+  file from scratch each attempt with no way to self-correct. One
+  turn alone hit 583K tokens without ever finishing. Silent mid-JSON
+  truncation is a strictly worse failure than the low-credit rejection
+  this constant originally guarded against — that one is at least a
+  clear, actionable error; this one just looked like a parser bug.
+- `summarizeToolCall` (`tools.ts`) now recovers the file path from a
+  truncated `write_file`/`edit_file` call instead of always showing
+  "(unknown path)" — `path` is declared before the (often huge)
+  content field in the tool schema, so it's usually still intact in
+  the raw JSON even when the rest of it got cut off. Falls back to
+  "(unknown path)" only when the path itself is genuinely gone.
+- Tool-call IN/OUT blocks now use fixed terminal colors (near-black
+  background, light text) instead of `--vscode-textCodeBlock-
+  background`, which just tinted toward whatever the ambient editor
+  background already was — a pale, low-contrast box in a light theme,
+  nothing like an actual terminal.
+
+### Added
+- Free provider: pick a specific free model yourself instead of only
+  the auto-routed default — NVIDIA Nemotron Ultra, OpenAI GPT-OSS 20B,
+  Google Gemma 4, Cohere North Mini, or Z.ai GLM 5.2, alongside the
+  existing Auto option (still the default, unchanged behavior).
+  Deliberately NOT grouped by company the way the paid providers are —
+  free-tier availability on OpenRouter comes from a different, shifting
+  set of companies with no free Claude or Gemini at all, and coverage
+  per company is too uneven (NVIDIA alone has 7 free models today, most
+  others have 1-2) for an honest "top N per company" structure. A
+  specific pick still gets Auto's fallback resilience — it's tried
+  first, then the same taskType-ranked chain if it's down or rate-
+  limited — and Smart Starting Variant is explicitly excluded from Free
+  now that it has more than one real option, since a 0/1/2 tier has
+  nothing coherent to map onto 5 unrelated model picks. Google Gemma 4
+  is also the first vision-capable Free option — the old blanket "Free
+  can't do images" block is now the same per-variant check every other
+  provider already used.
+
 ## [0.4.5] - 2026-08-20
 
 ### Fixed

@@ -818,6 +818,15 @@ export class ChatPanel {
       let madeToolCallThisTurn = false;
       let madeMutatingCallThisTurn = false;
 
+      // Live status for the pending bubble — model, running token count,
+      // and current action, all previously invisible until the whole
+      // turn finished (the model-tag only ever got attached in
+      // finalizeTurn/addMessage). Sent once here, now that Smart Starting
+      // Variant has already resolved model to whatever this turn is
+      // actually about to use — sending it any earlier could show a
+      // value that turns out wrong.
+      this.panel.webview.postMessage({ type: 'turnModel', turnId, model });
+
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (this.cancelledTurnId === turnId) break;
 
@@ -838,6 +847,11 @@ export class ChatPanel {
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
         totalUsage.totalTokens += usage.totalTokens;
+        // Running total for the live status line — a multi-tool-call
+        // turn can make several of these round-trips before it's done,
+        // and previously nothing about token spend was visible until the
+        // very end of all of them.
+        this.panel.webview.postMessage({ type: 'turnUsage', turnId, totalTokens: totalUsage.totalTokens });
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
           finalReply = message.content || '';
@@ -1467,6 +1481,19 @@ export class ChatPanel {
     color: var(--vscode-badge-foreground, inherit);
   }
 
+  /* Live-only status line on a pending turn — model, current action,
+     elapsed time, running tokens. Plain text rather than a badge like
+     .model-tag above: it changes several times a second while a turn is
+     in flight, and a pill redrawing that often reads as more distracting
+     than a quiet text line does. */
+  .turnStatus {
+    display: block;
+    font-size: 11px;
+    opacity: 0.6;
+    margin-bottom: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
   .retryEscalateBtn {
     margin-top: 8px;
     font-size: 11px;
@@ -1845,14 +1872,40 @@ export class ChatPanel {
     // oscillation technique as the CSS's .thinkingDot, just markup.
     const THINKING_HTML = '<span class="thinkingDots"><span class="thinkingDot"></span><span class="thinkingDot"></span><span class="thinkingDot"></span></span>';
 
+    // "Kimi K2 · Running write_file… · 14s · 3,420 tok" — model, current
+    // action, elapsed time, and running token count, all previously
+    // invisible for the whole time a turn was in flight (the only place
+    // any of this ever showed up was the model-tag finalizeTurn attaches
+    // once everything is already done). model/effort arrive once via
+    // 'turnModel' the moment handleSend resolves them for this turn;
+    // tokens tick up via 'turnUsage' after each tool round-trip; elapsed
+    // ticks on a plain client-side timer, no round-trip needed for that
+    // part.
+    function renderTurnStatus(turn) {
+      const elapsed = ((Date.now() - turn.startedAt) / 1000).toFixed(0) + 's';
+      const parts = [];
+      if (turn.turnModel) {
+        const p = findProvider(currentProvider);
+        const variant = p && p.variants.find((v) => v.id === turn.turnModel);
+        parts.push(variant ? p.label + ' · ' + variant.label : turn.turnModel);
+      }
+      parts.push(turn.currentAction);
+      parts.push(elapsed);
+      if (turn.liveTokens) parts.push(turn.liveTokens.toLocaleString() + ' tok');
+      turn.statusEl.textContent = parts.join('  ·  ');
+    }
+
     function startTurn(turnId) {
       const el = document.createElement('div');
       el.className = 'msg assistant pending';
+      const statusEl = document.createElement('div');
+      statusEl.className = 'turnStatus';
       const transcriptEl = document.createElement('div');
       transcriptEl.className = 'transcript';
       const textEl = document.createElement('span');
       textEl.className = 'streamedText';
       textEl.innerHTML = THINKING_HTML;
+      el.appendChild(statusEl);
       el.appendChild(transcriptEl);
       el.appendChild(textEl);
       messagesEl.appendChild(el);
@@ -1861,8 +1914,25 @@ export class ChatPanel {
       // lazily on the first delta (see handleTextDelta) — kept separate
       // from the trailing .streamCursor span so writing new text never
       // clobbers the cursor node.
-      activeTurn = { id: turnId, el, transcriptEl, textEl, bufferEl: null, toolLines: new Map(), textBuffer: '', hasText: false };
+      activeTurn = {
+        id: turnId, el, transcriptEl, textEl, bufferEl: null, toolLines: new Map(), textBuffer: '', hasText: false,
+        statusEl, startedAt: Date.now(), turnModel: null, liveTokens: 0, currentAction: 'Thinking…',
+      };
+      renderTurnStatus(activeTurn);
+      // Elapsed needs a live tick even when nothing else about the turn
+      // changes (no delta, between tool calls) — everything else here
+      // only updates on its own message anyway, so a fresh render every
+      // second is cheap.
+      activeTurn.statusTimer = setInterval(() => renderTurnStatus(activeTurn), 1000);
       return activeTurn;
+    }
+
+    // Every path that stops a turn being active — normal finish, Stop,
+    // an error, or switching away from it entirely — has to go through
+    // this, or its statusTimer just keeps ticking forever against a
+    // detached turn no one's looking at.
+    function stopTurnStatusTimer(turn) {
+      if (turn && turn.statusTimer) clearInterval(turn.statusTimer);
     }
 
     // Builds one tool-call's two-tier card. bodyEl only gets an IN block
@@ -1911,6 +1981,11 @@ export class ChatPanel {
       card.appendChild(body);
       activeTurn.transcriptEl.appendChild(card);
       activeTurn.toolLines.set(callId, { card, body });
+      // The tool cards already show this once expanded, but the status
+      // line surfaces it without having to go find and open one —
+      // "what's it doing right now" at a glance.
+      activeTurn.currentAction = title || label;
+      renderTurnStatus(activeTurn);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -1933,6 +2008,11 @@ export class ChatPanel {
         block.appendChild(pre);
         entry.body.appendChild(block);
       }
+      // Back to a generic "thinking about what's next" until either
+      // another tool call starts or text starts streaming — there isn't
+      // a next concrete action to name yet.
+      activeTurn.currentAction = 'Thinking…';
+      renderTurnStatus(activeTurn);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
@@ -1947,6 +2027,8 @@ export class ChatPanel {
         // the trailing edge of in-progress text).
         activeTurn.textEl.innerHTML = '<span class="streamedContent"></span><span class="streamCursor"></span>';
         activeTurn.bufferEl = activeTurn.textEl.querySelector('.streamedContent');
+        activeTurn.currentAction = 'Writing reply…';
+        renderTurnStatus(activeTurn);
       }
       activeTurn.textBuffer += text;
       activeTurn.bufferEl.textContent = activeTurn.textBuffer;
@@ -1962,6 +2044,8 @@ export class ChatPanel {
       activeTurn.hasText = false;
       activeTurn.bufferEl = null;
       activeTurn.textEl.innerHTML = THINKING_HTML;
+      activeTurn.currentAction = 'Thinking…';
+      renderTurnStatus(activeTurn);
     }
 
     // Swaps the streamed plain text over to rendered markdown exactly
@@ -1972,6 +2056,13 @@ export class ChatPanel {
       if (!activeTurn || activeTurn.id !== turnId) return;
       const turn = activeTurn;
       turn.el.classList.remove('pending');
+      // The live status line's job ends here — formatTag below covers
+      // the same ground (model, tokens, elapsed) for the now-finished
+      // turn, permanently this time. Removed before the model-tag
+      // insertion so turn.el.firstChild is back to transcriptEl, same as
+      // before this line existed.
+      stopTurnStatusTimer(turn);
+      turn.statusEl.remove();
       if (model) {
         const tag = document.createElement('span');
         tag.className = 'model-tag';
@@ -2076,6 +2167,7 @@ export class ChatPanel {
       // replaced rather than leave the Stop button stuck showing forever.
       // Queue is thread-scoped too — a message queued behind this thread's
       // turn doesn't belong in whichever thread you're switching to.
+      stopTurnStatusTimer(activeTurn);
       activeTurn = null;
       messageQueue = [];
       renderQueueNote();
@@ -2444,6 +2536,8 @@ export class ChatPanel {
       if (activeTurn) {
         const turn = activeTurn;
         vscode.postMessage({ type: 'cancel', turnId: turn.id });
+        stopTurnStatusTimer(turn);
+        turn.statusEl.remove();
         const stoppedEl = document.createElement('div');
         stoppedEl.className = 'stoppedNote';
         stoppedEl.textContent = 'Stopped.';
@@ -2549,7 +2643,14 @@ export class ChatPanel {
           renderModelSwitch(currentProvider, currentModel);
           renderEffortSwitch(currentProvider, currentModel, currentEffort);
         }
+      } else if (msg.type === 'turnModel') {
+        activeTurn.turnModel = msg.model;
+        renderTurnStatus(activeTurn);
+      } else if (msg.type === 'turnUsage') {
+        activeTurn.liveTokens = msg.totalTokens;
+        renderTurnStatus(activeTurn);
       } else if (msg.type === 'error') {
+        stopTurnStatusTimer(activeTurn);
         activeTurn.el.remove();
         activeTurn = null;
         addMessage('assistant', 'Error: ' + msg.error);

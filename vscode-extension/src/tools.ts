@@ -195,15 +195,10 @@ function getWorkspaceRoots(): string[] {
 // file (write_file creating something that doesn't exist yet) has no
 // realpath of its own to resolve.
 //
-// extraRoots (default none) come from chatPanel.ts's handleSend, one
-// layer up — paths the *human's own message text* named and that
-// actually exist on disk, threaded through executeTool for exactly this
-// call. Same trust boundary as "Attach file...": a model reaching
-// outside the workspace on its own is the risk this function exists to
-// stop; a human naming a folder in their own message isn't that risk,
-// so it gets treated the same as an already-open workspace folder for
-// the rest of this call (and, since chatPanel.ts persists it, this
-// thread).
+// extraRoots (default none): paths chatPanel.ts's handleSend found in
+// the human's own message text and verified exist — see
+// detectExtraRoots and threadStore.ts's Thread.extraRoots for why only
+// that source is trusted this way.
 function resolveSafePath(relativePath: string, extraRoots: string[] = []): string {
   const roots = [...getWorkspaceRoots(), ...extraRoots.map((r) => fs.realpathSync(r))];
   // path.resolve treats an already-absolute second argument as an
@@ -215,10 +210,7 @@ function resolveSafePath(relativePath: string, extraRoots: string[] = []): strin
   const resolved = path.resolve(roots[0], relativePath);
   const matchedRoot = roots.find((root) => resolved === root || resolved.startsWith(root + path.sep));
   if (!matchedRoot) {
-    // Actionable, not just a refusal — the model relays this verbatim-ish
-    // to the user, and "add the folder to your workspace" is a real,
-    // one-click fix (File > Add Folder to Workspace..., or drag it into
-    // the Explorer sidebar), not a dead end.
+    // Names the actual fix, not just the refusal — the model relays this to the user.
     throw new Error(
       `Path "${relativePath}" resolves outside every open workspace folder — refusing. To work with a different folder, add it to this VS Code workspace first (File > Add Folder to Workspace..., or drag it into the Explorer sidebar) — every folder in a multi-root workspace is usable, not just the first one.`,
     );

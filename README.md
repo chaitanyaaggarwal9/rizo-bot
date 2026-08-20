@@ -36,7 +36,17 @@ never sacrifices continuity.**
   one-time choice of company. That choice locks in for the thread's
   whole life (`ThreadData.provider`/`.model` in `src/threadStore.ts`)
   and the in-chat switcher only ever offers that same company's other
-  variants, never a different one
+  variants, never a different one. Free is the one exception to "3
+  tiers, cheapest to strongest": no free Claude or Gemini exists on
+  OpenRouter, so it offers Auto (the default) plus 5 specific free
+  models from whichever companies actually publish one, picked
+  individually rather than grouped
+- **Work outside the open folder, deliberately** — every folder in a
+  multi-root VS Code workspace is usable, not just the first one, and
+  naming a real absolute path in your own message (not the model's own
+  tool-call arguments) grants access to it for the rest of that thread
+  (`Thread.extraRoots` in `src/threadStore.ts`) — same trust boundary
+  "Attach file..." already relies on for a human-driven pick
 - **Effort switcher** — a second pill (Low/Medium/High) maps to
   OpenRouter's unified `reasoning.effort` field — *how hard* the
   already-picked model thinks, never *which* model answers. Hidden
@@ -99,6 +109,10 @@ never sacrifices continuity.**
 - **Cost visibility** (`src/pricing.ts`) — every reply shows tokens
   used and elapsed time; the chat as a whole and the extension overall
   both show running token/cost totals
+- **Truncated writes fail informatively, not silently** — a large
+  `write_file`/`edit_file` call cut off by the response size limit gets
+  told exactly that (split it into smaller calls) instead of a generic
+  parse error that just prompts a full, identical, costly retry
 
 ### Personalization
 

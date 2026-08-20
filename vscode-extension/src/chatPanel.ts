@@ -715,12 +715,9 @@ export class ChatPanel {
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
 
-      // A path this message names, outside every open workspace folder,
-      // but real — grant read_file/write_file/edit_file access to it for
-      // this and every future turn in this thread. See detectExtraRoots'
-      // own comment and extraRoots' on threadStore.ts's Thread interface
-      // for why this is safe: only ever populated from the human's own
-      // message text, never from a model's tool-call arguments.
+      // A real path this message names, outside every open workspace
+      // folder, grants read_file/write_file/edit_file access to it for
+      // this and every future turn in this thread — see detectExtraRoots.
       const newExtraRoots = detectExtraRoots(effectiveText);
       if (newExtraRoots.length > 0) addThreadExtraRoots(this.context, threadId, newExtraRoots);
       const extraRoots = [...new Set([...(thread.extraRoots || []), ...newExtraRoots])];
@@ -959,17 +956,13 @@ export class ChatPanel {
             title: summary.title,
             detail: summary.detail,
           });
-          // A write_file/edit_file call whose JSON never closes is
-          // diagnosable up front, not just via the generic parse
-          // failure inside executeTool: it's the LAST call in a
-          // response the API itself marked cut off by the token
-          // ceiling (finish_reason 'length'), not a formatting mistake.
-          // Skips straight to guidance that matches what actually
-          // happened — split the write into smaller pieces — instead of
-          // a generic "could not parse" message, which just prompted
-          // the model to regenerate the exact same oversized call again
-          // (the real cause of the 583K-token incident MAX_TOKENS was
-          // raised alongside this).
+          // The last tool call in a response the API itself marked cut
+          // off (finish_reason 'length') that still fails to parse is
+          // diagnosable up front — not a formatting mistake, just too
+          // big for one call — so this skips executeTool's generic
+          // parse error and gives guidance the model can actually act
+          // on (see openrouter.ts's MAX_TOKENS comment for the incident
+          // this and the raised cap both come from).
           const isLastCall = toolCall === message.tool_calls[message.tool_calls.length - 1];
           const looksTruncated =
             finishReason === 'length' &&

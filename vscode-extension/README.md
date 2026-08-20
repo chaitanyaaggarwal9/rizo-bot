@@ -19,6 +19,7 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 - **Smart Starting Variant** — a chat's first message can start on a stronger variant than the cheapest default when it actually calls for it (a real bug report, a big refactor ask), based on a cheap heuristic, not an extra model call — and never overrides a variant you picked yourself
 - **Effort auto-suggestion** — the same heuristic also picks Effort per turn, backing off permanently the moment you set it yourself
 - **Auto-escalation** — a turn that visibly struggles (hits its step limit, keeps failing the same tool call, or stalls across turns without making progress) offers a one-click "Retry with a stronger variant" — still within the same company, only when a stronger one exists
+- **Free, your way** — Auto by default, or pick one of 5 specific free models yourself (from whichever companies actually publish one — no free Claude/Gemini exists) with its own Effort control where it supports one
 
 **Safety & control**
 - **File edits with approval** — every write shows a native diff view before anything touches disk; nothing happens without your click
@@ -26,6 +27,8 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 - **Security pattern-scan** — a proposed change is checked against dozens of known-dangerous patterns (`eval`, hardcoded secrets, disabled TLS checks, unsafe deserialization, etc.) and flagged right in the approval dialog, before you click
 - **Command-output redaction** — API keys, tokens, and private keys that happen to show up in a command's output (an `.env` dump, `env`, `aws configure list`) are redacted before they ever reach the model or get stored in thread history
 - **Configurable permissions** — auto-approve specific commands by pattern, or disable a tool entirely, via VS Code settings
+- **Work outside the open folder, on purpose** — every folder in a multi-root workspace is usable, and naming a real path in your own message (never the model's own idea) grants access to it for the rest of that chat — same trust boundary file attachments already use
+- **Truncated writes fail informatively** — a large file cut off by the response size limit gets told to split into smaller calls, not a generic error that just triggers an identical, costly retry
 
 **Shortcuts**
 - **Slash commands** — `/commit`, `/review`, `/test` expand into a full guided prompt tied to house engineering discipline

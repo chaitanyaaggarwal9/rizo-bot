@@ -9,6 +9,32 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-08-20
+
+### Changed
+- `coding-discipline.md` rule 2 replaced with a concrete 7-rung ladder
+  (doesn't need to exist → already in this codebase → stdlib → native
+  platform feature → already-installed dependency → one line → only
+  then the minimum that works), in place of the old vaguer "build only
+  what was asked for" bullets — same intent, now a checkable sequence.
+  A deliberate corner cut with a known ceiling now ships with a
+  comment naming that ceiling, instead of either silently cutting it
+  or not cutting it at all.
+- New rule 5 in the same file, "Let the code speak, don't pad the
+  reply" — nothing previously said anything about reply length, only
+  code structure. Completion tokens price 3-5x prompt tokens across
+  every provider in `pricing.ts`, so unsolicited prose in the final
+  answer is the more expensive place to be verbose. Doesn't touch
+  explanation the user actually asked for.
+- `debugging-discipline.md` rule 3 gains a "grep every caller before
+  fixing" tactic — a concrete way to verify a fix lands at the shared
+  root rather than one call site; the root-cause fix is usually also
+  the smaller diff, not a tradeoff against it.
+- Rewrote 9 already-pushed commit messages to drop a leftover
+  `Co-Authored-By: Claude` trailer predating this repo's own
+  attribution-off setting — tree content byte-identical before and
+  after, only the messages changed. Ahead of making this repo public.
+
 ## [0.4.3] - 2026-08-19
 
 ### Added

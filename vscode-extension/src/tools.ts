@@ -107,20 +107,33 @@ export interface ToolCallSummary {
   detail?: string;
 }
 
+// A truncated write_file/edit_file call (hit the model's token ceiling
+// mid-content — see openrouter.ts's MAX_TOKENS comment) fails JSON.parse
+// entirely, but "path" is a short field every tool schema declares
+// before the often-huge content field, so it's usually still intact in
+// the raw string even when the rest of the JSON isn't. Regex-recovers
+// just that field rather than showing "(unknown path)" for a call whose
+// target file is actually known.
+function extractPathFallback(argsJson: string): string | undefined {
+  const match = /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(argsJson);
+  return match ? match[1].replace(/\\(.)/g, '$1') : undefined;
+}
+
 export function summarizeToolCall(name: string, argsJson: string): ToolCallSummary {
   let args: any = {};
   try {
     args = JSON.parse(argsJson);
   } catch {
-    /* best effort — show the raw name only */
+    /* best effort — extractPathFallback below still tries for read/write/edit */
   }
+  const path = args.path ?? extractPathFallback(argsJson);
   switch (name) {
     case 'read_file':
-      return { label: 'Read', title: args.path ?? '(unknown path)' };
+      return { label: 'Read', title: path ?? '(unknown path)' };
     case 'write_file':
-      return { label: 'Write', title: args.path ?? '(unknown path)' };
+      return { label: 'Write', title: path ?? '(unknown path)' };
     case 'edit_file':
-      return { label: 'Edit', title: args.path ?? '(unknown path)' };
+      return { label: 'Edit', title: path ?? '(unknown path)' };
     case 'run_command':
       // description is a required parameter now, but history replayed
       // from before this shipped (or a model that just doesn't comply)

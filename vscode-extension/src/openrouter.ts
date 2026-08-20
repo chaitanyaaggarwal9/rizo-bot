@@ -8,9 +8,25 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Leaving max_tokens unset lets it default to the model's max (65536 for
 // Sonnet 5), which OpenRouter rejects outright on a low-credit account
 // ("requires more credits... upgrade to a paid account") since it won't
-// risk a completion it can't guarantee you can afford. A modest explicit
-// cap keeps normal chat replies working on any balance.
-const MAX_TOKENS = 2048;
+// risk a completion it can't guarantee you can afford. Needs an explicit
+// cap either way — the real tradeoff is where.
+//
+// 2026-08-20: real incident — a write_file call for a genuinely large
+// file (a game engine class, several hundred lines) hit the old 2048
+// cap mid-string, every time, on every retry: "Unterminated string in
+// JSON" from tools.ts's own parser, a "(unknown path)" tool card
+// (summarizeToolCall's title-extraction failed on the same truncated
+// JSON), and the model just regenerating the whole thing from scratch
+// each retry — one turn alone hit 583K tokens without ever finishing.
+// Truncation is a strictly worse failure than the low-credit rejection
+// this constant exists to avoid: that one is at least a clear, one-time
+// error the user can act on (add credit); silent mid-JSON truncation
+// looks like a confusing parser bug and burns a full regeneration on
+// every retry with no way to self-correct. Raised 4x — still a bounded,
+// affordable worst case even on the priciest model in the catalog
+// (8192 * $60/M completion = ~$0.49/call, Opus 5) — rather than raise
+// it further and risk that rejection becoming the common case instead.
+const MAX_TOKENS = 8192;
 
 export interface ToolCall {
   id: string;

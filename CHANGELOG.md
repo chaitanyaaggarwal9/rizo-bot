@@ -9,6 +9,26 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Fixed
+- SSE stream parsing (`src/openrouter.ts`) rewritten to actually follow
+  the spec: one event's data can legitimately be spread across several
+  consecutive `data:` lines, meant to be joined with `\n` and parsed
+  once a blank line ends the event. The old parser treated every single
+  `data:` line as a complete, independently-parseable JSON chunk on its
+  own — which happened to work for the common one-line-per-event case,
+  but silently dropped a chunk of a streamed tool call's arguments the
+  moment a payload was ever legitimately spread across multiple lines
+  this way. Root cause of a real, reproducible "could not parse tool
+  arguments as JSON" failure: a large `write_file` call (e.g. a
+  multi-hundred-line HTML/CSS/JS game file) kept failing and getting
+  silently regenerated from scratch on every retry, burning full
+  generation tokens each time. `tools.ts`'s error message for a
+  genuine (non-framing) JSON failure also no longer dumps the entire
+  raw argument blob back into the tool result — a short excerpt plus
+  JSON.parse's own error and a concrete "try smaller calls" suggestion
+  instead, so a real failure doesn't also inflate the next turn's input
+  tokens for nothing.
+
 ### Added
 - Smart starting variant (`src/complexityEstimator.ts`) — a thread's
   first message now picks which variant *within its already-locked

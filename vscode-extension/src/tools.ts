@@ -368,8 +368,22 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
   let args: any;
   try {
     args = JSON.parse(argsJson);
-  } catch {
-    return `Error: could not parse tool arguments as JSON: ${argsJson}`;
+  } catch (err: any) {
+    // Used to dump the entire raw argsJson back into this message — for a
+    // write_file/edit_file call on a real file that's easily several
+    // thousand characters, and this string becomes the tool result the
+    // *next* iteration pays to read again. Doubly wasteful on a genuine
+    // parse failure, since the model then usually just regenerates the
+    // same giant payload from scratch and hits the same error again
+    // (openrouter.ts's stream reassembly now recovers the one most
+    // common cause of this — a large string split across SSE frames —
+    // but a model can still emit genuinely invalid JSON on its own).
+    // JSON.parse's own message already names roughly where things broke;
+    // pairing it with a short excerpt and a concrete suggestion (smaller
+    // calls) gives the model something to actually act on instead of a
+    // wall of text it can't use.
+    const excerpt = argsJson.length > 1500 ? `${argsJson.slice(0, 1500)}… (truncated, ${argsJson.length} chars total)` : argsJson;
+    return `Error: could not parse tool arguments as JSON (${err.message}). If this was a large write_file/edit_file call, try breaking the content into a few smaller calls instead of one large one. Arguments received: ${excerpt}`;
   }
 
   try {

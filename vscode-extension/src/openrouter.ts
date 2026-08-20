@@ -138,6 +138,53 @@ export async function callOpenRouter(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // The SSE spec allows one logical event's data to be split across
+  // several consecutive 'data:' lines — the client is meant to
+  // concatenate their values with '\n' between them and only parse once
+  // a blank line ends the event. The old code treated every single
+  // 'data:' line as a complete, independently-parseable JSON chunk on
+  // its own, which happens to work for the common case of one line per
+  // event but silently breaks the moment a payload is ever legitimately
+  // spread across multiple lines this way (a plausible shape for a large
+  // write_file tool call's arguments) — each line alone fails
+  // JSON.parse, gets silently discarded, and the accumulated tool-call
+  // arguments end up missing a chunk with zero indication anything went
+  // wrong, until executeTool's JSON.parse fails on the complete,
+  // now-corrupted string much later, having already spent the tokens.
+  let dataBuffer = '';
+
+  const processEvent = () => {
+    if (!dataBuffer) return;
+    const dataStr = dataBuffer;
+    dataBuffer = '';
+    if (dataStr === '[DONE]') return;
+
+    let chunk: any;
+    try {
+      chunk = JSON.parse(dataStr);
+    } catch {
+      return; // genuinely malformed event (not a framing issue) — skip it
+    }
+
+    if (chunk.model) finalModel = chunk.model;
+    if (chunk.usage) usage = extractUsage(chunk); // final chunk, when stream_options.include_usage is honored
+
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) return;
+
+    if (typeof delta.content === 'string' && delta.content) {
+      content += delta.content;
+      options?.onDelta?.(delta.content);
+    }
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const acc = (toolCallAcc[tc.index] ??= { args: '' });
+        if (tc.id) acc.id = tc.id;
+        if (tc.function?.name) acc.name = (acc.name || '') + tc.function.name;
+        if (tc.function?.arguments) acc.args += tc.function.arguments;
+      }
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -146,39 +193,28 @@ export async function callOpenRouter(
 
     let lineEnd;
     while ((lineEnd = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, lineEnd).trim();
+      // Tolerates a trailing \r (CRLF) without treating it as part of
+      // the line's content — plain .trim() would also eat meaningful
+      // leading/trailing spaces inside a multi-line data value.
+      const line = buffer.slice(0, lineEnd).replace(/\r$/, '');
       buffer = buffer.slice(lineEnd + 1);
-      if (!line.startsWith('data:')) continue;
-      const dataStr = line.slice(5).trim();
-      if (dataStr === '[DONE]') continue;
 
-      let chunk: any;
-      try {
-        chunk = JSON.parse(dataStr);
-      } catch {
-        continue; // skip one malformed chunk rather than aborting the whole stream
+      if (line === '') {
+        // Blank line: end of this event, per spec — dispatch whatever
+        // data lines accumulated (if none did, this is just the blank
+        // line SSE uses to separate events, nothing to do).
+        processEvent();
+        continue;
       }
-
-      if (chunk.model) finalModel = chunk.model;
-      if (chunk.usage) usage = extractUsage(chunk); // final chunk, when stream_options.include_usage is honored
-
-      const delta = chunk.choices?.[0]?.delta;
-      if (!delta) continue;
-
-      if (typeof delta.content === 'string' && delta.content) {
-        content += delta.content;
-        options?.onDelta?.(delta.content);
-      }
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const acc = (toolCallAcc[tc.index] ??= { args: '' });
-          if (tc.id) acc.id = tc.id;
-          if (tc.function?.name) acc.name = (acc.name || '') + tc.function.name;
-          if (tc.function?.arguments) acc.args += tc.function.arguments;
-        }
-      }
+      if (!line.startsWith('data:')) continue; // 'event:', 'id:', ':' comments, etc. — unused here
+      // Spec: strip at most one leading space after the colon, not all
+      // leading whitespace — a data value can legitimately start with
+      // more of its own.
+      const value = line.slice(5).replace(/^ /, '');
+      dataBuffer = dataBuffer ? `${dataBuffer}\n${value}` : value;
     }
   }
+  processEvent(); // covers a final event with no trailing blank line
 
   const toolCalls: ToolCall[] = Object.keys(toolCallAcc)
     .map(Number)

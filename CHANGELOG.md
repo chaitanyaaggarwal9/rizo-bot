@@ -9,6 +9,20 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Added
+- Live turn status line — while a turn is running, its bubble now shows
+  which model/variant is actually answering, what it's doing right now
+  ("Thinking…", the current tool call's title, "Writing reply…"), a
+  ticking elapsed timer, and a running token count that grows across a
+  turn's tool round-trips — all previously invisible until the whole
+  turn finished (the only place any of it showed up was the model-tag
+  finalizeTurn attaches once everything is already done). Model arrives
+  once a turn's model is finalized (after Smart Starting Variant has
+  had its say); tokens tick up after each tool round-trip; elapsed runs
+  off a plain client-side timer. Cleaned up on every path that can end
+  a turn — normal finish, Stop, an error, switching threads — so
+  nothing keeps ticking against a turn nobody's looking at anymore.
+
 ### Fixed
 - SSE stream parsing (`src/openrouter.ts`) rewritten to actually follow
   the spec: one event's data can legitimately be spread across several

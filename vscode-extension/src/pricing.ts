@@ -28,9 +28,9 @@ const PRICING: Record<string, ModelPricing> = {
   'deepseek/deepseek-v3.2': { promptPerM: 0.27, completionPerM: 1.1 },
   'deepseek/deepseek-r1': { promptPerM: 0.55, completionPerM: 2.19 },
   // Kimi
-  'moonshotai/kimi-k2-turbo': { promptPerM: 0.15, completionPerM: 0.6 },
-  'moonshotai/kimi-k2': { promptPerM: 0.6, completionPerM: 2.5 },
-  'moonshotai/kimi-k2-thinking': { promptPerM: 1.2, completionPerM: 5.0 },
+  'moonshotai/kimi-k2.5': { promptPerM: 0.45, completionPerM: 2.25 },
+  'moonshotai/kimi-k2-thinking': { promptPerM: 0.6, completionPerM: 2.5 },
+  'moonshotai/kimi-k3': { promptPerM: 3.0, completionPerM: 15.0 },
 };
 
 // Free-tier models (":free" suffix, or OpenRouter's own free router) cost

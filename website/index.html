@@ -3,6 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Google tag (gtag.js) — page views + scroll/outbound-click enhanced
+     measurement come from this alone (toggle in the GA4 property's Data
+     Streams settings); script.js adds a few named events on top for the
+     CTAs that actually matter (install clicks, GitHub clicks, the copy-
+     install button) so they show up as their own events instead of
+     generic outbound clicks. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-S37XL7PTJH"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-S37XL7PTJH');
+</script>
+
 <title>Rizo: BYOK AI coding assistant for VS Code</title>
 <meta name="description" content="Rizo lets you pick a provider — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — for each chat, switch cost tier within it any time, and dial reasoning effort up or down per turn, all through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
 <link rel="icon" href="favicon.png" type="image/png">
@@ -27,18 +42,18 @@
       Rizo
     </a>
     <div class="nav-links">
-      <a href="#providers">Providers</a>
-      <a href="#effort">Effort</a>
-      <a href="#safety">Safety</a>
-      <a href="#byok">BYOK</a>
-      <a href="https://github.com/chaitanyaaggarwal9/rizo-bot">GitHub</a>
+      <a href="#providers" data-ga-event="nav_link" data-ga-label="providers">Providers</a>
+      <a href="#effort" data-ga-event="nav_link" data-ga-label="effort">Effort</a>
+      <a href="#safety" data-ga-event="nav_link" data-ga-label="safety">Safety</a>
+      <a href="#byok" data-ga-event="nav_link" data-ga-label="byok">BYOK</a>
+      <a href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="nav">GitHub</a>
     </div>
     <div class="nav-cta">
       <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" type="button">
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
         <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
       </button>
-      <a class="btn btn-primary btn-sm" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install</a>
+      <a class="btn btn-primary btn-sm" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="nav">Install</a>
     </div>
   </div>
 </nav>
@@ -54,8 +69,8 @@
         <h1>Pick a provider. Stay in it. Dial the cost yourself.</h1>
         <p class="hero-sub">Each chat locks to one company — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — so switching cost tiers mid-task never means a different model losing the thread. Swap variants inside that company any time, and turn reasoning effort up or down per message. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
         <div class="hero-ctas">
-          <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
-          <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">
+          <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="hero">Install from Marketplace</a>
+          <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="hero">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55v-2.17c-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.82 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.55A10.52 10.52 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
             View on GitHub
           </a>
@@ -156,9 +171,9 @@
           </tr>
           <tr>
             <td class="model">Kimi</td>
-            <td class="price">K2 Turbo</td>
-            <td class="price">K2</td>
+            <td class="price">K2.5</td>
             <td class="price">K2 Thinking</td>
+            <td class="price">K3</td>
           </tr>
           <tr>
             <td class="model">Free</td>
@@ -303,8 +318,8 @@
     <div class="cta-band reveal">
       <h2>Bring a key. See what it costs.</h2>
       <div class="cta-band-actions">
-        <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Install from Marketplace</a>
-        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot">Read the source</a>
+        <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="final_cta">Install from Marketplace</a>
+        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="final_cta">Read the source</a>
       </div>
     </div>
   </div>
@@ -320,11 +335,11 @@
     <div class="footer-inner">
       <span>Apache License 2.0 · Rizo</span>
       <div class="footer-links">
-        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot">GitHub</a>
-        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE">License</a>
-        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md">Docs</a>
-        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues">Issues</a>
-        <a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">Marketplace</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="footer">GitHub</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE" data-ga-event="footer_link" data-ga-label="license">License</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md" data-ga-event="footer_link" data-ga-label="docs">Docs</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues" data-ga-event="footer_link" data-ga-label="issues">Issues</a>
+        <a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="footer">Marketplace</a>
       </div>
     </div>
   </div>

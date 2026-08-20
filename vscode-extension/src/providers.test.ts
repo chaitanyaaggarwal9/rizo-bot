@@ -76,6 +76,17 @@ describe('isValidProviderModel', () => {
   it('rejects an unknown model id entirely', () => {
     expect(isValidProviderModel('claude', 'not-a-real-model')).toBe(false);
   });
+
+  it('regression: moonshotai/kimi-k2-turbo (pulled from OpenRouter 2026-08-20) is correctly gone from the catalog', () => {
+    // A real user hit "not a valid model ID" from OpenRouter itself on
+    // an existing thread already locked to this id — chatPanel.ts's
+    // handleSend now self-heals a thread stuck on a since-invalidated
+    // model by falling back to defaultModelForProvider; this pins the
+    // catalog side of that fix so a future re-add of the same dead id
+    // doesn't silently break the fallback's assumption again.
+    expect(isValidProviderModel('kimi', 'moonshotai/kimi-k2-turbo')).toBe(false);
+    expect(isValidProviderModel('kimi', defaultModelForProvider('kimi'))).toBe(true);
+  });
 });
 
 describe('findVariant / supportsReasoning', () => {

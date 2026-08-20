@@ -644,6 +644,21 @@ export class ChatPanel {
     }
     const provider = thread.provider;
     let model = thread.model;
+    // A stored model id can go stale out from under a thread — the
+    // catalog in providers.ts is a snapshot of what OpenRouter serves,
+    // and an upstream provider can pull/rename a model without warning
+    // (real incident: moonshotai/kimi-k2-turbo, 2026-08-20 — a live
+    // thread already on it just started hard-failing every send with
+    // "not a valid model ID", no recovery except manually reopening the
+    // switcher). Falls back to this provider's current default instead
+    // of sending a request that's doomed to fail the same way every
+    // time; setThreadModel persists the fallback so this only self-heals
+    // once per thread, not on every single turn.
+    if (!isValidProviderModel(provider, model)) {
+      const fallback = defaultModelForProvider(provider);
+      setThreadModel(this.context, threadId, provider, fallback);
+      model = fallback;
+    }
     let effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
 
     try {

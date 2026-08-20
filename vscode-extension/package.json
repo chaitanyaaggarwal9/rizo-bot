@@ -2,7 +2,7 @@
   "name": "rizo",
   "displayName": "Rizo",
   "description": "BYOK AI coding assistant — cost-optimized model routing, file edit, terminal, git, all through your own OpenRouter key.",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "publisher": "ChaitanyaAggarwal",
   "icon": "icon.png",
   "license": "SEE LICENSE IN LICENSE",

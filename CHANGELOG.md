@@ -9,6 +9,29 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-08-20
+
+### Fixed
+- `moonshotai/kimi-k2-turbo` was pulled from OpenRouter entirely —
+  a real user's existing Kimi thread started hard-failing every send
+  with "not a valid model ID." Replaced Kimi's whole lineup with what's
+  actually live now (K2.5, K2 Thinking, K3) rather than patch just the
+  one dead id: the other two tiers had also drifted close enough in
+  price ($0.57/$2.30 vs $0.60/$2.50) to barely function as separate
+  tiers anymore, and K3 (a new flagship, 4x the context window, ~5x the
+  price of K2 Thinking) restores a real cheap-to-strong spread.
+  Cross-checked every other provider's model ids against OpenRouter's
+  live catalog at the same time — nothing else was stale.
+- `chatPanel.ts`'s `handleSend` now self-heals a thread stuck on a
+  since-invalidated model id: falls back to that provider's current
+  default and persists it, instead of sending a request that's doomed
+  to fail the same way on every future turn. This is what actually
+  needed to happen — the catalog fix alone doesn't rescue an existing
+  thread already holding a dead id in storage. This will happen again
+  to some provider eventually (an upstream provider can rename/pull a
+  model with no warning); now a thread just quietly recovers instead of
+  staying broken until someone manually opens the model switcher.
+
 ## [0.4.4] - 2026-08-20
 
 ### Changed

@@ -79,10 +79,17 @@ export const PROVIDERS: Record<string, Provider> = {
   kimi: {
     id: 'kimi',
     label: 'Kimi',
+    // 2026-08-20: kimi-k2-turbo was pulled from OpenRouter entirely
+    // (real users hit "not a valid model ID" on it) — replaced this
+    // whole lineup with what's actually live now rather than patch just
+    // the one dead id, since k2/k2-thinking had also drifted close
+    // enough in price ($0.57/$2.30 vs $0.60/$2.50) to barely function as
+    // separate tiers anymore. k2.5 and k3 both gained image input since
+    // the old lineup was set up.
     variants: [
-      { id: 'moonshotai/kimi-k2-turbo', label: 'K2 Turbo', tagline: 'Fastest, for quick answers', vision: false },
-      { id: 'moonshotai/kimi-k2', label: 'K2', tagline: 'Most efficient for everyday tasks', vision: false },
-      { id: 'moonshotai/kimi-k2-thinking', label: 'K2 Thinking', tagline: 'For complex reasoning tasks', vision: false },
+      { id: 'moonshotai/kimi-k2.5', label: 'K2.5', tagline: 'Fastest, for quick answers' },
+      { id: 'moonshotai/kimi-k2-thinking', label: 'K2 Thinking', tagline: 'Most efficient for everyday tasks', vision: false },
+      { id: 'moonshotai/kimi-k3', label: 'K3', tagline: 'For complex reasoning tasks' },
     ],
   },
   // Not a real company — routes through freeChainForTaskType's fallback

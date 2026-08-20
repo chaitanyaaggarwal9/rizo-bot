@@ -24,6 +24,8 @@ State the hypothesis and what evidence would confirm or kill it, then test *that
 | Wrap it in try/catch to stop the crash | Understand what throws, handle only the cases that are actually recoverable |
 | Change several suspicious-looking things, rerun | Change one variable, rerun, note the result, repeat |
 
+A report names one symptom at one call site. Before editing, grep every caller of the function you're about to touch — a guard added only where the ticket points still leaves every sibling caller broken. The root-cause fix is usually also the *smaller* diff: one guard in the shared function beats the same guard copy-pasted into each caller.
+
 ### 4. Read the actual error
 
 The real error message, stack trace, and line number — not the closest-looking pattern from memory or a search result. A fix aimed at a misremembered error fixes nothing.
@@ -40,3 +42,5 @@ The real error message, stack trace, and line number — not the closest-looking
 - Suppressing the symptom (broad try/except, defaulting a value, ignoring an error) without understanding the cause.
 - A special-case branch that papers over the root cause instead of fixing it.
 - Declaring it fixed because the immediate crash stopped, without checking the underlying condition that caused it.
+
+*Rule 3's "grep every caller" tactic adapted from DietrichGebert/ponytail, MIT license.*

@@ -1,6 +1,6 @@
 # Coding Discipline
 
-Four habits that catch the most common ways coding assistance goes wrong. They trade a little speed for a lot fewer regrets — for genuinely trivial one-liners, use judgment and don't over-apply them.
+Five habits that catch the most common ways coding assistance goes wrong. They trade a little speed for a lot fewer regrets — for genuinely trivial one-liners, use judgment and don't over-apply them.
 
 This is the base layer, loaded for every coding-related request. Debugging Discipline, Test Discipline, and Git Hygiene go deeper on their specific topics and load alongside this one when the request touches them.
 
@@ -14,9 +14,18 @@ Before writing code against an ambiguous request:
 
 ### 2. Default to the smallest solution that works
 
-- Build only what was asked for — no speculative features, no "just in case" flexibility, no configurability nobody requested.
-- No error handling for scenarios that can't occur given the actual inputs.
-- If a solution is 200 lines and could reasonably be 50, that's a sign to rewrite it, not polish it.
+Before writing code, stop at the first rung that holds:
+1. Doesn't need to exist (speculative "just in case" flexibility, configurability nobody requested) → skip it, say so in one line.
+2. Already in this codebase (a helper, util, type, pattern) → reuse it, don't reimplement it a few files over.
+3. The standard library does it → use it.
+4. A native platform feature covers it (an HTML input type, CSS, a DB constraint) → use it over a library.
+5. An already-installed dependency solves it → use it — don't add a new one for what a few lines already covers.
+6. Fits in one line → one line.
+7. Only then: the minimum code that actually works.
+
+Two rungs both work? Take the higher (smaller) one. This runs *after* understanding the problem, not instead of it — read what the change actually touches first, then climb; the smallest change in the wrong place is a second bug, not a win.
+
+No error handling for scenarios that can't occur given the actual inputs. If a solution is 200 lines and could reasonably be 50, that's a sign to rewrite it, not polish it. A deliberate corner cut with a known ceiling (a naive O(n²) scan, a global lock) is fine to ship — mark it with a comment naming the ceiling and what would trigger revisiting it, rather than cutting it silently.
 
 A useful gut check: would a senior engineer reviewing this call it overcomplicated for what it does? If yes, cut it down.
 
@@ -42,4 +51,8 @@ Turn vague asks into something checkable:
 
 For anything with more than one step, state a short plan up front so the success criteria are visible before work starts, not invented retroactively to match whatever got built.
 
-*Adapted from Andrej Karpathy's public observations on LLM coding pitfalls, distributed under the original andrej-karpathy-skills project's MIT license.*
+### 5. Let the code speak, don't pad the reply
+
+Explanation the user actually asked for — a walkthrough, a report, per-step notes — give it in full, that's not waste. Anything unrequested (a design-notes essay, a feature tour, a paragraph defending a simplification) — cut it. If the explanation is longer than the code, that's a sign the explanation is doing work the code should be doing instead. "Did X; skipped Y, add when Z" beats a paragraph saying the same thing.
+
+*Rule 2's ladder adapted from DietrichGebert/ponytail, MIT license. Rule 4's Karpathy-derived content: adapted from Andrej Karpathy's public observations on LLM coding pitfalls, distributed under the original andrej-karpathy-skills project's MIT license.*

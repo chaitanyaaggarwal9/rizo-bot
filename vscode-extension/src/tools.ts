@@ -167,21 +167,61 @@ function getWorkspaceRoot(): string {
   return folders[0].uri.fsPath;
 }
 
-// Resolves a model-supplied relative path and refuses anything that
-// escapes the workspace root — path traversal, absolute paths elsewhere,
-// AND a symlink that lives inside the workspace but points outside it.
-// The string check alone (path.resolve + startsWith) catches "../.." but
-// not a symlink: fs.readFileSync/writeFileSync follow symlinks at the OS
-// level, so a file that looks like it's inside the workspace can silently
-// read or write somewhere else entirely. realpathSync resolves the actual
-// target; walk up to the nearest existing ancestor first since a new file
-// (write_file creating something that doesn't exist yet) has no realpath
-// of its own to resolve.
-function resolveSafePath(relativePath: string): string {
-  const root = fs.realpathSync(getWorkspaceRoot());
-  const resolved = path.resolve(root, relativePath);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error(`Path "${relativePath}" resolves outside the workspace root — refusing.`);
+// Every open workspace folder's real path, not just the first — a
+// multi-root workspace (File > Add Folder to Workspace...) is the same
+// explicit, deliberate trust decision opening a single folder always
+// was, so every folder in it should actually be usable by read_file/
+// write_file/edit_file, not silently limited to whichever one VS Code
+// happened to list first. Only resolveSafePath needs this — run_command's
+// cwd (getWorkspaceRoot, above) still only ever means the primary
+// folder, since a shell command can only run in one directory at a time.
+function getWorkspaceRoots(): string[] {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    throw new Error('No workspace folder is open — open a folder to let the agent read/edit files.');
+  }
+  return folders.map((f) => fs.realpathSync(f.uri.fsPath));
+}
+
+// Resolves a model-supplied path and refuses anything that escapes every
+// open workspace folder or explicitly-granted extra root — path
+// traversal, an absolute path nowhere any of them, AND a symlink that
+// lives inside one but points outside it. The string check alone
+// (path.resolve + startsWith) catches "../.." but not a symlink:
+// fs.readFileSync/writeFileSync follow symlinks at the OS level, so a
+// file that looks like it's inside an allowed root can silently read or
+// write somewhere else entirely. realpathSync resolves the actual
+// target; walk up to the nearest existing ancestor first since a new
+// file (write_file creating something that doesn't exist yet) has no
+// realpath of its own to resolve.
+//
+// extraRoots (default none) come from chatPanel.ts's handleSend, one
+// layer up — paths the *human's own message text* named and that
+// actually exist on disk, threaded through executeTool for exactly this
+// call. Same trust boundary as "Attach file...": a model reaching
+// outside the workspace on its own is the risk this function exists to
+// stop; a human naming a folder in their own message isn't that risk,
+// so it gets treated the same as an already-open workspace folder for
+// the rest of this call (and, since chatPanel.ts persists it, this
+// thread).
+function resolveSafePath(relativePath: string, extraRoots: string[] = []): string {
+  const roots = [...getWorkspaceRoots(), ...extraRoots.map((r) => fs.realpathSync(r))];
+  // path.resolve treats an already-absolute second argument as an
+  // override of the first (the base only matters for a genuinely
+  // relative path) — so a relative path resolves against the primary
+  // folder as always, while an absolute path pointing at any OTHER open
+  // folder in a multi-root workspace resolves to itself and gets
+  // checked against every root below, not just the first.
+  const resolved = path.resolve(roots[0], relativePath);
+  const matchedRoot = roots.find((root) => resolved === root || resolved.startsWith(root + path.sep));
+  if (!matchedRoot) {
+    // Actionable, not just a refusal — the model relays this verbatim-ish
+    // to the user, and "add the folder to your workspace" is a real,
+    // one-click fix (File > Add Folder to Workspace..., or drag it into
+    // the Explorer sidebar), not a dead end.
+    throw new Error(
+      `Path "${relativePath}" resolves outside every open workspace folder — refusing. To work with a different folder, add it to this VS Code workspace first (File > Add Folder to Workspace..., or drag it into the Explorer sidebar) — every folder in a multi-root workspace is usable, not just the first one.`,
+    );
   }
 
   let existingAncestor = resolved;
@@ -191,7 +231,7 @@ function resolveSafePath(relativePath: string): string {
     existingAncestor = parent;
   }
   const realAncestor = fs.realpathSync(existingAncestor);
-  if (realAncestor !== root && !realAncestor.startsWith(root + path.sep)) {
+  if (realAncestor !== matchedRoot && !realAncestor.startsWith(matchedRoot + path.sep)) {
     throw new Error(`Path "${relativePath}" escapes the workspace root via a symlink — refusing.`);
   }
 
@@ -368,7 +408,7 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   });
 }
 
-export async function executeTool(context: vscode.ExtensionContext, name: string, argsJson: string): Promise<string> {
+export async function executeTool(context: vscode.ExtensionContext, name: string, argsJson: string, extraRoots: string[] = []): Promise<string> {
   // Backstop for rizo.permissions.disabledTools — chatPanel.ts already
   // filters TOOLS before offering them to the model, so this only matters
   // if a call somehow still arrives here anyway (stale history, a model
@@ -402,7 +442,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
   try {
     switch (name) {
       case 'read_file': {
-        const filePath = resolveSafePath(args.path);
+        const filePath = resolveSafePath(args.path, extraRoots);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
         // Unlike the attachment flow (readAndSendAttachment in
         // chatPanel.ts), which already rejects binary files with a clear
@@ -422,7 +462,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
       }
 
       case 'write_file': {
-        const filePath = resolveSafePath(args.path);
+        const filePath = resolveSafePath(args.path, extraRoots);
         const isNew = !fs.existsSync(filePath);
         const oldContent = isNew ? '' : currentContent(filePath);
         const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew, args.content);
@@ -433,7 +473,7 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
       }
 
       case 'edit_file': {
-        const filePath = resolveSafePath(args.path);
+        const filePath = resolveSafePath(args.path, extraRoots);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}. Use write_file to create a new file.`;
         const oldContent = currentContent(filePath);
         const occurrences = oldContent.split(args.old_string).length - 1;

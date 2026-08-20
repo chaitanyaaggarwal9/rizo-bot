@@ -45,6 +45,7 @@ import {
   setThreadModel,
   setThreadEffort,
   upgradeThreadTaskType,
+  addThreadExtraRoots,
   sumThreadTokens,
   sumThreadCost,
 } from './threadStore';
@@ -98,6 +99,41 @@ function getNonce(): string {
 
 function emptyUsage(): Usage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+}
+
+function isParseableJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Absolute paths the human's own message names, verified to actually
+// exist on disk before ever being trusted — see extraRoots' own comment
+// on threadStore.ts's Thread interface for why that's safe to trust
+// while the same path arriving in a model's own tool-call arguments
+// isn't. Liberal regex extraction (a quoted path can contain spaces; an
+// unquoted one stops at whitespace) is fine precisely because
+// fs.existsSync is the real filter — nearly everything that looks
+// path-shaped but isn't one (a version number, a date, a fraction) just
+// fails that check and gets silently dropped, the same way it would if
+// a human had to pick it from a file dialog that only shows what's
+// actually there.
+function detectExtraRoots(text: string): string[] {
+  const candidates = new Set<string>();
+  for (const m of text.matchAll(/(['"])(\/[^'"]+)\1/g)) candidates.add(m[2]);
+  for (const m of text.matchAll(/\/[^\s'"]+/g)) candidates.add(m[0].replace(/[.,;:!?)]+$/, ''));
+  const found: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) found.push(fs.realpathSync(candidate));
+    } catch {
+      /* not a real path on this OS (too long, invalid characters, etc.) — skip it */
+    }
+  }
+  return found;
 }
 
 // Merges the workspace's root .gitignore into "Mention file from this
@@ -678,6 +714,17 @@ export class ChatPanel {
       // chain to try.
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
+
+      // A path this message names, outside every open workspace folder,
+      // but real — grant read_file/write_file/edit_file access to it for
+      // this and every future turn in this thread. See detectExtraRoots'
+      // own comment and extraRoots' on threadStore.ts's Thread interface
+      // for why this is safe: only ever populated from the human's own
+      // message text, never from a model's tool-call arguments.
+      const newExtraRoots = detectExtraRoots(effectiveText);
+      if (newExtraRoots.length > 0) addThreadExtraRoots(this.context, threadId, newExtraRoots);
+      const extraRoots = [...new Set([...(thread.extraRoots || []), ...newExtraRoots])];
+
       const messageTaskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
       // Sticky: a short follow-up ("yes", an email address, "continue")
       // rarely contains a coding keyword on its own, but a task that
@@ -858,7 +905,7 @@ export class ChatPanel {
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
         if (this.cancelledTurnId === turnId) break;
 
-        const { model: usedModel, message, usage } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
+        const { model: usedModel, message, usage, finishReason } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
           signal: controller.signal,
           // Dropped for a variant that doesn't support it (providers.ts's
           // ModelVariant.reasoning === false) rather than sent and possibly
@@ -912,7 +959,26 @@ export class ChatPanel {
             title: summary.title,
             detail: summary.detail,
           });
-          const result = await executeTool(this.context, toolCall.function.name, toolCall.function.arguments);
+          // A write_file/edit_file call whose JSON never closes is
+          // diagnosable up front, not just via the generic parse
+          // failure inside executeTool: it's the LAST call in a
+          // response the API itself marked cut off by the token
+          // ceiling (finish_reason 'length'), not a formatting mistake.
+          // Skips straight to guidance that matches what actually
+          // happened — split the write into smaller pieces — instead of
+          // a generic "could not parse" message, which just prompted
+          // the model to regenerate the exact same oversized call again
+          // (the real cause of the 583K-token incident MAX_TOKENS was
+          // raised alongside this).
+          const isLastCall = toolCall === message.tool_calls[message.tool_calls.length - 1];
+          const looksTruncated =
+            finishReason === 'length' &&
+            isLastCall &&
+            (toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') &&
+            !isParseableJson(toolCall.function.arguments);
+          const result = looksTruncated
+            ? `Error: this ${toolCall.function.name} call was cut off before finishing — it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
+            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots);
           const toolOk = !result.startsWith('Error:');
           this.panel.webview.postMessage({
             type: 'toolEnd',

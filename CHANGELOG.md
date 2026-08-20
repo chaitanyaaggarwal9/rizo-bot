@@ -33,6 +33,55 @@ an honest gap. Everything before this point lives in git history instead.
   background`, which just tinted toward whatever the ambient editor
   background already was — a pale, low-contrast box in a light theme,
   nothing like an actual terminal.
+- A bigger `MAX_TOKENS` only pushes the same truncation further out —
+  a large enough file still hits it. `openrouter.ts` now surfaces
+  `finish_reason` from the stream (not tracked at all before), and
+  when a `write_file`/`edit_file` call is both the last one in a cut-
+  off response (`finish_reason: 'length'`) and fails to parse,
+  `chatPanel.ts` skips the generic "could not parse" error and tells
+  the model exactly what happened — the file was too large for one
+  call — with the actual fix (split it: a smaller `write_file`, then
+  `edit_file` in follow-up calls), instead of a message that just
+  prompted a full regeneration of the same oversized call every retry.
+  Deliberately not literal byte-level continuation (splicing a second
+  completion onto the truncated JSON string) — Rizo routes through 5+
+  model families via OpenRouter, not one provider, and a botched
+  splice could produce JSON that parses successfully but silently
+  writes corrupted content to a real file, which is worse than a
+  clean failure. Added real test coverage for `finish_reason`
+  extraction, tool-call reassembly across streamed chunks, and the
+  multi-line SSE framing fix (`openrouter.test.ts` — this file had
+  none before despite being the site of two real, previously-shipped
+  bugs this session).
+- `read_file`/`write_file`/`edit_file` can now reach a location outside
+  the open workspace folder in two new, deliberately narrow ways:
+  - **Multi-root workspaces.** `resolveSafePath` used to only ever
+    check the *first* workspace folder (`workspaceFolders[0]`) — adding
+    a second folder via VS Code's own File > Add Folder to Workspace...
+    was silently ignored for file tools even though it's a real,
+    explicit trust decision the same way opening the single folder
+    always was. Now every open folder is usable.
+  - **A path the human's own message names.** "read the code in
+    /some/other/folder" now works without adding it to the workspace
+    first — the message text is scanned for real, existing absolute
+    paths (quoted ones can contain spaces) and, once found, that
+    location is usable for the rest of the thread (`threadStore.ts`'s
+    new `Thread.extraRoots`, persisted). Deliberately scoped to the
+    *human's own words only* — a model's tool-call arguments never
+    grant themselves new access this way, only ever the same
+    already-open-or-named locations. That distinction is exactly why
+    this is safe to add and a general "let the model read anywhere it
+    asks" wouldn't be: the workspace boundary exists specifically to
+    stop a model reaching outside it *on its own* (e.g. steered there
+    by a prompt injection buried in some file it already read), and
+    a human naming a folder in their own chat message isn't that risk
+    — same reasoning "Attach file..." already relies on to bypass the
+    same boundary for a human-driven file pick. Verified end-to-end
+    (not just read the code and assumed): the exact same path is
+    correctly refused with no `extraRoots` grant, succeeds once
+    granted, and an unrelated third path stays refused even when
+    other `extraRoots` exist — confirming this is additive access to
+    named locations, not a blanket bypass.
 
 ### Added
 - Free provider: pick a specific free model yourself instead of only

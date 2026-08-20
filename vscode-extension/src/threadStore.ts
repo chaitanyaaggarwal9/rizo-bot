@@ -100,6 +100,21 @@ export interface ThreadData extends ThreadMeta {
   // follow-up could silently lose Coding Discipline for the rest of the
   // conversation. Undefined/'general' means "not upgraded yet."
   taskType?: 'coding' | 'general';
+  // Absolute paths outside every open VS Code workspace folder that
+  // this thread is nonetheless allowed to read/write — populated only
+  // when the *human's own message text* names a real path on disk (see
+  // chatPanel.ts's handleSend), never from a model's own tool-call
+  // arguments. Same trust boundary tools.ts's read_file/write_file/
+  // edit_file already draw around workspace folders themselves, and the
+  // same reasoning "Attach file..." already uses to bypass it for a
+  // human-driven pick: a model reaching outside the workspace on its
+  // own (possibly steered there by a prompt injection buried in some
+  // file it read) is the risk that boundary exists to stop — a human
+  // typing "read the code in /some/other/folder" into their own chat
+  // message is a deliberate choice, not that risk. Persisted per-thread
+  // (not per-turn) so a folder mentioned once stays usable for the rest
+  // of the conversation.
+  extraRoots?: string[];
 }
 
 function storageRoot(context: vscode.ExtensionContext): string {
@@ -223,6 +238,19 @@ export function setThreadModel(context: vscode.ExtensionContext, id: string, pro
   if (!thread) return;
   thread.provider = provider;
   thread.model = model;
+  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
+}
+
+// Merges newly-detected paths into extraRoots (see its own comment) —
+// additive and deduped, never removes a root a prior message already
+// granted. Only ever called with paths chatPanel.ts already verified
+// exist on disk and came from the human's own message text.
+export function addThreadExtraRoots(context: vscode.ExtensionContext, id: string, roots: string[]): void {
+  if (roots.length === 0) return;
+  const thread = loadThread(context, id);
+  if (!thread) return;
+  const merged = new Set([...(thread.extraRoots || []), ...roots]);
+  thread.extraRoots = [...merged];
   fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 

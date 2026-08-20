@@ -70,6 +70,14 @@ export interface ChatResult {
   model: string;
   message: AssistantMessage;
   usage: Usage;
+  // 'length' means the completion was cut off by max_tokens, not that
+  // the model chose to stop — chatPanel.ts uses this to tell a genuinely
+  // truncated tool call (mid-write, hit the ceiling) apart from one
+  // that's just malformed for some other reason, and give the model
+  // guidance that actually matches what happened instead of a generic
+  // parse error. Undefined rather than a required field: a provider
+  // that omits finish_reason entirely shouldn't be forced to fake one.
+  finishReason?: string;
 }
 
 function extractUsage(data: any): Usage {
@@ -143,6 +151,7 @@ export async function callOpenRouter(
 
   let content = '';
   let finalModel = model;
+  let finishReason: string | undefined;
   let usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
   // Streamed tool-call arguments arrive as partial JSON string fragments
   // spread across many delta chunks, keyed by array index — reassembled
@@ -184,6 +193,12 @@ export async function callOpenRouter(
 
     if (chunk.model) finalModel = chunk.model;
     if (chunk.usage) usage = extractUsage(chunk); // final chunk, when stream_options.include_usage is honored
+    // finish_reason rides on the same choice as delta, but arrives on
+    // the terminal chunk (often alongside an empty delta) — read it
+    // unconditionally here rather than inside the `if (!delta) return`
+    // guard below, so a chunk that's ONLY the finish reason isn't missed.
+    const reason = chunk.choices?.[0]?.finish_reason;
+    if (reason) finishReason = reason;
 
     const delta = chunk.choices?.[0]?.delta;
     if (!delta) return;
@@ -245,7 +260,7 @@ export async function callOpenRouter(
     content: content || null,
     ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
   };
-  return { model: finalModel, message, usage };
+  return { model: finalModel, message, usage, finishReason };
 }
 
 // Tries each model in the chain in order — used for free-mode routing,

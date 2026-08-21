@@ -70,7 +70,7 @@ jobs:
         run: npx vsce publish --allow-missing-repository -p "${{ secrets.VSCE_PAT }}"
 
       - name: Attach the .vsix to a GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: vscode-extension/*.vsix
           generate_release_notes: true

@@ -48,5 +48,4 @@ a new state is added and a handler is missing.
 - Enums where a `const` object + `as const` union would do the same job
   with less runtime footprint.
 
-*Adapted from Jeffallan's claude-skills project (typescript-pro), MIT
-license.*
+

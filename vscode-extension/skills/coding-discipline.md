@@ -55,4 +55,4 @@ For anything with more than one step, state a short plan up front so the success
 
 Explanation the user actually asked for — a walkthrough, a report, per-step notes — give it in full, that's not waste. Anything unrequested (a design-notes essay, a feature tour, a paragraph defending a simplification) — cut it. If the explanation is longer than the code, that's a sign the explanation is doing work the code should be doing instead. "Did X; skipped Y, add when Z" beats a paragraph saying the same thing.
 
-*Rule 2's ladder adapted from DietrichGebert/ponytail, MIT license. Rule 4's Karpathy-derived content: adapted from Andrej Karpathy's public observations on LLM coding pitfalls, distributed under the original andrej-karpathy-skills project's MIT license.*
+

@@ -27,4 +27,4 @@ listed here, flag the mismatch but don't churn the dependency unasked.
 - A prop-drilled web of `useState` for state three components actually
   share.
 
-*Adapted from jeffallan/claude-skills' `pick-ui-library`, MIT license.*
+

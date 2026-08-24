@@ -52,5 +52,3 @@ messages belong in server logs, not the response body.
 - An auth error message that reveals whether an account exists.
 - Rolling a custom hashing/encryption scheme instead of a vetted library.
 
-*Adapted from Jeffallan's claude-skills project (secure-code-guardian),
-MIT license.*

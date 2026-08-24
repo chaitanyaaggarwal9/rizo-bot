@@ -50,31 +50,22 @@ import {
   sumThreadCost,
 } from './threadStore';
 
-// 8 was hitting this wall on ordinary multi-file tasks (portfolio-repo
-// incident, Aug 2026) — Codex's own agent core (codex-rs/core) has no
-// small fixed per-turn cap at all, which is a real part of why tools like
-// it don't feel like they're constantly running out of steps. Not going
-// unbounded here though — a genuinely stuck model burning tool calls
-// should still stop and hand back to you rather than run up cost forever;
-// 30 is a generous multiple of what a normal task (read a few files, make
-// a few edits, verify) actually needs.
+// Caps a runaway tool loop while leaving room for a normal multi-file
+// task (read, edit, verify) to actually finish.
 const MAX_TOOL_ITERATIONS = 30;
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
-// Holds exactly one thread — whichever was deleted most recently, cleared
-// once restored. Not a stack: Reopen Closed Session only ever means "the
-// last thing I closed," same as a browser's Cmd/Ctrl+Shift+T.
+// Holds one thread — the most recently deleted, cleared once restored.
+// Not a stack: only the last deletion is recoverable.
 const LAST_DELETED_THREAD_KEY = 'rizo.lastDeletedThread';
 
-// Always the cheapest available model, regardless of which provider the
-// user picked for the conversation itself — folding old history into a
-// summary is internal housekeeping (see maybeSummarize), not a user-facing
-// reply, so it shouldn't spend the thread's own (possibly expensive) model.
+// Cheapest available model — summarizing old history is internal
+// housekeeping, not a user-facing reply, so it shouldn't use the
+// thread's own (possibly expensive) model.
 const SUMMARY_MODEL = PROVIDERS.openai.variants[0].id;
 
-// Long threads stop replaying their full raw history once they pass this
-// many stored messages — everything older than the last SUMMARY_KEEP_TAIL
-// gets folded into a running summary instead (see maybeSummarize below).
+// Threads longer than this stop replaying full raw history — everything
+// older than the last SUMMARY_KEEP_TAIL folds into a running summary.
 const SUMMARIZE_THRESHOLD = 20;
 const SUMMARY_KEEP_TAIL = 10;
 
@@ -110,17 +101,11 @@ function isParseableJson(text: string): boolean {
   }
 }
 
-// Absolute paths the human's own message names, verified to actually
-// exist on disk before ever being trusted — see extraRoots' own comment
-// on threadStore.ts's Thread interface for why that's safe to trust
-// while the same path arriving in a model's own tool-call arguments
-// isn't. Liberal regex extraction (a quoted path can contain spaces; an
-// unquoted one stops at whitespace) is fine precisely because
-// fs.existsSync is the real filter — nearly everything that looks
-// path-shaped but isn't one (a version number, a date, a fraction) just
-// fails that check and gets silently dropped, the same way it would if
-// a human had to pick it from a file dialog that only shows what's
-// actually there.
+// Extracts absolute paths the user's own message names and confirms
+// exist on disk — a human-named path is trusted where a model-named one
+// isn't (see Thread.extraRoots in threadStore.ts). Regex extraction is
+// deliberately loose; fs.existsSync is the real filter, so anything
+// path-shaped but not real (a version number, a date) just gets dropped.
 function detectExtraRoots(text: string): string[] {
   const candidates = new Set<string>();
   for (const m of text.matchAll(/(['"])(\/[^'"]+)\1/g)) candidates.add(m[2]);
@@ -136,13 +121,11 @@ function detectExtraRoots(text: string): string[] {
   return found;
 }
 
-// Merges the workspace's root .gitignore into "Mention file from this
-// project..."'s exclude pattern — findFiles' own `exclude` param only ever
-// means the files.exclude setting (VS Code API docs: "not search.exclude"),
-// it doesn't consult .gitignore at all on its own. Simple line-by-line glob
-// conversion, not a full gitignore parser (no negation, no nested
-// .gitignore files) — good enough to keep a project's own build output/
-// vendored deps out of the picker, not a guarantee of exact git semantics.
+// Merges the workspace's .gitignore into the file-picker's exclude
+// pattern — VS Code's own findFiles exclude param doesn't consult
+// .gitignore at all. Simple line-by-line glob conversion, not a full
+// parser (no negation, no nested .gitignore) — enough to keep build
+// output and vendored deps out of the picker.
 function gitignoreExcludeGlobs(folder: vscode.Uri): string[] {
   try {
     const content = fs.readFileSync(path.join(folder.fsPath, '.gitignore'), 'utf-8');
@@ -150,15 +133,10 @@ function gitignoreExcludeGlobs(folder: vscode.Uri): string[] {
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
-      // Most real .gitignore entries for a directory have no trailing
-      // slash ('node_modules', 'dist', not 'dist/') — gitignore itself
-      // matches those against files and directories alike. A bare
-      // `**/dist` glob only matches something literally named "dist",
-      // not anything *inside* it, so a no-trailing-slash directory entry
-      // was silently not excluding its own contents. Emitting both forms
-      // for every line, regardless of trailing slash, covers "is a file
-      // named this" and "is a directory named this" without needing to
-      // stat the filesystem to tell which one a given line means.
+      // A bare `**/dist` glob only matches something literally named
+      // "dist", not anything inside it — but most .gitignore entries have
+      // no trailing slash and match both files and dirs. Emitting both
+      // forms per line covers both cases without statting the filesystem.
       .flatMap((line) => {
         const name = line.replace(/\/+$/, '');
         return [`**/${name}`, `**/${name}/**`];
@@ -174,18 +152,14 @@ export class ChatPanel {
   private readonly context: vscode.ExtensionContext;
   private disposables: vscode.Disposable[] = [];
   private activeThreadId: string;
-  // Set for the duration of one in-flight handleSend call; 'cancel' from the
-  // webview aborts the fetch/stream via the controller and records the
-  // turnId so the tool loop (which can't be interrupted mid-iteration) at
-  // least refuses to start the *next* one.
+  // Set for one in-flight handleSend call; 'cancel' aborts the fetch via
+  // the controller and records turnId so the tool loop (uninterruptible
+  // mid-iteration) at least refuses to start the next one.
   private activeAbortController: AbortController | undefined;
   private cancelledTurnId: string | undefined;
-  // Resolves once the webview's own script has sent 'ready' — a fresh
-  // panel's page load is real wall-clock time, so a postMessage sent
-  // right after createOrShow() (e.g. addFileToThread invoked cold, before
-  // Rizo has ever been opened this session) can otherwise race past the
-  // webview's message listener and land in the void with no error and no
-  // visible effect.
+  // Resolves once the webview sends 'ready' — a postMessage sent before
+  // then (e.g. addFileToThread invoked before Rizo's first open) would
+  // otherwise race past the listener and silently do nothing.
   private readonly ready: Promise<void>;
   private resolveReady!: () => void;
 
@@ -203,25 +177,21 @@ export class ChatPanel {
         enableScripts: true,
         retainContextWhenHidden: true,
         // Needed for webview.asWebviewUri() to serve assets/mascot.png —
-        // without an explicit root, asWebviewUri can't resolve anything
-        // and getHtml() had to fall back to inlining the file as a base64
-        // data: URI instead (a ~590KB string for that one image, folded
-        // directly into the HTML handed to webview.html on every render).
+        // without it, asWebviewUri can't resolve paths and the image
+        // would need base64-inlining into the HTML instead.
         localResourceRoots: [vscode.Uri.file(context.extensionPath)],
       },
     );
-    // Without this the tab just shows plain text — every other AI chat
-    // panel shows its own icon here instead.
+    // Without this the tab shows plain text instead of an icon.
     panel.iconPath = vscode.Uri.file(path.join(context.extensionPath, 'icon.png'));
 
     ChatPanel.currentPanel = new ChatPanel(panel, context);
   }
 
-  // Always prompts, unlike getApiKey() (an instance method which only
-  // prompts when no key is stored yet) — this is the explicit "I want to
-  // enter a different key" path, from the command palette or the
-  // in-webview Settings panel. A cancelled/empty prompt leaves whatever
-  // key was already stored untouched rather than clearing it.
+  // Always prompts, unlike getApiKey() (only prompts if nothing's
+  // stored) — the explicit "change my key" path from the command
+  // palette or Settings panel. A cancelled/empty prompt leaves the
+  // stored key untouched.
   public static async changeApiKey(context: vscode.ExtensionContext): Promise<boolean> {
     const key = await vscode.window.showInputBox({
       prompt: 'Enter your OpenRouter API key (get one at openrouter.ai/keys)',
@@ -353,21 +323,17 @@ export class ChatPanel {
       threadCost: sumThreadCost(messages),
       dayTokens: usage.dayTokens,
       monthCost: usage.monthCost,
-      // Real VS Code settings (contributes.configuration), not workspaceState
-      // — so they're editable from either the in-webview Settings panel or
-      // VS Code's own Settings UI, and stay in sync either way (this always
-      // re-reads live rather than caching what the panel last set).
+      // Real VS Code settings, not workspaceState — editable from either
+      // the in-webview panel or VS Code's own Settings UI, read live.
       sendKey: vscode.workspace.getConfiguration('rizo').get<string>('composer.sendKey', 'enter'),
       focusMode: vscode.workspace.getConfiguration('rizo').get<boolean>('view.focusMode', false),
     });
   }
 
-  // A Settings-panel toggle used to go through sendInit(), which also
-  // re-renders the whole message list and resets activeTurn/messageQueue
-  // client-side — fine on a fresh init, but flipping a setting mid-turn
-  // silently dropped the in-flight reply's tracking and let a second
-  // send() start a concurrent handleSend() for the same thread. This only
-  // ever touches the two settings values, never messages/turn state.
+  // Deliberately not sendInit() — that also re-renders the message list
+  // and resets activeTurn/messageQueue, which drops an in-flight reply's
+  // tracking if a setting changes mid-turn. Only touches these two
+  // values, never messages/turn state.
   private sendSettingsUpdate() {
     this.panel.webview.postMessage({
       type: 'settingsUpdate',
@@ -389,12 +355,9 @@ export class ChatPanel {
     }
   }
 
-  // Modal confirm first (still meaningfully more friction than Rename —
-  // an accidental double-click on Delete shouldn't hinge on noticing a
-  // toast afterward), then an Undo toast for the case you actually
-  // change your mind. If the deleted thread was the active one, falls
-  // back to the next most-recently-updated thread, or a brand-new one if
-  // that was the last chat left.
+  // Modal confirm first, then an Undo toast. If the deleted thread was
+  // active, falls back to the next most-recently-updated thread, or a
+  // new one if that was the last.
   private async handleDeleteThread() {
     const thread = loadThread(this.context, this.activeThreadId);
     const confirm = await vscode.window.showWarningMessage(
@@ -411,43 +374,36 @@ export class ChatPanel {
     this.sendInit();
 
     if (thread) {
-      // Bound to this exact thread via the closure, not "whatever's in
-      // the shared stash" — VS Code stacks multiple non-modal toasts, so
-      // an older toast's Undo is still clickable after a second delete
-      // has already overwritten LAST_DELETED_THREAD_KEY with a different
-      // thread. Going through the closure instead means clicking *this*
-      // toast always restores *this* thread, regardless of what happened
-      // to the shared stash in the meantime.
+      // Bound to this exact thread via the closure, not the shared stash
+      // — toasts can stack, so an older toast's Undo must still restore
+      // its own thread even after a later delete overwrites
+      // LAST_DELETED_THREAD_KEY.
       vscode.window.showInformationMessage(`Deleted "${thread.name}".`, 'Undo').then((choice) => {
         if (choice === 'Undo') this.restoreSpecificThread(thread);
       });
     }
   }
 
-  // Shared by the Undo toast above (bound to the exact thread that toast
-  // is about) and restoreLastDeleted below (best-effort "whatever I most
-  // recently deleted," for the standing command).
+  // Shared by the Undo toast above (a specific thread) and
+  // restoreLastDeleted below (whatever was most recently deleted).
   private async restoreSpecificThread(thread: ThreadData) {
-    // Only clear the stash if it's still this same thread — a second
-    // delete may have already overwritten it with a different one, which
-    // this restore has no business touching.
+    // Only clear the stash if it still holds this thread — a second
+    // delete may have already overwritten it.
     if (this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY)?.id === thread.id) {
       await this.context.globalState.update(LAST_DELETED_THREAD_KEY, undefined);
     }
     restoreThread(this.context, thread);
     this.activeThreadId = thread.id;
-    // Self-healing even without this (activeThreadId is already updated
-    // by the time the webview's own 'ready' handler fires its own
-    // sendInit), but awaiting ready first avoids a redundant/out-of-order
-    // postMessage on a cold panel — see addFileToThread's comment.
+    // Avoids a redundant/out-of-order postMessage on a cold panel — see
+    // addFileToThread's comment.
     await this.ready;
     this.sendInit();
   }
 
-  // The standing rizo.reopenClosedSession command (extension.ts) lands
-  // here — "whatever I most recently deleted," last-one-wins if more than
-  // one delete happened since. The Undo toast bypasses this entirely and
-  // restores its own specific thread directly (see handleDeleteThread).
+  // rizo.reopenClosedSession (extension.ts) lands here — restores
+  // whatever was most recently deleted, last-one-wins. The Undo toast
+  // bypasses this and restores its own specific thread (see
+  // handleDeleteThread).
   public async restoreLastDeleted() {
     const thread = this.context.globalState.get<ThreadData>(LAST_DELETED_THREAD_KEY);
     if (!thread) {
@@ -475,14 +431,11 @@ export class ChatPanel {
     return key;
   }
 
-  // The Free provider routes through the same fallback chain it always
-  // did (any individual free model 429s or comes back empty far more often
-  // than a paid one); every other provider is a direct call to the exact
-  // variant the user picked — no fallback, same "hard pin" philosophy the
-  // old coding tier used, just applied to whichever company is active.
-  // hasImage is validated against the variant's vision flag by the caller
-  // (handleSend) before this is ever reached, so a vision-incapable model
-  // never silently gets an image it can't see.
+  // Free routes through a fallback chain (individual free models 429 or
+  // return empty far more than paid ones); every other provider is a
+  // direct call to the exact variant picked, no fallback. hasImage is
+  // already validated against the variant's vision flag by the caller
+  // (handleSend) before this runs.
   private async callModel(
     apiKey: string,
     provider: string,
@@ -494,16 +447,12 @@ export class ChatPanel {
     options: CallOptions = {},
   ) {
     if (provider === 'free') {
-      // hasImage's vision-capability check already ran in handleSend
-      // before this was ever called (uniformly for every provider now —
-      // Free isn't a hard block anymore now that Gemma is vision-
-      // capable), so nothing else to check here.
+      // Vision already checked in handleSend for every provider (Free
+      // included, now that Gemma supports vision).
       const chain = freeChainForTaskType(taskType);
-      // Auto (the default) keeps its exact existing behavior — routed
-      // purely by taskType, same as before this file had any other Free
-      // option. A specific pick goes first, then still falls through the
-      // rest of the same ranked chain if it's down or rate-limited —
-      // still-manual choice, but never less resilient than Auto was.
+      // Auto is routed purely by taskType. A specific pick goes first,
+      // then still falls through the rest of the chain if it's down or
+      // rate-limited.
       const orderedChain = model === defaultModelForProvider('free') ? chain : [model, ...chain.filter((m) => m !== model)];
       return callWithFallback(apiKey, orderedChain, messages, tools, options);
     }
@@ -557,12 +506,10 @@ export class ChatPanel {
   }
 
   // Entry point for the TODO CodeLens ("Implement with Rizo") — fills the
-  // composer and focuses it, but deliberately does NOT send automatically.
-  // A one-click "go implement this" is what Codex's own CodeLens does, but
-  // that also means one accidental/curious click spends real tokens on
-  // whichever paid model the active thread is on with zero review. Prefill
-  // + let the user hit Send themselves is the same non-auto-send precedent
-  // "Mention file from this project..." already sets for pending content.
+  // composer and focuses it, but never sends automatically: one
+  // accidental click would otherwise spend real tokens on the active
+  // thread's paid model with zero review. Same prefill-then-Send
+  // pattern "Mention file from this project..." already uses.
   public async prefillComposer(text: string) {
     this.panel.reveal();
     await this.ready;
@@ -590,11 +537,9 @@ export class ChatPanel {
         return;
       }
 
-      // Text path: read as utf-8 and reject anything that doesn't look like
-      // text (a stray binary picked by mistake), rather than dumping
-      // garbled bytes into the conversation. A null byte in the first
-      // slice is the standard cheap tell for 'this isn't text' (the same
-      // heuristic git itself uses).
+      // Reject anything that doesn't look like text rather than dumping
+      // garbled bytes — a null byte in the first slice is the standard
+      // cheap tell (same heuristic git uses).
       const buf = fs.readFileSync(fsPath);
       if (buf.subarray(0, 8000).includes(0)) {
         vscode.window.showWarningMessage(`${name} looks like a binary file Rizo can't read as text.`);
@@ -620,15 +565,11 @@ export class ChatPanel {
       .trim();
   }
 
-  // Once a thread passes SUMMARIZE_THRESHOLD stored messages, folds
-  // everything older than the last SUMMARY_KEEP_TAIL into a running summary
-  // via a single cheap-tier call, so future turns replay that summary
-  // instead of the full raw history — the point is token cost, not context
-  // quality, so this only touches what gets *sent* to the model; every
-  // message is still stored and still shown in full in the UI. Runs after
-  // the reply is already back with the user (fire-and-forget from
-  // handleSend) so this housekeeping never adds to reply latency, and a
-  // failure here just means "try again next turn," not a broken chat.
+  // Past SUMMARIZE_THRESHOLD messages, folds everything older than
+  // SUMMARY_KEEP_TAIL into a running summary via one cheap-tier call —
+  // only affects what's sent to the model, not what's stored/shown.
+  // Fire-and-forget from handleSend, so a failure just means retry next
+  // turn.
   private async maybeSummarize(apiKey: string, threadId: string) {
     const thread = loadThread(this.context, threadId);
     if (!thread) return;
@@ -666,13 +607,11 @@ export class ChatPanel {
   }
 
   private async handleSend(text: string, turnId: string, attachments: IncomingAttachment[] = []) {
-    // Captured once, up front, and used for every read/write this turn
-    // does — never this.activeThreadId again after this line. A turn can
-    // outlive the panel's "current" thread (the user switches threads,
-    // or deletes this one, while a reply is still in flight); without
-    // this, the turn-start snapshot of messages gets saved under
-    // whatever thread happens to be active when the turn *finishes*,
-    // silently corrupting an unrelated thread's history.
+    // Captured once, used for every read/write this turn does — never
+    // this.activeThreadId again. A turn can outlive the panel's active
+    // thread (switched or deleted mid-reply); without this, the turn's
+    // messages would save under whatever thread happens to be active
+    // when it finishes.
     const threadId = this.activeThreadId;
 
     const apiKey = await this.getApiKey();
@@ -695,16 +634,10 @@ export class ChatPanel {
     }
     const provider = thread.provider;
     let model = thread.model;
-    // A stored model id can go stale out from under a thread — the
-    // catalog in providers.ts is a snapshot of what OpenRouter serves,
-    // and an upstream provider can pull/rename a model without warning
-    // (real incident: moonshotai/kimi-k2-turbo, 2026-08-20 — a live
-    // thread already on it just started hard-failing every send with
-    // "not a valid model ID", no recovery except manually reopening the
-    // switcher). Falls back to this provider's current default instead
-    // of sending a request that's doomed to fail the same way every
-    // time; setThreadModel persists the fallback so this only self-heals
-    // once per thread, not on every single turn.
+    // A stored model id can go stale if an upstream provider pulls or
+    // renames it — falls back to this provider's current default instead
+    // of sending a request doomed to fail every time; setThreadModel
+    // persists it so this only self-heals once per thread, not every turn.
     if (!isValidProviderModel(provider, model)) {
       const fallback = defaultModelForProvider(provider);
       setThreadModel(this.context, threadId, provider, fallback);
@@ -713,14 +646,11 @@ export class ChatPanel {
     let effort: EffortLevel = (thread.effort as EffortLevel) || DEFAULT_EFFORT;
 
     try {
-      // /commit, /review, /test expand to a canned prompt before anything
-      // else runs — forced into the 'coding' task type regardless of
-      // keyword match, since typing the command IS the signal. An
-      // unrecognized "/foo" isn't an error, it just falls through as
-      // literal text. taskType no longer picks a model (the provider
-      // picker/switcher does that, explicitly) — it only decides which
-      // skill files load below and, for the Free provider, which fallback
-      // chain to try.
+      // /commit, /review, /test expand to a canned prompt and force
+      // 'coding' task type. An unrecognized "/foo" falls through as
+      // literal text. taskType only decides which skill files load and
+      // (Free provider) which fallback chain to try — not which model
+      // answers.
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
 
@@ -732,30 +662,21 @@ export class ChatPanel {
       const extraRoots = [...new Set([...(thread.extraRoots || []), ...newExtraRoots])];
 
       const messageTaskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
-      // Sticky: a short follow-up ("yes", an email address, "continue")
-      // rarely contains a coding keyword on its own, but a task that
-      // started coding-flavored doesn't stop being one — see
-      // upgradeThreadTaskType's comment in threadStore.ts. Persists the
-      // upgrade so it survives past this turn too.
+      // Sticky: a short follow-up ("yes", "continue") rarely has a coding
+      // keyword, but a task that started coding-flavored doesn't stop being
+      // one — see upgradeThreadTaskType in threadStore.ts.
       const taskType: TaskType = thread.taskType === 'coding' ? 'coding' : messageTaskType;
       if (messageTaskType === 'coding') upgradeThreadTaskType(this.context, threadId, 'coding');
 
-      // Shared by both auto-suggestions below — same 0/1/2 read on how
+      // Shared by both auto-suggestions below — a 0/1/2 read on how
       // demanding this message looks (coding-flavor, code blocks, stack
-      // traces, attachments, length, "big ask" phrasing). Computed once
-      // per turn regardless of which of the two actually end up using it.
+      // traces, attachments, length, "big ask" phrasing).
       const messageTier = estimateStartingTier(effectiveText, attachments.length > 0, taskType === 'coding');
 
-      // Smart starting variant — the original "cheap classifier decides,
-      // then routes" idea, scoped to the one boundary that actually
-      // makes it safe: only a thread's first message, before anything's
-      // sent, never again after. Skipped entirely if the model isn't
-      // still sitting at the picker's own default — that means you
-      // already manually chose a variant before typing, and an explicit
-      // choice always wins over a guess. Also skipped for Free
-      // entirely — its 6 variants aren't a cheap-to-strong ladder (see
-      // providers.ts), so a 0/1/2 tier has nothing coherent to upgrade
-      // to; Auto's own per-message routing already handles that job.
+      // Only on a thread's first message, and only if the model is still
+      // at the picker's default (a manual pick always wins over a guess).
+      // Skipped for Free — its 6 variants aren't a cheap-to-strong ladder
+      // (providers.ts), so there's nothing for a tier to upgrade to.
       if (provider !== 'free' && thread.messages.length === 0 && model === defaultModelForProvider(provider)) {
         const smarterModel = startingModelForProvider(provider, messageTier);
         if (smarterModel !== model) {
@@ -764,24 +685,16 @@ export class ChatPanel {
         }
       }
 
-      // Effort auto-suggestion — Roadmap Priority 3. Unlike the model
-      // pick above, effort is a pure per-request API parameter, not a
-      // thread-level identity trait, so this re-evaluates on *every*
-      // turn rather than only the first — and deliberately never
-      // persists to threadStore, so it can't fight the next turn's own
-      // fresh guess. Permanently deferred the moment the user ever picks
-      // an effort level themselves (thread.effortManuallySet — see its
-      // own comment), and skipped for a variant that ignores effort
-      // entirely (supportsReasoning), so there's never a pointless
-      // pill flicker for the Free provider's one Auto model.
+      // Unlike the model pick, effort is per-request, not a thread trait —
+      // re-evaluated every turn, never persisted (so it can't fight the
+      // next turn's guess). Deferred permanently once the user sets effort
+      // manually (thread.effortManuallySet).
       if (!thread.effortManuallySet && supportsReasoning(provider, model)) {
         effort = effortForTier(messageTier);
       }
 
-      // Only coding-classified messages get skill instructions loaded —
-      // general chat doesn't need engineering-discipline guidance. This
-      // applies the same way regardless of which provider is answering, so
-      // switching companies never costs you the skill files.
+      // Only coding-classified messages get skill instructions — general
+      // chat doesn't need engineering-discipline guidance.
       const skillsDir = path.join(this.context.extensionPath, 'skills');
       const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType);
 
@@ -793,10 +706,9 @@ export class ChatPanel {
       ];
       if (skillsContent) systemParts.push(skillsContent);
 
-      // The user's own per-project rules (.rizo/instructions.md), if any —
-      // unlike skills, not gated to taskType 'coding': this is user-authored
-      // project intent that plausibly matters for non-coding replies too.
-      // Zero-cost, silently absent, when the file doesn't exist.
+      // The user's own .rizo/instructions.md, if present — unlike skills,
+      // not gated to 'coding' since project intent can matter for any
+      // reply. Silently absent if the file doesn't exist.
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       const projectInstructions = loadProjectInstructions(workspaceRoot);
       if (projectInstructions) {
@@ -805,10 +717,9 @@ export class ChatPanel {
         );
       }
 
-      // Once this thread has been folded by maybeSummarize, only replay the
-      // summary plus whatever's newer than what got folded — not the full
-      // raw history. Every message is still stored and still shown in the
-      // UI in full; this only shrinks what gets sent to the model.
+      // Once folded by maybeSummarize, replays the summary plus only what's
+      // newer — not the full raw history. Storage/UI still show everything;
+      // this only shrinks what's sent to the model.
       if (thread?.summary) {
         systemParts.push(`Summary of earlier parts of this conversation (for background context, don't repeat it back):\n${thread.summary}`);
       }
@@ -816,10 +727,9 @@ export class ChatPanel {
       const tailMessages = (thread?.messages || []).slice(summarizedCount);
       const history: ChatMessage[] = tailMessages.map((m) => ({ role: m.role, content: m.content }));
 
-      // Text attachments fold into the message text itself (no "file" part
-      // type in the OpenAI-compatible schema); images become separate
-      // image_url parts. Plain string content when there's nothing to
-      // attach, so the common case doesn't pay for the array wrapper.
+      // Text attachments fold into the message text (no "file" part type in
+      // this schema); images become image_url parts. Plain string content
+      // when nothing's attached.
       userContent = effectiveText;
       if (attachments.length > 0) {
         let combinedText = effectiveText;
@@ -840,16 +750,11 @@ export class ChatPanel {
         { role: 'user', content: userContent },
       ];
 
-      // Vision is needed if this turn attached an image, or if replayed
-      // history carries one from earlier in the thread (a follow-up like
-      // "what's wrong with it" needs the model to still see the image).
+      // Vision is needed if this turn attached an image, or history carries
+      // one from earlier (a follow-up needs the model to still see it).
       const hasImage = messages.some(
         (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
       );
-      // Used to skip Free outright (every variant was vision:false back
-      // when there was only the one, Auto) — now Google Gemma 4 is a
-      // real vision-capable pick, so Free gets the exact same check as
-      // every other provider instead of a separate hard block.
       if (hasImage) {
         const variant = findVariant(provider, model);
         if (variant?.vision === false) {
@@ -869,49 +774,32 @@ export class ChatPanel {
       const enabledTools = TOOLS.filter((t) => !disabledTools.includes(t.function.name));
 
       let answeredBy = '';
-      // Kept short and explicit on purpose — this exact string gets
-      // persisted and replayed as this turn's assistant reply in every
-      // future turn's history (see threadStore.ts's comment on why only
-      // the final exchange is stored), so a vague placeholder here would
-      // misinform every subsequent turn about what actually happened.
+      // Kept short and explicit — this string gets persisted and replayed
+      // as this turn's reply in every future turn's history, so a vague
+      // placeholder would misinform later turns.
       let finalReply = "I ran out of steps before finishing (hit the tool-call limit for one turn) — say 'continue' and I'll pick back up.";
       const totalUsage = emptyUsage();
 
-      // Struggle evidence for the auto-escalation prompt below — three
-      // deliberately cheap, deterministic signals (no extra model call,
-      // same "pure logic" approach as complexityEstimator.ts) that this
-      // turn needed more than the current variant had:
-      //   - completedNormally stays false only when the loop falls through
-      //     the iteration cap without ever getting a tool-call-free reply.
-      //   - maxConsecutiveToolErrors catches the other failure shape: the
-      //     model gives up and answers anyway after repeatedly hitting the
-      //     same broken approach, well before the cap.
-      //   - madeToolCallThisTurn/madeMutatingCallThisTurn feed a *cross-turn*
-      //     check below (against the previous stored assistant turn): a
-      //     turn that pokes around with read-only tools but never writes
-      //     anything looks totally fine on its own — the model that keeps
-      //     re-checking the same broken file across several such turns in a
-      //     row, never fixing it, is exactly the failure mode neither of
-      //     the two single-turn signals above can see.
+      // Struggle evidence for auto-escalation below — three cheap,
+      // deterministic signals, no extra model call:
+      //   - completedNormally: false only if the loop hits the iteration
+      //     cap without a tool-call-free reply.
+      //   - maxConsecutiveToolErrors: the model gives up and answers anyway
+      //     after repeatedly hitting the same broken approach.
+      //   - madeToolCallThisTurn/madeMutatingCallThisTurn: feed a
+      //     cross-turn check (below) — a turn that only reads looks fine
+      //     alone, but re-checking the same broken file turn after turn,
+      //     never fixing it, is what neither single-turn signal catches.
       let completedNormally = false;
       let consecutiveToolErrors = 0;
       let maxConsecutiveToolErrors = 0;
       let madeToolCallThisTurn = false;
       let madeMutatingCallThisTurn = false;
-      // Feeds StoredMessage.touchedFiles (threadStore.ts) — cross-thread
-      // "have I touched this file before" recall (tools.ts's
-      // search_past_work). A Set so touching the same file twice in one
-      // turn is one entry; converted to an array only once, at persist
-      // time.
+      // Deduplicated per turn; converted to an array at persist time.
       const touchedFilesThisTurn = new Set<string>();
 
-      // Live status for the pending bubble — model, running token count,
-      // and current action, all previously invisible until the whole
-      // turn finished (the model-tag only ever got attached in
-      // finalizeTurn/addMessage). Sent once here, now that Smart Starting
-      // Variant has already resolved model to whatever this turn is
-      // actually about to use — sending it any earlier could show a
-      // value that turns out wrong.
+      // Sent after Smart Starting Variant resolves model, so the bubble
+      // never shows a value that turns out wrong.
       this.panel.webview.postMessage({ type: 'turnModel', turnId, model });
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
@@ -919,25 +807,20 @@ export class ChatPanel {
 
         const { model: usedModel, message, usage, finishReason } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
           signal: controller.signal,
-          // Dropped for a variant that doesn't support it (providers.ts's
-          // ModelVariant.reasoning === false) rather than sent and possibly
-          // rejected — and callWithFallback (the Free provider's path)
-          // never forwards this field at all regardless, see openrouter.ts.
+          // Dropped for a variant that doesn't support it rather than sent
+          // and possibly rejected; callWithFallback never forwards it
+          // regardless.
           reasoningEffort: supportsReasoning(provider, model) ? effort : undefined,
           onDelta: (chunk) => this.panel.webview.postMessage({ type: 'textDelta', turnId, text: chunk }),
-          // A model failed after already streaming some text — the webview
-          // needs to clear that partial text before the next model's fresh
-          // attempt starts, so the two don't visually run together.
+          // Clears partial streamed text before the next model's attempt,
+          // so the two don't visually run together.
           onRestart: () => this.panel.webview.postMessage({ type: 'textReset', turnId }),
         });
         answeredBy = usedModel;
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
         totalUsage.totalTokens += usage.totalTokens;
-        // Running total for the live status line — a multi-tool-call
-        // turn can make several of these round-trips before it's done,
-        // and previously nothing about token spend was visible until the
-        // very end of all of them.
+        // Running total — a multi-tool-call turn makes several round-trips.
         this.panel.webview.postMessage({ type: 'turnUsage', turnId, totalTokens: totalUsage.totalTokens });
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
@@ -950,12 +833,8 @@ export class ChatPanel {
         // so history stays valid even if a tool call throws.
         messages.push({ role: 'assistant', content: message.content, tool_calls: message.tool_calls });
 
-        // Tool activity is visible in the transcript as it happens — a
-        // start line the moment a call is issued, updated once it resolves.
-        // Cancellation only stops the *next* call/iteration from starting;
-        // a call already in flight here still runs to completion (see
-        // Stop/Cancel's design notes — killing a running command is a
-        // separate, deferred change).
+        // Cancellation only stops the next call from starting — a call
+        // already in flight still runs to completion.
         for (const toolCall of message.tool_calls) {
           if (this.cancelledTurnId === turnId) break;
           madeToolCallThisTurn = true;
@@ -984,13 +863,10 @@ export class ChatPanel {
             diffNew: summary.diffNew,
             isNewFile: summary.isNewFile,
           });
-          // The last tool call in a response the API itself marked cut
-          // off (finish_reason 'length') that still fails to parse is
-          // diagnosable up front — not a formatting mistake, just too
-          // big for one call — so this skips executeTool's generic
-          // parse error and gives guidance the model can actually act
-          // on (see openrouter.ts's MAX_TOKENS comment for the incident
-          // this and the raised cap both come from).
+          // A cut-off response (finish_reason 'length') whose last tool
+          // call fails to parse isn't a formatting mistake — it's too big
+          // for one call. Skips the generic parse error and gives guidance
+          // the model can act on.
           const isLastCall = toolCall === message.tool_calls[message.tool_calls.length - 1];
           const looksTruncated =
             finishReason === 'length' &&
@@ -1016,14 +892,11 @@ export class ChatPanel {
 
       const elapsedMs = Date.now() - startedAt;
 
-      // Auto-escalation offer — Roadmap Priority 2 (see struggleDetector.ts
-      // for what actually counts as struggle and why). previousAssistantMsg
-      // reads thread.messages before this turn's own exchange gets appended
-      // a few lines down, so it's genuinely "the turn before this one," not
-      // this one. Only surfaced when there's actually a stronger variant
-      // left in *this* provider to offer — same company-lock rule as
-      // everywhere else (providers.ts) — so Free (one variant) and an
-      // already-top-tier turn never show a button that does nothing.
+      // previousAssistantMsg reads thread.messages before this turn's own
+      // exchange is appended below, so it's genuinely the prior turn.
+      // Offered only when a stronger variant exists in this provider
+      // (company-locked) — Free and an already-top-tier turn never show a
+      // dead button.
       const previousAssistantMsg = [...(thread?.messages || [])].reverse().find((m) => m.role === 'assistant');
       const struggled = detectStruggle({
         wasCancelled: this.cancelledTurnId === turnId,
@@ -1046,8 +919,7 @@ export class ChatPanel {
       }
 
       // Folds this turn's cost into the running today/this-month totals
-      // the header always shows, regardless of which provider answered or
-      // which thread this was — see usageStore.ts.
+      // the header shows.
       const turnCost = estimateCost(answeredBy, totalUsage.promptTokens, totalUsage.completionTokens);
       const globalUsage = recordUsage(this.context, totalUsage.totalTokens, turnCost);
 
@@ -1070,9 +942,8 @@ export class ChatPanel {
       ];
       saveThreadMessages(this.context, threadId, updated);
 
-      // Auto-name the thread from its first message, same as most chat
-      // apps — only when it's still the default name, never overriding a
-      // name you set yourself via Rename.
+      // Auto-name the thread from its first message, only when it's still
+      // the default name — never overrides a Rename.
       if ((thread?.messages.length ?? 0) === 0 && thread?.name === DEFAULT_THREAD_NAME) {
         renameThread(this.context, threadId, deriveThreadName(effectiveText));
         this.panel.webview.postMessage({
@@ -1086,17 +957,12 @@ export class ChatPanel {
         type: 'reply',
         turnId,
         model: answeredBy,
-        // Distinct from answeredBy above (that's this turn's own message
-        // tag) — this is the thread's *current* model, which the smart-
-        // starting-variant check just above may have silently upgraded
-        // for the very first turn. Lets the pill catch up immediately
-        // instead of only on the next full re-render.
+        // Distinct from answeredBy (this turn's own tag) — the thread's
+        // current model, possibly upgraded by Smart Starting Variant above.
+        // Lets the pill catch up without a full re-render.
         currentModel: model,
-        // Same idea as currentModel, for effort: this turn's own guess
-        // (or the user's earlier manual pick, unchanged) — never what's
-        // in threadStore, since auto-suggestion deliberately never writes
-        // there. Lets the Effort pill reflect what this reply actually
-        // used without waiting on a full re-render.
+        // Same idea for effort — this turn's guess or the user's manual
+        // pick, never threadStore (auto-suggestion never writes there).
         currentEffort: effort,
         taskType,
         reply: finalReply,
@@ -1110,16 +976,13 @@ export class ChatPanel {
         monthCost: globalUsage.monthCost,
       });
 
-      // Fire-and-forget: never makes the user wait on housekeeping. See
-      // maybeSummarize's own comment for what this actually does.
+      // Fire-and-forget — never makes the user wait on housekeeping.
       void this.maybeSummarize(apiKey, threadId);
     } catch (err: any) {
-      // Stop was clicked — the webview already showed "Stopped." locally
-      // (see send()'s cancel handling), this just confirms the extension
-      // side actually unwound rather than silently continuing. Deliberately
-      // NOT persisted below — an aborted turn is an intentional user
-      // action with its own UX (the "Stopped." note), not a failure the
-      // next turn needs a history record of.
+      // Stop was clicked — the webview already shows "Stopped." locally;
+      // this confirms the extension side unwound. Deliberately not
+      // persisted — an aborted turn isn't a failure the next turn needs a
+      // history record of.
       if (err.name === 'AbortError') {
         this.panel.webview.postMessage({ type: 'cancelled', turnId });
       } else if (/user not found|401|unauthorized/i.test(err.message)) {
@@ -1142,12 +1005,9 @@ export class ChatPanel {
     }
   }
 
-  // A turn that throws (network error, etc.) used to vanish from history
-  // entirely — saveThreadMessages only ever ran on the success path, so
-  // the *next* turn's context had a silent gap where "you asked X, it
-  // failed" should have been. userContent is undefined only if the error
-  // happened before the message was even built (e.g. no API key) — nothing
-  // to record in that case, so this just no-ops.
+  // Persists a failed turn so the next turn's context isn't missing "you
+  // asked X, it failed". No-ops if userContent is undefined (error
+  // happened before the message was built).
   private persistFailedTurn(threadId: string, userContent: string | ContentPart[] | undefined, errorText: string) {
     if (userContent === undefined) return;
     const thread = loadThread(this.context, threadId);
@@ -1162,23 +1022,14 @@ export class ChatPanel {
 
   private getHtml(): string {
     const nonce = getNonce();
-    // asWebviewUri, not a base64 data: URI — the previous version read
-    // assets/mascot.png (444KB) and inlined it as base64 (~590KB of text)
-    // directly into the HTML string handed to webview.html on every
-    // single render. That's within Electron's technical limits, but it's
-    // exactly the pattern VS Code's own webview guide warns against, and
-    // it's the one thing in this file remotely close to whatever pushed
-    // the webview's document.write past whatever made it choke — asking
-    // the webview to fetch a small vscode-resource:// URI instead avoids
-    // the question entirely rather than needing to pin down the exact
-    // mechanism.
+    // asWebviewUri, not a base64 data: URI — inlining a 444KB image as
+    // base64 text into the HTML string on every render is exactly what
+    // VS Code's webview guide warns against.
     const mascotPath = path.join(this.context.extensionPath, 'assets', 'mascot.png');
     const mascotUri = this.panel.webview.asWebviewUri(vscode.Uri.file(mascotPath));
-    // Trimmed view of providers.ts handed to the webview once — it renders
-    // the provider picker grid and each provider's own variant dropdown
-    // straight from this, so there's exactly one place (providers.ts) that
-    // defines the catalog and no risk of the webview's copy drifting from
-    // the extension side's enforcement in isValidProviderModel.
+    // Trimmed view of providers.ts handed to the webview once, so the
+    // picker grid renders from the same catalog isValidProviderModel
+    // enforces — no risk of drift.
     const providerCatalog = PROVIDER_ORDER.map((id) => ({
       id,
       label: PROVIDERS[id].label,
@@ -1265,14 +1116,10 @@ export class ChatPanel {
     white-space: nowrap;
   }
 
-  /* Model pill — sits where the old Free/Paid toggle did, but now shows
-     "<Provider> · <Variant>" for the thread's locked provider and opens a
-     dropdown of ONLY that provider's own variants. There is no control
-     anywhere in this dropdown that can switch to a different company —
-     that's a one-time choice made once in #providerPicker, when the
-     thread had no provider yet. See providers.ts for why: it keeps every
-     swap within one tool-calling convention/system-prompt format/context
-     window, which cross-company switching was not. */
+  /* Model pill — shows "<Provider> · <Variant>" for the thread's locked
+     provider and opens a dropdown of only that provider's own variants.
+     No control here can switch to a different company — that's a
+     one-time choice made in #providerPicker. */
   #modelBar { display: flex; justify-content: center; gap: 8px; padding: 8px 12px 0; }
   #modelPillWrap, #effortPillWrap { position: relative; }
   #modelPill, #effortPill {
@@ -1347,10 +1194,9 @@ export class ChatPanel {
     color: var(--vscode-dropdown-foreground);
   }
   .settingsBtn:hover { background: var(--vscode-list-hoverBackground); }
-  /* Carried over from the old standalone #deleteThreadBtn's own hover
-     style — Delete is the one item in this menu that discards data with
-     no undo beyond the modal confirm it still shows, so it keeps its
-     own warning color instead of blending into Rename/everything else. */
+  /* Delete is the one item in this menu that discards data (beyond the
+     modal confirm it shows), so it keeps its own warning color instead
+     of blending into Rename/everything else. */
   .dangerBtn:hover { background: rgba(241, 76, 76, 0.15); color: var(--vscode-errorForeground, #f14c4c); }
   .settingsDivider { height: 1px; background: var(--vscode-widget-border); margin: 4px 2px; }
   .segmented { display: flex; border: 1px solid var(--vscode-widget-border); border-radius: 6px; overflow: hidden; }
@@ -1441,9 +1287,7 @@ export class ChatPanel {
 
   /* --- Motion --- */
   /* Every new-content animation below is opacity-only, 150-200ms,
-     ease-out — no slide/scale. Same shape independently used by both
-     Claude Code's and Codex's own VS Code extensions (checked their
-     shipped webview CSS directly), not a guess at what "smooth" means. */
+     ease-out — no slide/scale. */
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes pulseThinking { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   @keyframes blinkCursor { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
@@ -1455,10 +1299,8 @@ export class ChatPanel {
   /* --- Messages --- */
   #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   /* Full-width transcript rows, not chat bubbles — a user turn is a
-     left-accented block (your own input, set off but not boxed-in), an
-     assistant turn is plain text under a thin top divider. Reads as a
-     running log rather than a two-column conversation, same shape as
-     Claude Code's own transcript. */
+     left-accented block, an assistant turn is plain text under a thin
+     top divider. Reads as a running log, not a two-column conversation. */
   .msg { max-width: 100%; padding: 8px 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; animation: .18s ease-out fadeIn; }
   .msg.user { align-self: stretch; background: rgba(128,128,128,0.06); border-left: 2px solid var(--vscode-button-background); }
   .msg.assistant { align-self: stretch; background: transparent; border: none; border-top: 1px solid var(--vscode-widget-border); padding: 12px 10px 8px; }
@@ -1474,11 +1316,9 @@ export class ChatPanel {
 
   /* Two-tier tool card: a single-line header (tag + human-readable intent)
      always visible, with the exact command/args and result folded away
-     behind a click — same split Claude Code's own transcript uses (its
-     Bash tool takes a required "description" separate from "command" for
-     exactly this reason). Collapsed by default: a turn can now run up to
-     30 tool calls, and showing every raw command/result inline by default
-     was most of what made the old flat transcript read as a wall of text. */
+     behind a click. Collapsed by default: a turn can run up to 30 tool
+     calls, and showing every raw command/result inline would read as a
+     wall of text. */
   .toolCard {
     border-radius: 6px;
     border: 1px solid var(--vscode-widget-border);
@@ -1555,10 +1395,9 @@ export class ChatPanel {
   }
   /* Fixed terminal colors, not a theme variable — command/file output
      reads as a terminal specifically because it's NOT theme-blended the
-     way the rest of the panel is; --vscode-textCodeBlock-background
-     used to just tint toward whatever the ambient editor background
-     already was, which in a light theme produced a pale, low-contrast
-     box nothing like an actual black-background/white-text terminal. */
+     way the rest of the panel is. A theme variable here would tint
+     toward the ambient editor background, producing a pale, low-contrast
+     box in a light theme instead of an actual terminal. */
   .toolBodyBlock pre {
     margin: 0;
     padding: 8px 10px;
@@ -1895,9 +1734,8 @@ export class ChatPanel {
     const openSettingsBtn = document.getElementById('openSettingsBtn');
     const sendKeySegmented = document.getElementById('sendKeySegmented');
     const focusModeSegmented = document.getElementById('focusModeSegmented');
-    // Mirror rizo.composer.sendKey / rizo.view.focusMode — real VS Code
-    // settings (see sendInit), not workspaceState, so they're also editable
-    // from VS Code's own Settings UI. Defaults match package.json's.
+    // Mirrors rizo.composer.sendKey / rizo.view.focusMode (real VS Code
+    // settings, see sendInit) — editable from Settings UI too.
     let currentSendKey = 'enter';
     let currentFocusMode = false;
     const EFFORT_LEVELS = [
@@ -1905,28 +1743,20 @@ export class ChatPanel {
       { id: 'medium', label: 'Medium', tagline: 'Balanced — the default' },
       { id: 'high', label: 'High', tagline: 'Slower, priciest — hard problems' },
     ];
-    // Which provider/model/effort this thread is currently on — null/default
-    // until the picker has been used once. Everything that gates sending
-    // (the composer) or populates the switchers reads these.
+    // Current provider/model/effort for this thread — null/default until
+    // the picker's used once. Gates sending and populates the switchers.
     let currentProvider = null;
     let currentModel = null;
     let currentEffort = 'medium';
-    // Messages typed while a turn is already running — send() pushes here
-    // instead of dispatching immediately (the input box stays enabled
-    // during a turn now, unlike before). dispatchNextQueued() drains one
-    // per turn completion. Cleared (not drained) on Stop — an explicit
-    // cancel is "abandon this direction," not "skip to the next queued
-    // thing." Cleared on thread switch too, since a queue belongs to
-    // whichever thread's turn it was queued behind.
+    // Messages typed while a turn runs — send() pushes here instead of
+    // dispatching immediately. dispatchNextQueued() drains one per
+    // completion. Cleared (not drained) on Stop — cancel means abandon,
+    // not skip ahead. Cleared on thread switch too.
     let messageQueue = [];
-    // The one in-flight turn's live state — transcript lines, streamed
-    // text, and the eventual final render are three states of this one
-    // object/DOM node, not three competing update paths. null whenever
-    // nothing is in flight. Every extension->webview message during a
-    // turn carries that turn's id; anything whose id doesn't match
-    // activeTurn.id is dropped (see the message listener below) — that's
-    // what makes Stop safe without the extension having to guarantee
-    // instant termination.
+    // The in-flight turn's live state — null when nothing's running. Every
+    // extension->webview message carries a turn id; anything not matching
+    // activeTurn.id is dropped, which is what makes Stop safe without the
+    // extension guaranteeing instant termination.
     let activeTurn = null;
 
     function formatCost(cost) {
@@ -1946,30 +1776,21 @@ export class ChatPanel {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    // Hand-rolled, dependency-free markdown subset — fenced code blocks,
-    // inline code, bold/italic, lists, headers (flattened to bold, not
-    // real heading tags — a full <h1> in an ~82%-wide chat bubble reads
-    // oversized). Deliberately no link/image syntax: that would reopen an
-    // injection/tracking vector nobody asked for. Escaping happens FIRST,
-    // before any transform runs, and code spans/blocks are protected with
-    // a placeholder token so later emphasis regexes never fire inside
-    // them — the two things standing between this and an XSS bug in
-    // whatever a model decides to output.
+    // Hand-rolled, dependency-free markdown subset — code blocks, inline
+    // code, bold/italic, lists, headers (flattened to bold; a real <h1>
+    // reads oversized in a chat bubble). No link/image syntax — avoids an
+    // injection vector. Escaping happens first, and code spans are
+    // placeholder-protected so emphasis regexes never fire inside them —
+    // what stands between this and XSS in model output.
     function renderMarkdown(raw) {
       let text = escapeHtml(raw);
 
-      // No backslash-escape sequences anywhere below (no newline, digit,
-      // whitespace, or word-char shorthand, no escaped asterisk) — this
-      // whole script is embedded inside an outer TypeScript template
-      // literal (getHtml()'s return value) back in the extension source,
-      // and THAT literal processes backslash escapes in its own pass
-      // before this code is ever handed to a JS engine as real source: a
-      // literal newline escape in the TS source becomes an actual newline
-      // BYTE, not the original two-character escape, silently corrupting
-      // literal built that way. Character classes ([*] for a literal
-      // asterisk, [0-9] for a digit, [^] for "any character") and a
-      // real newline character built via fromCharCode sidestep the whole
-      // problem — nothing here needs a backslash to survive that pass.
+      // No backslash-escape sequences below (newline, digit, whitespace,
+      // word-char shorthand, escaped asterisk) — this script sits inside
+      // an outer TS template literal, which processes backslash escapes
+      // in its own pass before this code ever reaches a JS engine,
+      // silently corrupting them. Character classes ([*], [0-9], [^]) and
+      // fromCharCode for newline sidestep that entirely.
       const NL = String.fromCharCode(10);
       const TICK = String.fromCharCode(96);
       const FENCE = TICK + TICK + TICK;
@@ -2025,23 +1846,15 @@ export class ChatPanel {
       inputEl.disabled = !currentProvider;
     }
 
-    // Builds the one bubble a turn lives in for its whole lifecycle:
-    // transcript lines appended as tool calls happen, then streamed text,
-    // then (finalizeTurn) the rendered final content — same DOM node
-    // throughout, never removed-and-replaced.
-    // The 3-dot pulse standing in for "Thinking…" — same opacity-
-    // oscillation technique as the CSS's .thinkingDot, just markup.
+    // The one bubble a turn lives in for its whole lifecycle — same DOM
+    // node throughout, never removed-and-replaced.
+    // The 3-dot pulse for "Thinking…" — markup for CSS's .thinkingDot
+    // animation.
     const THINKING_HTML = '<span class="thinkingDots"><span class="thinkingDot"></span><span class="thinkingDot"></span><span class="thinkingDot"></span></span>';
 
-    // "Kimi K2 · Running write_file… · 14s · 3,420 tok" — model, current
-    // action, elapsed time, and running token count, all previously
-    // invisible for the whole time a turn was in flight (the only place
-    // any of this ever showed up was the model-tag finalizeTurn attaches
-    // once everything is already done). model/effort arrive once via
-    // 'turnModel' the moment handleSend resolves them for this turn;
-    // tokens tick up via 'turnUsage' after each tool round-trip; elapsed
-    // ticks on a plain client-side timer, no round-trip needed for that
-    // part.
+    // "Kimi K2 · Running write_file… · 14s · 3,420 tok". model arrives
+    // once via 'turnModel'; tokens tick up via 'turnUsage'; elapsed runs
+    // off a client-side timer.
     function renderTurnStatus(turn) {
       const elapsed = ((Date.now() - turn.startedAt) / 1000).toFixed(0) + 's';
       const parts = [];
@@ -2071,36 +1884,31 @@ export class ChatPanel {
       el.appendChild(textEl);
       messagesEl.appendChild(el);
       messagesEl.scrollTop = messagesEl.scrollHeight;
-      // bufferEl is the inner span actually holding streamed text, created
-      // lazily on the first delta (see handleTextDelta) — kept separate
-      // from the trailing .streamCursor span so writing new text never
-      // clobbers the cursor node.
+      // bufferEl holds streamed text, created lazily on first delta — kept
+      // separate from .streamCursor so new text never clobbers the cursor
+      // node.
       activeTurn = {
         id: turnId, el, transcriptEl, textEl, bufferEl: null, toolLines: new Map(), textBuffer: '', hasText: false,
         statusEl, startedAt: Date.now(), turnModel: null, liveTokens: 0, currentAction: 'Thinking…',
       };
       renderTurnStatus(activeTurn);
-      // Elapsed needs a live tick even when nothing else about the turn
-      // changes (no delta, between tool calls) — everything else here
-      // only updates on its own message anyway, so a fresh render every
-      // second is cheap.
+      // Elapsed needs a live tick even when nothing else changes — a fresh
+      // render every second is cheap.
       activeTurn.statusTimer = setInterval(() => renderTurnStatus(activeTurn), 1000);
       return activeTurn;
     }
 
-    // Every path that stops a turn being active — normal finish, Stop,
-    // an error, or switching away from it entirely — has to go through
-    // this, or its statusTimer just keeps ticking forever against a
-    // detached turn no one's looking at.
+    // Every path that stops a turn — finish, Stop, error, switching away —
+    // must go through this, or statusTimer keeps ticking against a
+    // detached turn.
     function stopTurnStatusTimer(turn) {
       if (turn && turn.statusTimer) clearInterval(turn.statusTimer);
     }
 
-    // Classic LCS line diff — old/new are already capped by tools.ts's
-    // DIFF_MAX_CHARS before this ever runs, but a small char cap can still
-    // hide a huge line count (20000 blank lines is 20000 "chars"), and the
-    // DP table below is O(n*m) in lines, not chars. The a.length*b.length
-    // guard in buildDiffView is the real backstop against that.
+    // Classic LCS line diff. old/new are capped by DIFF_MAX_CHARS, but a
+    // char cap can still hide a huge line count (20000 blank lines =
+    // 20000 chars) — the DP table is O(n*m) in lines. buildDiffView's
+    // a.length*b.length guard is the real backstop.
     function diffLines(oldText, newText) {
       const a = oldText.split('\\n');
       const b = newText.split('\\n');
@@ -2169,11 +1977,9 @@ export class ChatPanel {
     // <button> so it's keyboard-toggleable too, not just a click target.
     function handleToolStart(turnId, callId, label, title, detail, diffOld, diffNew, isNewFile) {
       if (!activeTurn || activeTurn.id !== turnId) return;
-      // A write/edit's diff is exactly what "verify every edit inline"
-      // means — starting it collapsed like every other tool call meant
-      // an extra click stood between you and the one thing worth
-      // actually reading. Reads/commands stay collapsed by default;
-      // only a real diff opens automatically.
+      // A write/edit's diff opens automatically — the one thing worth
+      // reading shouldn't need an extra click. Reads/commands stay
+      // collapsed.
       const hasDiff = diffNew !== undefined;
       const card = document.createElement('div');
       card.className = hasDiff ? 'toolCard running expanded' : 'toolCard running';
@@ -2192,12 +1998,9 @@ export class ChatPanel {
       const body = document.createElement('div');
       body.className = 'toolBody';
       body.hidden = !hasDiff;
-      // Edit/write calls small enough to have made the cut in
-      // summarizeToolCall (tools.ts's DIFF_MAX_CHARS) get a real +/- line
-      // diff here instead of the flat IN text everything else gets —
-      // the only other place this change is ever visible, the native
-      // vscode.diff view shown at approval time, is gone by the time
-      // anyone scrolls back through the chat.
+      // Edit/write calls under DIFF_MAX_CHARS (tools.ts) get a real +/-
+      // diff here instead of flat IN text — the native vscode.diff view at
+      // approval time is gone by the time anyone scrolls back.
       if (hasDiff) {
         const block = document.createElement('div');
         block.className = 'toolBodyBlock';
@@ -2229,9 +2032,8 @@ export class ChatPanel {
       card.appendChild(body);
       activeTurn.transcriptEl.appendChild(card);
       activeTurn.toolLines.set(callId, { card, body });
-      // The tool cards already show this once expanded, but the status
-      // line surfaces it without having to go find and open one —
-      // "what's it doing right now" at a glance.
+      // Surfaces "what's it doing right now" at a glance, without opening
+      // a card.
       activeTurn.currentAction = title || label;
       renderTurnStatus(activeTurn);
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -2256,9 +2058,8 @@ export class ChatPanel {
         block.appendChild(pre);
         entry.body.appendChild(block);
       }
-      // Back to a generic "thinking about what's next" until either
-      // another tool call starts or text starts streaming — there isn't
-      // a next concrete action to name yet.
+      // Back to a generic status until the next tool call or text stream
+      // starts.
       activeTurn.currentAction = 'Thinking…';
       renderTurnStatus(activeTurn);
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -2269,10 +2070,8 @@ export class ChatPanel {
       if (!activeTurn.hasText) {
         activeTurn.textBuffer = '';
         activeTurn.hasText = true;
-        // First real token — swap the thinking-dots out for the streamed-
-        // content span + a trailing blinking cursor (same 1s linear blink
-        // pattern Claude Code's and Codex's own extensions both use at
-        // the trailing edge of in-progress text).
+        // First real token — swap thinking-dots for the streamed-content
+        // span plus a blinking cursor.
         activeTurn.textEl.innerHTML = '<span class="streamedContent"></span><span class="streamCursor"></span>';
         activeTurn.bufferEl = activeTurn.textEl.querySelector('.streamedContent');
         activeTurn.currentAction = 'Writing reply…';
@@ -2283,9 +2082,8 @@ export class ChatPanel {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // A model failed after already streaming some text — clear it before
-    // the next fallback model's fresh attempt starts, so the two don't
-    // visually run together as one garbled reply.
+    // Clears partial streamed text before the next fallback model's
+    // attempt, so the two don't visually run together.
     function handleTextReset(turnId) {
       if (!activeTurn || activeTurn.id !== turnId) return;
       activeTurn.textBuffer = '';
@@ -2296,19 +2094,16 @@ export class ChatPanel {
       renderTurnStatus(activeTurn);
     }
 
-    // Swaps the streamed plain text over to rendered markdown exactly
-    // once, using the server's authoritative final string rather than the
-    // client's own concatenated deltas — a dropped/reordered textDelta
-    // can't cause drift this way.
+    // Swaps streamed text for rendered markdown once, using the server's
+    // final string rather than the client's concatenated deltas — a
+    // dropped/reordered delta can't cause drift.
     function finalizeTurn(turnId, replyText, model, taskType, usage, elapsedMs, escalationModel, escalationLabel) {
       if (!activeTurn || activeTurn.id !== turnId) return;
       const turn = activeTurn;
       turn.el.classList.remove('pending');
-      // The live status line's job ends here — formatTag below covers
-      // the same ground (model, tokens, elapsed) for the now-finished
-      // turn, permanently this time. Removed before the model-tag
-      // insertion so turn.el.firstChild is back to transcriptEl, same as
-      // before this line existed.
+      // The live status line's job ends here — formatTag below covers the
+      // same ground permanently. Removed before model-tag insertion so
+      // turn.el.firstChild is back to transcriptEl.
       stopTurnStatusTimer(turn);
       turn.statusEl.remove();
       if (model) {
@@ -2320,12 +2115,9 @@ export class ChatPanel {
         turn.el.insertBefore(tag, br);
       }
       turn.textEl.innerHTML = renderMarkdown(replyText || '');
-      // Live-only affordance for the turn that just struggled — not part
-      // of the persisted transcript, same as the "Stopped." note never
-      // survives a reload either. One click re-locks the thread to the
-      // stronger variant (reusing the exact same 'selectModel' path the
-      // switcher dropdown uses) and resends, so there's exactly one code
-      // path for "this thread's model just changed," not two.
+      // Live-only affordance — not part of the persisted transcript. One
+      // click re-locks the thread via the same 'selectModel' path the
+      // switcher uses, then resends.
       if (escalationModel && escalationLabel) {
         const retryBtn = document.createElement('button');
         retryBtn.type = 'button';
@@ -2351,10 +2143,9 @@ export class ChatPanel {
       dispatchNextQueued();
     }
 
-    // content is either a plain string, or an array of parts ({type:'text',
-    // text} / {type:'image_url', image_url:{url}}) — the same shape stored
-    // messages and outgoing API calls use, so history replay and a
-    // just-sent message render identically.
+    // content is a plain string or an array of parts ({type:'text'} /
+    // {type:'image_url'}) — same shape as stored messages, so history
+    // replay and a just-sent message render identically.
     function addMessage(role, content, model, taskType, usage, elapsedMs) {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
@@ -2410,11 +2201,9 @@ export class ChatPanel {
     const emptyStateEl = document.getElementById('emptyState');
 
     function renderMessages(messages) {
-      // Only called on a context switch (init/new/switch thread), never
-      // mid-reply — safe to drop whatever turn belonged to the view being
-      // replaced rather than leave the Stop button stuck showing forever.
-      // Queue is thread-scoped too — a message queued behind this thread's
-      // turn doesn't belong in whichever thread you're switching to.
+      // Only called on a context switch, never mid-reply — safe to drop
+      // the prior view's turn rather than leave Stop stuck. Queue is
+      // thread-scoped too.
       stopTurnStatusTimer(activeTurn);
       activeTurn = null;
       messageQueue = [];
@@ -2449,11 +2238,9 @@ export class ChatPanel {
       }
     }
 
-    // Rebuilds the switcher dropdown for whichever provider this thread is
-    // locked to — deliberately reads ONLY that one provider's variants
-    // (findProvider(provider).variants), never the full catalog, so there
-    // is no code path in the webview that could render a different
-    // company's models into this list.
+    // Rebuilds the switcher for this thread's locked provider — reads only
+    // that provider's variants, never the full catalog, so no code path
+    // can render a different company's models.
     function renderModelSwitch(provider, model) {
       if (!provider) {
         modelBarEl.style.visibility = 'hidden';
@@ -2491,11 +2278,9 @@ export class ChatPanel {
       }
     }
 
-    // Hidden entirely (not just disabled) when the current variant's
-    // reasoning flag is false (see providers.ts) — Effort has no
-    // server-side effect there, so showing a control that silently does
-    // nothing would be worse than not showing it. Currently that's only
-    // the Free provider's one Auto variant.
+    // Hidden entirely (not disabled) when the variant's reasoning flag is
+    // false — Effort has no server-side effect there, so showing a dead
+    // control would be worse than not showing it.
     function renderEffortSwitch(provider, model, effort) {
       const p = findProvider(provider);
       const variant = p && p.variants.find((v) => v.id === model);
@@ -2532,19 +2317,16 @@ export class ChatPanel {
       }
     }
 
-    // The single entry point for "which provider/model/effort is this
-    // thread on" — called from every init/reply so the picker, pills,
-    // dropdowns, and composer-enabled state can never drift out of sync
-    // with each other.
+    // Single entry point for thread provider/model/effort state — keeps
+    // the picker, pills, dropdowns, and composer in sync.
     function applyProviderState(provider, model, effort) {
       currentProvider = provider || null;
       currentModel = model || null;
       currentEffort = effort || 'medium';
       providerPickerEl.classList.toggle('visible', !currentProvider);
-      // renderMessages() (called just before this, on every init) already
-      // decided emptyState/messages visibility from the message count —
-      // only override it here for the "no provider yet" case, so the
-      // picker isn't competing with the empty-state hint on screen at once.
+      // renderMessages() already set emptyState/messages visibility from
+      // message count — override only for "no provider yet", so the
+      // picker doesn't compete with the empty-state hint.
       if (!currentProvider) {
         emptyStateEl.style.display = 'none';
         messagesEl.style.display = 'none';
@@ -2683,13 +2465,9 @@ export class ChatPanel {
       vscode.postMessage({ type: 'attachWorkspaceFile' });
     });
 
-    // Cmd/Ctrl+V with an image on the clipboard (a screenshot, a copied
-    // image) attaches it the same way "Attach file..." does — there was
-    // no paste handling here at all before, so the only way to attach an
-    // image was through the OS file picker even though every other part
-    // of the attachment pipeline (pendingAttachments, renderChips, the
-    // vision-capability check) already fully supports it. 5MB cap
-    // mirrors readAndSendAttachment's own limit on the extension side.
+    // Cmd/Ctrl+V with an image on the clipboard attaches it the same way
+    // "Attach file..." does. 5MB cap mirrors readAndSendAttachment's limit
+    // on the extension side.
     const MAX_PASTED_IMAGE_BYTES = 5 * 1024 * 1024;
     inputEl.addEventListener('paste', (e) => {
       const items = e.clipboardData && e.clipboardData.items;
@@ -2725,9 +2503,8 @@ export class ChatPanel {
         : '';
     }
 
-    // The actual turn-start — startTurn/postMessage — split out of send()
-    // so a queued item can trigger it later via dispatchNextQueued()
-    // without duplicating this.
+    // Split out of send() so a queued item can trigger it later via
+    // dispatchNextQueued() without duplicating this.
     function dispatchTurn(text, attachments) {
       const turnId = Date.now() + '-' + Math.random().toString(36).slice(2);
       startTurn(turnId);
@@ -2756,9 +2533,8 @@ export class ChatPanel {
             type: 'image_url', image_url: { url: 'data:' + a.mimeType + ';base64,' + a.content },
           }))]
         : text;
-      // Rendered immediately either way — queued or not, the message
-      // landed the moment you hit send, same as any chat app. Only when
-      // its reply actually starts is deferred.
+      // Rendered immediately either way — the message landed the moment
+      // you hit send; only its reply is deferred.
       addMessage('user', displayContent);
 
       const attachments = pendingAttachments;
@@ -2775,11 +2551,10 @@ export class ChatPanel {
       dispatchTurn(text, attachments);
     }
 
-    // sendBtn does double duty: Send when idle, Stop while a turn is in
-    // flight (see setSending). Stop finalizes the UI immediately rather
-    // than waiting for the extension's 'cancelled' ack — turnId-gating in
-    // the message listener below is what makes that safe against
-    // whatever in-flight messages arrive after.
+    // sendBtn does double duty: Send when idle, Stop mid-turn (see
+    // setSending). Stop finalizes the UI immediately rather than waiting
+    // for the extension's 'cancelled' ack — turnId-gating below makes
+    // that safe against in-flight messages arriving after.
     sendBtn.addEventListener('click', () => {
       if (activeTurn) {
         const turn = activeTurn;
@@ -2792,9 +2567,8 @@ export class ChatPanel {
         turn.el.appendChild(stoppedEl);
         turn.el.classList.remove('pending');
         activeTurn = null;
-        // An explicit Stop clears anything queued behind it too, rather
-        // than auto-firing the next one — a cancel is "abandon this
-        // direction," not "skip ahead to the next queued thing."
+        // Stop clears anything queued too — cancel means abandon, not
+        // skip ahead.
         messageQueue = [];
         renderQueueNote();
         setSending(false);
@@ -2804,11 +2578,9 @@ export class ChatPanel {
     });
     inputEl.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
-      // rizo.composer.sendKey: 'enter' (default) sends on plain Enter,
-      // Shift+Enter for a newline. 'ctrlEnter' flips that — Enter alone
-      // makes a newline, Ctrl/Cmd+Enter sends — for anyone who writes
-      // multi-line prompts often enough that plain Enter sending is the
-      // annoying default.
+      // rizo.composer.sendKey: 'enter' sends on plain Enter, Shift+Enter
+      // for a newline. 'ctrlEnter' flips that, for multi-line prompt
+      // writers.
       const wantsSend = currentSendKey === 'ctrlEnter' ? e.ctrlKey || e.metaKey : !e.shiftKey;
       if (!wantsSend) return;
       e.preventDefault();
@@ -2862,7 +2634,7 @@ export class ChatPanel {
       }
 
       // Everything below belongs to one in-flight turn — drop it if it's
-      // not (or no longer, e.g. after Stop) the turn currently active.
+      // not (or no longer) the active one.
       if (!activeTurn || msg.turnId !== activeTurn.id) return;
 
       if (msg.type === 'toolStart') {
@@ -2877,12 +2649,9 @@ export class ChatPanel {
         finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs, msg.escalationModel, msg.escalationLabel);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
-        // Catches the pills up immediately if this turn's own model
-        // and/or effort ended up different from what was already shown —
-        // the smart-starting-variant model upgrade (first turn only) or
-        // effort auto-suggestion (every turn, see handleSend) can each
-        // do this silently. Otherwise they'd keep showing the stale value
-        // until the next full re-render (a thread switch, panel reopen).
+        // Catches the pills up if model/effort silently changed (Smart
+        // Starting Variant, effort auto-suggestion) — otherwise they'd
+        // show a stale value until the next full re-render.
         const modelChanged = msg.currentModel && msg.currentModel !== currentModel;
         const effortChanged = msg.currentEffort && msg.currentEffort !== currentEffort;
         if (modelChanged) currentModel = msg.currentModel;

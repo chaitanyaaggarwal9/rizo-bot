@@ -137,6 +137,50 @@ never sacrifices continuity.**
 - **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
   `/test` expand to a full canned prompt tied to the matching skill
 
+## Architecture
+
+How a message flows through the extension, and which file owns each step:
+
+```mermaid
+graph TD
+    You(("You, in the chat panel")) --> Panel
+
+    subgraph EXT["vscode-extension/src/"]
+        Ext["extension.ts<br/><small>activation, commands, CodeLens</small>"] --> Panel
+
+        Panel["chatPanel.ts<br/><small>webview host + the send / tool-call loop</small>"]
+
+        Panel --> Router["modelRouter.ts<br/><small>coding vs general</small>"]
+        Panel --> Complexity["complexityEstimator.ts<br/><small>starting tier for model + effort</small>"]
+        Panel --> Skills["skillsLoader.ts<br/><small>picks skill files to inject</small>"]
+        Panel --> ProjectInstr["projectInstructions.ts<br/><small>.rizo/instructions.md</small>"]
+        Panel --> Slash["slashCommands.ts<br/><small>/commit /review /test</small>"]
+
+        Panel --> Providers["providers.ts<br/><small>company/model catalog</small>"]
+        Providers --> Free["freeModels.ts<br/><small>free-tier fallback chain</small>"]
+        Providers --> OpenRouter["openrouter.ts<br/><small>streaming API client</small>"]
+
+        Panel --> Tools["tools.ts<br/><small>read_file, write_file, edit_file, run_command,<br/>search_past_work, find_definition,<br/>find_references, call_hierarchy</small>"]
+        Tools --> Destructive["destructiveCommands.ts"]
+        Tools --> Dangerous["dangerousPatterns.ts"]
+        Tools --> Redact["outputRedaction.ts"]
+
+        Panel --> Struggle["struggleDetector.ts<br/><small>flags a turn worth auto-escalating</small>"]
+        Panel --> ThreadStore["threadStore.ts<br/><small>per-thread persistence</small>"]
+        Panel --> UsageStore["usageStore.ts<br/><small>running token/cost totals</small>"]
+        UsageStore --> Pricing["pricing.ts"]
+    end
+
+    OpenRouter -.HTTPS.-> API[("OpenRouter API")]
+    Tools -.reads/writes.-> Files[("Your workspace files")]
+    ThreadStore -.reads/writes.-> Disk[("VS Code global storage")]
+```
+
+`skills/` (bundled Markdown, not code) holds the engineering-discipline
+text `skillsLoader.ts` selects from — Coding Discipline, Debugging
+Discipline, Git Hygiene, Security Hygiene, and the rest listed under
+[Personalization](#personalization) above.
+
 ## Project structure
 
 ```
@@ -159,7 +203,7 @@ vscode-extension/
 │   ├── threadStore.ts          Thread persistence (VS Code global storage)
 │   ├── providers.ts            The company/model catalog + Smart Starting Variant/effort mapping
 │   ├── openrouter.ts           OpenRouter streaming client
-│   └── ...                     See the file list above for the rest
+│   └── ...                     See the diagram above for the rest
 ├── skills/                Engineering-discipline instructions, bundled into the extension
 ├── package.json            Extension manifest — commands, settings, contributes
 └── ONBOARDING.md           End-user install/usage guide

@@ -8,13 +8,10 @@ import * as vscode from 'vscode';
 import { estimateCost } from './pricing';
 import { ContentPart } from './openrouter';
 
-// Only the final exchange per turn is stored — not tool_calls/tool results
-// from the Stage A5 agent loop. Replaying full tool history (including raw
-// file contents read back) into every future request would bloat context
-// and cost; the final answer is what matters for conversational continuity.
-// promptTokens/completionTokens are stored separately (not just the total)
-// because they're priced very differently per model — cost can't be
-// recovered accurately from the total alone.
+// Only the final exchange per turn is stored, not tool_calls/tool results
+// — replaying full tool history into every future request would bloat
+// context and cost. promptTokens/completionTokens are stored separately
+// (not just the total) since they're priced differently per model.
 export interface StoredMessage {
   role: 'user' | 'assistant';
   content: string | ContentPart[];
@@ -23,30 +20,19 @@ export interface StoredMessage {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
-  // Set on assistant turns only — whether this turn called any tool at
-  // all, and whether any of those calls actually mutated something
-  // (write_file/edit_file) rather than just reading/listing. handleSend
-  // compares the current turn's own pair against the *previous* stored
-  // assistant turn's to catch cross-turn stagnation: two turns in a row
-  // that both poked around with tools but never wrote anything — the
-  // "keeps checking the same broken file instead of fixing it" failure
-  // mode a single turn's own tool-error/iteration-cap signals can't see.
-  // Undefined on messages persisted before this existed — deliberately
-  // never treated as false, so old history can't retroactively trigger it.
+  // Set on assistant turns only — whether this turn called any tool, and
+  // whether any mutated something (write_file/edit_file) vs just reading.
+  // handleSend compares against the previous stored turn to catch
+  // cross-turn stagnation — two turns in a row that only read, never
+  // wrote. Undefined on older messages, never treated as false, so old
+  // history can't retroactively trigger it.
   madeToolCall?: boolean;
   madeMutatingCall?: boolean;
-  // Workspace-relative paths this turn's read_file/write_file/edit_file
-  // calls touched — the tool loop already knows every one of these as it
-  // runs, this just stops throwing that away once the turn ends (same
-  // "final exchange only" persistence everything else above follows, so
-  // this is the one exception: cheap metadata, not the tool calls
-  // themselves). Powers search_past_work (tools.ts) — cross-thread
-  // "have I touched this file before" recall, built entirely from data
-  // already in hand, no extra tool call and no LLM cost to populate.
-  // Deduplicated per turn (touching the same file twice in one turn is
-  // one entry, not two) but not deduplicated across a thread's history —
-  // repetition across turns is itself part of what search_past_work
-  // reports (touched 4 times vs touched once is a real difference).
+  // Workspace-relative paths this turn's read/write/edit calls touched.
+  // Powers search_past_work (tools.ts) — cross-thread "have I touched
+  // this file before" recall, built from data already in hand.
+  // Deduplicated per turn but not across a thread's history — repetition
+  // across turns is itself part of what search_past_work reports.
   touchedFiles?: string[];
 }
 
@@ -75,58 +61,41 @@ export interface ThreadMeta {
 
 export interface ThreadData extends ThreadMeta {
   messages: StoredMessage[];
-  // Running summary of everything older than the last `summarizedCount`
-  // messages, folded in once the thread gets long — see
-  // chatPanel.ts's maybeSummarize(). Keeps long threads from replaying
-  // their full raw history (and its token cost) into every new request,
-  // while the UI still shows every message in full — this only affects
-  // what gets sent to the model, never what's stored or displayed.
+  // Running summary of everything older than summarizedCount, folded in
+  // once the thread gets long (chatPanel.ts's maybeSummarize). Keeps long
+  // threads from replaying full raw history into every request — the UI
+  // still shows every message; this only affects what's sent to the model.
   summary?: string;
   summarizedCount?: number;
-  // Set once, from the new-chat provider picker, and never changed to a
-  // different company for this thread's lifetime — see providers.ts. The
-  // in-chat switcher only ever offers other variants within this same
-  // provider. Undefined means "not picked yet" — the webview shows the
-  // picker instead of the composer until this is set.
+  // Set once, from the new-chat provider picker, never changed to a
+  // different company for this thread's life — the switcher only offers
+  // other variants within it. Undefined means "not picked yet".
   provider?: string;
   model?: string;
   // How hard the current model thinks — independent of provider/variant,
   // adjustable per turn via the Effort switcher next to the model pill.
   // Undefined is treated as providers.ts's DEFAULT_EFFORT ('medium').
   effort?: 'low' | 'medium' | 'high';
-  // True the moment the user ever touches the Effort switcher themselves
-  // (see setThreadEffort — its only caller is that switcher's handler) —
-  // permanently opts this thread out of effort auto-suggestion
-  // (chatPanel.ts's handleSend), same "an explicit choice always wins
-  // over a guess" rule Smart Starting Variant applies to the model pick.
-  // Unlike that one-shot check, effort auto-suggestion re-evaluates every
-  // turn (effort is a per-request parameter, not a thread-level identity
-  // trait) — this flag is what keeps a single manual override from being
-  // silently clobbered by the very next message's guess.
+  // True once the user touches the Effort switcher — permanently opts out
+  // of effort auto-suggestion, same "explicit choice wins over a guess"
+  // rule Smart Starting Variant applies. Unlike that one-shot check,
+  // effort auto-suggestion re-evaluates every turn — this flag keeps a
+  // manual override from being clobbered by the next guess.
   effortManuallySet?: boolean;
-  // Sticky, monotonic: once a message in this thread classifies as
-  // 'coding', the thread stays 'coding' for the rest of its life, even
-  // when a later message ("yes", an email address, "continue") doesn't
-  // itself contain a trigger word — see chatPanel.ts's handleSend. Without
-  // this, skill-file loading (loadSkillsContent) was reclassified fresh
-  // per message with no memory of an in-progress task, and a mid-task
-  // follow-up could silently lose Coding Discipline for the rest of the
-  // conversation. Undefined/'general' means "not upgraded yet."
+  // Sticky, monotonic — once a message classifies as 'coding', the thread
+  // stays 'coding', even when a later message ("yes", "continue") has no
+  // trigger word itself. Without this, a mid-task follow-up could
+  // silently lose skill-file loading. Undefined/'general' means not
+  // upgraded yet.
   taskType?: 'coding' | 'general';
-  // Absolute paths outside every open VS Code workspace folder that
-  // this thread is nonetheless allowed to read/write — populated only
-  // when the *human's own message text* names a real path on disk (see
-  // chatPanel.ts's handleSend), never from a model's own tool-call
-  // arguments. Same trust boundary tools.ts's read_file/write_file/
-  // edit_file already draw around workspace folders themselves, and the
-  // same reasoning "Attach file..." already uses to bypass it for a
-  // human-driven pick: a model reaching outside the workspace on its
-  // own (possibly steered there by a prompt injection buried in some
-  // file it read) is the risk that boundary exists to stop — a human
-  // typing "read the code in /some/other/folder" into their own chat
-  // message is a deliberate choice, not that risk. Persisted per-thread
-  // (not per-turn) so a folder mentioned once stays usable for the rest
-  // of the conversation.
+  // Absolute paths outside every open workspace folder that this thread
+  // is allowed to read/write — populated only when the human's own
+  // message text names a real path, never from a model's tool-call
+  // arguments. Same trust boundary as tools.ts's workspace check: a model
+  // reaching outside the workspace on its own (possibly via prompt
+  // injection) is the risk that boundary stops; a human naming a path
+  // deliberately isn't that risk. Persisted per-thread, so a folder
+  // mentioned once stays usable for the rest of the conversation.
   extraRoots?: string[];
 }
 
@@ -167,9 +136,8 @@ export function listThreads(context: vscode.ExtensionContext): ThreadMeta[] {
   return readIndex(context).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-// Derives a short thread title from a message — truncated at a word
-// boundary, not mid-word. Used to auto-name a thread from its first
-// message, the same way most chat apps title new conversations.
+// Derives a short thread title from a message, truncated at a word
+// boundary.
 export function deriveThreadName(message: string): string {
   const clean = message.trim().replace(/\s+/g, ' ');
   const maxLen = 40;
@@ -192,9 +160,8 @@ export function createThread(context: vscode.ExtensionContext, name = 'New Chat'
 }
 
 // Removes the thread file and its index entry. Silently no-ops on an
-// already-missing file (e.g. a double-click on Delete) rather than
-// throwing — the end state ("this thread doesn't exist") is what the
-// caller actually wants either way.
+// already-missing file — the end state is what the caller wants either
+// way.
 export function deleteThread(context: vscode.ExtensionContext, id: string): void {
   try {
     fs.unlinkSync(threadFilePath(context, id));
@@ -204,11 +171,9 @@ export function deleteThread(context: vscode.ExtensionContext, id: string): void
   writeIndex(context, readIndex(context).filter((t) => t.id !== id));
 }
 
-// Writes a full thread back to disk exactly as handed in, plus its index
-// entry — the "Reopen Closed Session" undo path in chatPanel.ts, which
-// stashes a deleted thread's data before deleteThread() runs. Bumps
-// updatedAt to now so a restored thread sorts back to the top of the list
-// (matching "this just came back"), rather than wherever it was before.
+// Writes a full thread back to disk, plus its index entry — the undo path
+// for a deleted thread. Bumps updatedAt to now so a restored thread sorts
+// back to the top.
 export function restoreThread(context: vscode.ExtensionContext, thread: ThreadData): void {
   const restored: ThreadData = { ...thread, updatedAt: new Date().toISOString() };
   fs.writeFileSync(threadFilePath(context, restored.id), JSON.stringify(restored, null, 2));
@@ -242,10 +207,8 @@ export function saveThreadMessages(context: vscode.ExtensionContext, id: string,
 }
 
 // Sets (or changes the variant within) this thread's locked provider — the
-// only writer of ThreadData.provider/model. Called from the provider picker
-// (first pick) and the in-chat variant switcher (same-provider swap only;
-// chatPanel.ts is what enforces the "same provider" restriction before
-// calling this).
+// only writer of ThreadData.provider/model. chatPanel.ts enforces the
+// same-provider restriction before calling this.
 export function setThreadModel(context: vscode.ExtensionContext, id: string, provider: string, model: string): void {
   const thread = loadThread(context, id);
   if (!thread) return;
@@ -254,10 +217,9 @@ export function setThreadModel(context: vscode.ExtensionContext, id: string, pro
   fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 
-// Merges newly-detected paths into extraRoots (see its own comment) —
-// additive and deduped, never removes a root a prior message already
-// granted. Only ever called with paths chatPanel.ts already verified
-// exist on disk and came from the human's own message text.
+// Merges newly-detected paths into extraRoots — additive and deduped,
+// never removes a prior root. Only called with paths already verified to
+// exist and come from the human's own message text.
 export function addThreadExtraRoots(context: vscode.ExtensionContext, id: string, roots: string[]): void {
   if (roots.length === 0) return;
   const thread = loadThread(context, id);

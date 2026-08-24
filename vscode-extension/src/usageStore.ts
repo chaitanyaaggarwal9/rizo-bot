@@ -4,13 +4,11 @@
 
 import * as vscode from 'vscode';
 
-// Tracks spend across every thread and every provider, independent of
-// per-thread storage — a thread's own sumThreadTokens/sumThreadCost (see
-// threadStore.ts) only cover that one conversation; this is the running
-// "how much am I actually spending" figure the header always shows in the
-// top-right corner, regardless of which chat is open. Stored in
-// globalState (not per-workspace) since it's a personal running total
-// across every project Rizo is used in, not scoped to one repo.
+// Tracks spend across every thread and provider, independent of
+// per-thread storage (threadStore.ts's sumThreadTokens/sumThreadCost
+// cover just one conversation) — the running total the header always
+// shows. Stored in globalState, not per-workspace, since it spans every
+// project.
 const USAGE_KEY = 'rizo.usage';
 
 interface UsageRecord {
@@ -28,10 +26,9 @@ function today(): { day: string; month: string } {
   return { day: `${y}-${m}-${d}`, month: `${y}-${m}` };
 }
 
-// Applies the day/month rollover if the stored record is stale. No cron job
-// or extension-startup hook needed — every read and every write just checks
-// "is this still today / this month" first, so the reset happens lazily
-// whenever Rizo is next used after the boundary passes.
+// Applies the day/month rollover if the stored record is stale — every
+// read/write checks "is this still today/this month" first, so no cron
+// job or startup hook is needed.
 function rolledOver(record: UsageRecord | undefined): UsageRecord {
   const { day, month } = today();
   if (!record) return { day, month, dayTokens: 0, monthCost: 0 };

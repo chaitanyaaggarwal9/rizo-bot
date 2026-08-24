@@ -155,25 +155,20 @@ export const TOOLS: ToolDefinition[] = [
   },
 ];
 
-// For the live tool-call transcript in chatPanel.ts's two-tier card: label
-// is the short tool-type tag ("Bash", "Read", ...), title is the one-line
-// human-readable summary always visible, detail is the exact
-// command/args shown only when the card is expanded — same split as
-// Claude Code's own Bash tool (a required "description" parameter
-// separate from "command", specifically so the visible line is intent,
-// not syntax). Best-effort: a malformed args string (still being
-// streamed, or just malformed) falls back to the bare tool name rather
-// than throwing.
+// For the live tool-call transcript's two-tier card: label is the short
+// tool-type tag ("Bash", "Read", ...), title is the one-line summary
+// always visible, detail is the exact command/args shown only when
+// expanded — a required "description" parameter separate from "command",
+// so the visible line is intent, not syntax. Best-effort: a malformed
+// args string falls back to the bare tool name rather than throwing.
 export interface ToolCallSummary {
   label: string;
   title: string;
   detail?: string;
   // diffOld/diffNew: present only for write_file/edit_file, and only when
-  // small enough to be worth rendering inline (see DIFF_MAX_CHARS below).
-  // The transcript card renders these as a real +/- line diff instead of
-  // the flat IN/OUT text everything else gets — the one other place this
-  // change is visible, showApprovalDiff's native vscode.diff view, is
-  // already gone by the time anyone scrolls back through the chat.
+  // small enough to render inline (DIFF_MAX_CHARS below). Rendered as a
+  // real +/- diff instead of flat IN/OUT text — showApprovalDiff's native
+  // vscode.diff view is gone by the time anyone scrolls back.
   diffOld?: string;
   diffNew?: string;
   // true for a write_file call creating a file that doesn't exist yet —
@@ -182,18 +177,15 @@ export interface ToolCallSummary {
   isNewFile?: boolean;
 }
 
-// Above this, an inline line-diff isn't worth the O(n*m) LCS cost or the
-// DOM size — showApprovalDiff's real vscode.diff view already showed the
-// change once, at approval time, which is what actually matters. The
-// transcript card just falls back to no diff for anything this large.
+// Above this, an inline line-diff isn't worth the O(n*m) LCS cost or DOM
+// size — showApprovalDiff's vscode.diff view already showed the change
+// at approval time. Falls back to no diff above this.
 const DIFF_MAX_CHARS = 20000;
 
-// A truncated write_file/edit_file call (hit the model's token ceiling
-// mid-content — see openrouter.ts's MAX_TOKENS comment) fails JSON.parse
-// entirely, but "path" is a short field every tool schema declares
-// before the often-huge content field, so it's usually still intact in
-// the raw string even when the rest of the JSON isn't. Regex-recovers
-// just that field rather than showing "(unknown path)" for a call whose
+// A truncated write_file/edit_file call fails JSON.parse entirely, but
+// "path" is a short field declared before the often-huge content field,
+// so it's usually still intact in the raw string. Regex-recovers just
+// that field rather than showing "(unknown path)" for a call whose
 // target file is actually known.
 function extractPathFallback(argsJson: string): string | undefined {
   const match = /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(argsJson);
@@ -212,12 +204,9 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
     case 'read_file':
       return { label: 'Read', title: path ?? '(unknown path)' };
     case 'write_file': {
-      // Best-effort: this runs before executeTool, purely to decide what
-      // to show in the transcript, so a read failure here (permissions,
-      // path resolves outside the workspace, whatever) just means "no
-      // diff shown" rather than surfacing an error of its own —
-      // executeTool's own resolveSafePath call is still the one that
-      // actually enforces the trust boundary and can reject the write.
+      // Best-effort — this only decides what to show in the transcript,
+      // so a read failure here just means "no diff shown." executeTool's
+      // own resolveSafePath is what actually enforces the trust boundary.
       let existing: string | undefined;
       try {
         const resolved = resolveSafePath(path, extraRoots);
@@ -240,10 +229,9 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
         : { label: 'Edit', title: path ?? '(unknown path)', diffOld: oldString, diffNew: newString };
     }
     case 'run_command':
-      // description is a required parameter now, but history replayed
-      // from before this shipped (or a model that just doesn't comply)
-      // won't have one — falls back to showing the command itself as
-      // the title in that case, same as the old single-line behavior.
+      // description is required, but older replayed history (or a
+      // noncompliant model) may not have one — falls back to showing the
+      // command itself as the title.
       return args.description
         ? { label: 'Bash', title: args.description, detail: args.command ?? '(unknown command)' }
         : { label: 'Bash', title: args.command ?? '(unknown command)' };
@@ -273,13 +261,11 @@ function getWorkspaceRoot(): string {
 }
 
 // Every open workspace folder's real path, not just the first — a
-// multi-root workspace (File > Add Folder to Workspace...) is the same
-// explicit, deliberate trust decision opening a single folder always
-// was, so every folder in it should actually be usable by read_file/
-// write_file/edit_file, not silently limited to whichever one VS Code
-// happened to list first. Only resolveSafePath needs this — run_command's
-// cwd (getWorkspaceRoot, above) still only ever means the primary
-// folder, since a shell command can only run in one directory at a time.
+// multi-root workspace is the same deliberate trust decision opening one
+// folder always was, so every folder should be usable by read/write/
+// edit, not just whichever VS Code lists first. Only resolveSafePath
+// needs this — run_command's cwd (getWorkspaceRoot above) still means
+// the primary folder, since a shell command runs in one directory.
 function getWorkspaceRoots(): string[] {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
@@ -290,28 +276,23 @@ function getWorkspaceRoots(): string[] {
 
 // Resolves a model-supplied path and refuses anything that escapes every
 // open workspace folder or explicitly-granted extra root — path
-// traversal, an absolute path nowhere any of them, AND a symlink that
+// traversal, an absolute path outside all of them, and a symlink that
 // lives inside one but points outside it. The string check alone
 // (path.resolve + startsWith) catches "../.." but not a symlink:
 // fs.readFileSync/writeFileSync follow symlinks at the OS level, so a
-// file that looks like it's inside an allowed root can silently read or
-// write somewhere else entirely. realpathSync resolves the actual
-// target; walk up to the nearest existing ancestor first since a new
-// file (write_file creating something that doesn't exist yet) has no
-// realpath of its own to resolve.
+// path that looks allowed can silently read/write elsewhere. realpathSync
+// resolves the actual target; walks up to the nearest existing ancestor
+// first since a new file has no realpath of its own yet.
 //
 // extraRoots (default none): paths chatPanel.ts's handleSend found in
-// the human's own message text and verified exist — see
-// detectExtraRoots and threadStore.ts's Thread.extraRoots for why only
-// that source is trusted this way.
+// the human's own message text and verified exist — see threadStore.ts's
+// Thread.extraRoots for why only that source is trusted.
 function resolveSafePath(relativePath: string, extraRoots: string[] = []): string {
   const roots = [...getWorkspaceRoots(), ...extraRoots.map((r) => fs.realpathSync(r))];
   // path.resolve treats an already-absolute second argument as an
-  // override of the first (the base only matters for a genuinely
-  // relative path) — so a relative path resolves against the primary
-  // folder as always, while an absolute path pointing at any OTHER open
-  // folder in a multi-root workspace resolves to itself and gets
-  // checked against every root below, not just the first.
+  // override of the first — a relative path resolves against the primary
+  // folder, while an absolute path pointing at another open folder
+  // resolves to itself and gets checked against every root below.
   const resolved = path.resolve(roots[0], relativePath);
   const matchedRoot = roots.find((root) => resolved === root || resolved.startsWith(root + path.sep));
   if (!matchedRoot) {
@@ -335,20 +316,13 @@ function resolveSafePath(relativePath: string, extraRoots: string[] = []): strin
   return resolved;
 }
 
-// The file's true current content — the live editor buffer if one's
-// open (even unsaved: that IS the real content, whether or not it's hit
-// disk yet), otherwise whatever's on disk. Read-only: never writes
-// anything. An earlier version force-saved a dirty editor before
-// reading/writing it, on the reasoning that read_file returning stale
-// disk content while the real content sat unsaved was worse. That part
-// held up, but it had a real side effect nothing caught until a security
-// pass: write_file/edit_file's approval-diff dialog was built *after*
-// that forced save already ran, so clicking "Reject" on the proposed
-// change didn't undo the unrelated autosave — whatever draft happened to
-// be open got permanently written to disk regardless of the user's
-// answer. Reading the live buffer instead of saving it sidesteps that
-// entirely: nothing touches disk until there's an actual approved write,
-// and read_file still sees the real content either way.
+// The file's true current content — the live editor buffer if one's open
+// (even unsaved, since that's the real content), otherwise disk.
+// Read-only: never writes. Deliberately doesn't force-save a dirty editor
+// first — that would let a Reject on the approval dialog fail to undo an
+// unrelated autosave, permanently writing whatever draft was open
+// regardless of the user's answer. Reading the live buffer sidesteps
+// that: nothing touches disk until an approved write.
 function currentContent(filePath: string): string {
   const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === filePath);
   return doc ? doc.getText() : fs.readFileSync(filePath, 'utf-8');
@@ -360,15 +334,13 @@ function currentContent(filePath: string): string {
 const ALWAYS_ALLOW_EDITS_KEY = 'rizo.alwaysAllowFileEdits';
 const ALWAYS_ALLOW_COMMANDS_KEY = 'rizo.alwaysAllowCommands';
 
-// Shows a native VS Code diff view of the proposed change, then a modal
-// approve/reject prompt. Nothing is written to disk by this function —
-// callers only proceed past it if the return value is true.
+// Shows a native VS Code diff view, then a modal approve/reject prompt.
+// Nothing is written to disk here — callers only proceed if the return
+// value is true.
 //
-// scanTarget is deliberately separate from oldContent/newContent: it's just
-// the part the model actually wrote (args.content for a new file, or
-// args.new_string for edit_file's surgical replacement), not a full diff —
-// so the security scan below doesn't re-flag pre-existing code elsewhere in
-// a file that's simply being overwritten.
+// scanTarget is separate from oldContent/newContent: just the part the
+// model actually wrote, not a full diff — so the security scan below
+// doesn't re-flag pre-existing code elsewhere in a file being overwritten.
 async function showApprovalDiff(
   context: vscode.ExtensionContext,
   relativePath: string,
@@ -480,17 +452,13 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   const root = getWorkspaceRoot();
   return new Promise((resolve) => {
     exec(command, { cwd: root, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
-      // Unlike read_file (deliberately reads whatever file the model
-      // asked for — reviewed and accepted as this app's designed
-      // behavior, not a gap), a command's output is often an accidental
-      // exposure: `env`, `cat .env`, `aws configure list`, `git log -p`
-      // on a repo with a committed secret — the model's *intent* was
-      // rarely "show me a credential," it just happened to be in the
-      // output. Redacted here so it never enters the model's context
-      // (and from there, thread history on disk, and back out to
-      // OpenRouter) at all, rather than relying on a human to notice it
-      // in the approval prompt — the command's own text is what gets
-      // approved, not its output, so there's no review step for this.
+      // Unlike read_file (which deliberately reads whatever file the
+      // model asked for), a command's output is often an accidental
+      // exposure: `env`, `cat .env`, `git log -p` on a repo with a
+      // committed secret. Redacted here so it never enters the model's
+      // context or thread history — the command's own text is what gets
+      // approved, not its output, so there's no review step for the
+      // output itself.
       const stdoutSafe = stdout ? redactSecrets(stdout) : stdout;
       const stderrSafe = stderr ? redactSecrets(stderr) : stderr;
       const parts: string[] = [];
@@ -505,26 +473,19 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   });
 }
 
-// find_definition/find_references/call_hierarchy all need a cursor
-// *position*, not just a file — the model only has a symbol name and a
-// file that mentions it, not a line/column it can reliably compute
-// itself. Resolves the FIRST identifier-boundary occurrence in the
-// file's current text (live editor buffer if open, same as read_file)
-// and hands the language server that position instead. A symbol that
-// only appears after the point being searched from, or that's shadowed
-// by an earlier same-named local, can resolve to the wrong occurrence —
-// an accepted tradeoff for not requiring the model to guess exact
-// coordinates, same one the "reads a file, then acts on what it saw"
-// pattern already implies everywhere else in this file.
+// find_definition/find_references/call_hierarchy need a cursor position,
+// not just a file — the model only has a symbol name and a file that
+// mentions it. Resolves the first identifier-boundary occurrence in the
+// file's current text and hands the language server that position. A
+// symbol shadowed by an earlier same-named local can resolve to the
+// wrong occurrence — an accepted tradeoff for not requiring the model to
+// guess exact coordinates.
 //
-// Custom boundary lookaround instead of regex's own \b: \b is defined
-// by \w ([A-Za-z0-9_]), which does NOT include $ — a real, valid
-// identifier character in JS/TS (jQuery's whole naming convention).
-// \b$element\b fails to match at either end since $ itself isn't a
-// word character, so a plain \b-based search would silently never
-// find a $-prefixed symbol at all. This treats $ as part of the
-// identifier class the boundary check itself uses, not just something
-// escape() protects from being read as regex syntax.
+// Custom boundary lookaround instead of regex's own \b: \b is defined by
+// \w ([A-Za-z0-9_]), which doesn't include $ — a real, valid identifier
+// character in JS/TS (jQuery's convention). A plain \b-based search
+// would silently never find a $-prefixed symbol. This treats $ as part
+// of the identifier class the boundary check itself uses.
 const IDENTIFIER_CHAR = 'A-Za-z0-9_$';
 export function findSymbolPosition(text: string, symbol: string): vscode.Position | undefined {
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -537,12 +498,10 @@ export function findSymbolPosition(text: string, symbol: string): vscode.Positio
   return undefined;
 }
 
-// vscode.executeDefinitionProvider can return either shape depending on
-// the language server — Location (uri/range) or LocationLink
-// (targetUri/targetRange, plus an origin range this doesn't need).
-// executeReferenceProvider and the call-hierarchy commands only ever
-// return plain Location-shaped data, but reusing one formatter for all
-// of them means it needs to handle both regardless.
+// vscode.executeDefinitionProvider can return either Location (uri/range)
+// or LocationLink (targetUri/targetRange) depending on the language
+// server. The other providers only return Location, but reusing one
+// formatter for all of them means it needs to handle both.
 function formatLocations(locations: (vscode.Location | vscode.LocationLink)[], root: string): string {
   return locations
     .map((loc) => {
@@ -613,11 +572,10 @@ async function callHierarchyTool(filePath: string, symbol: string, direction: st
 }
 
 // Two stored paths for the same file rarely match byte-for-byte across
-// threads (a different cwd, a leading "./", a model that dropped a
-// subdirectory) — exact match first, then falls back to "one is the
-// other's path suffix" or "same basename," in that order, so a loose
-// match still only fires when there's real overlap, not just a
-// same-named file in an unrelated directory.
+// threads (different cwd, a leading "./", a dropped subdirectory) —
+// exact match first, then falls back to path-suffix or same-basename, so
+// a loose match still needs real overlap, not just a same-named file
+// elsewhere.
 function pathsLikelyMatch(a: string, b: string): boolean {
   const na = a.replace(/\\/g, '/').replace(/^\.\//, '');
   const nb = b.replace(/\\/g, '/').replace(/^\.\//, '');
@@ -627,11 +585,8 @@ function pathsLikelyMatch(a: string, b: string): boolean {
 }
 
 // search_past_work's implementation — deterministic, no LLM call, built
-// entirely from StoredMessage.touchedFiles (threadStore.ts), which the
-// tool loop (chatPanel.ts) already populates as a side effect of calls
-// it's making anyway. currentThreadId is excluded: that thread's own
-// history is already in the model's context, repeating it back would
-// just cost tokens for nothing new.
+// from StoredMessage.touchedFiles. currentThreadId is excluded: that
+// thread's own history is already in the model's context.
 function searchPastWork(context: vscode.ExtensionContext, targetPath: string, currentThreadId?: string): string {
   const hits: { threadName: string; when: string; snippet: string }[] = [];
   for (const meta of listThreads(context)) {
@@ -675,19 +630,13 @@ export async function executeTool(
   try {
     args = JSON.parse(argsJson);
   } catch (err: any) {
-    // Used to dump the entire raw argsJson back into this message — for a
-    // write_file/edit_file call on a real file that's easily several
-    // thousand characters, and this string becomes the tool result the
-    // *next* iteration pays to read again. Doubly wasteful on a genuine
-    // parse failure, since the model then usually just regenerates the
-    // same giant payload from scratch and hits the same error again
-    // (openrouter.ts's stream reassembly now recovers the one most
-    // common cause of this — a large string split across SSE frames —
-    // but a model can still emit genuinely invalid JSON on its own).
-    // JSON.parse's own message already names roughly where things broke;
-    // pairing it with a short excerpt and a concrete suggestion (smaller
-    // calls) gives the model something to actually act on instead of a
-    // wall of text it can't use.
+    // Dumping the entire raw argsJson back here would waste tokens on a
+    // large write_file/edit_file call — the next iteration pays to read
+    // it again, and the model usually just regenerates the same giant
+    // payload and hits the same error. JSON.parse's message already
+    // names roughly where things broke; pairing it with a short excerpt
+    // and a concrete suggestion (smaller calls) gives the model something
+    // to act on.
     const excerpt = argsJson.length > 1500 ? `${argsJson.slice(0, 1500)}… (truncated, ${argsJson.length} chars total)` : argsJson;
     return `Error: could not parse tool arguments as JSON (${err.message}). If this was a large write_file/edit_file call, try breaking the content into a few smaller calls instead of one large one. Arguments received: ${excerpt}`;
   }
@@ -697,16 +646,11 @@ export async function executeTool(
       case 'read_file': {
         const filePath = resolveSafePath(args.path, extraRoots);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
-        // Unlike the attachment flow (readAndSendAttachment in
-        // chatPanel.ts), which already rejects binary files with a clear
-        // warning before a human ever sees them, this had no such check
-        // at all — a PDF, image, archive, or any other binary file was
-        // force-decoded as UTF-8 via fs.readFileSync's 'utf-8' encoding
-        // inside currentContent() and handed to the model as garbled
-        // noise with no error, silently wasting tokens on nothing
-        // useful. Same null-byte-in-first-8KB heuristic as the
-        // attachment flow (the standard cheap tell — it's what git
-        // itself uses to decide binary vs text).
+        // Without this, a binary file (PDF, image, archive) got
+        // force-decoded as UTF-8 and handed to the model as garbled noise
+        // with no error, wasting tokens on nothing useful. Same
+        // null-byte-in-first-8KB heuristic as the attachment flow — the
+        // standard cheap tell git itself uses.
         const head = fs.readFileSync(filePath).subarray(0, 8000);
         if (head.includes(0)) {
           return `Error: ${args.path} looks like a binary file — can't read it as text (no PDF/image/archive text extraction here). If you need its contents, ask the user to describe it or attach it as an image if it's a screenshot.`;

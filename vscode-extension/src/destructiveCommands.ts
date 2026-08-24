@@ -2,10 +2,8 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
-// Patterns that are hard to reverse once run — per Git Hygiene's own rule,
-// these get an elevated warning instead of the same casual prompt as
-// something like `npm test`. Pure logic, no vscode dependency, so it's
-// testable outside the extension host.
+// Patterns that are hard to reverse once run — these get an elevated
+// warning instead of a casual approval prompt.
 const DESTRUCTIVE_PATTERNS: RegExp[] = [
   /git\s+push\s+.*(--force|-f\b)/i,
   /git\s+reset\s+--hard/i,
@@ -22,19 +20,13 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
   // Long-form equivalent of -rf, order-independent.
   /rm\s+(?=.*--recursive)(?=.*--force)/i,
 
-  // Shell indirection — none of the patterns above can see *into* a
-  // quoted `sh -c "..."` string, a piped-in remote script, or a
-  // base64-decoded payload, so a destructive command run this way
-  // matched nothing and fell through to the casual approval tier
-  // (bypassable via "Always Allow"). Treated as destructive by itself:
-  // if what's actually going to run can't be seen, the same elevated,
-  // non-bypassable warning applies rather than trusting it by default.
-  // Same category Codex's execpolicy treats this class of indirection as
-  // (checked its shipped policy engine — prefix rules default to `allow`,
-  // but shell wrappers and remote-script execution are exactly the shape
-  // it exists to catch). False positives on a legitimate `bash -c` are
-  // an acceptable cost here — same tradeoff every rule above already
-  // makes: worth an extra click, not "definitely malicious."
+  // Shell indirection — none of the patterns above can see into a quoted
+  // `sh -c "..."` string, a piped-in remote script, or a base64-decoded
+  // payload, so a command run this way would fall through to the casual,
+  // bypassable approval tier. Treated as destructive by itself: if what's
+  // actually going to run can't be seen, the same elevated warning
+  // applies. False positives on a legitimate `bash -c` are an acceptable
+  // cost — worth an extra click, not "definitely malicious."
   /curl\s+[^\n|]*\|\s*(sh|bash|zsh)\b/i,
   /wget\s+[^\n|]*\|\s*(sh|bash|zsh)\b/i,
   /base64\s+(-d|--decode)\b[^\n]*\|\s*(sh|bash|zsh)\b/i,
@@ -43,20 +35,14 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
 ];
 
 // Zero-width/formatting characters plus bidi embedding/override/isolate
-// controls — the exact class of attack Claude Code shipped a fix for
-// ("commands padded with tabs or invisible Unicode can no longer hide
-// part of the command from the approval dialog"; checked its changelog).
-// Two distinct risks, both closed by the same check: (1) a zero-width
-// character inserted mid-keyword (e.g. between "git" and "push") breaks
-// the \s+ patterns above without breaking how the string looks, evading
-// every regex above; (2) a bidi override can make the *rendered* dialog
-// text read differently from the bytes that actually execute — a
-// "Trojan Source"-style spoof, not a matching problem at all. A
-// legitimate, hand-typed command essentially never contains these, so
-// presence alone is treated as destructive — not just stripped before
-// matching, since stripping would quietly normalize away the one signal
-// that something's off, the same "can't see what's actually running"
-// principle the shell-indirection patterns above already use.
+// controls. Two risks, one check: (1) a zero-width character inserted
+// mid-keyword (e.g. between "git" and "push") breaks the \s+ patterns
+// above without changing how the string looks; (2) a bidi override can
+// make the rendered dialog text read differently from the bytes that
+// actually execute — a "Trojan Source"-style spoof. A hand-typed command
+// essentially never contains these, so presence alone is treated as
+// destructive rather than stripped before matching — stripping would
+// erase the one signal that something's off.
 const INVISIBLE_UNICODE = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/;
 
 export function isDestructive(command: string): boolean {

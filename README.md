@@ -61,7 +61,12 @@ never sacrifices continuity.**
   stored history for prior work on a file — when it was touched, in
   which thread, what was being asked — deterministic, built entirely
   from what earlier turns already touched, no separate index and no
-  extra LLM call to populate it). A live tool-call transcript shows each
+  extra LLM call to populate it), and `find_definition`/
+  `find_references`/`call_hierarchy` — the workspace's own language
+  server (same engine behind VS Code's Go to Definition/Find All
+  References), not a text search, so results resolve through imports
+  and re-exports correctly instead of matching an unrelated
+  same-named symbol elsewhere. A live tool-call transcript shows each
   call as it happens, collapsible for the full input/output — a
   write/edit's card keeps its own +/- line diff on scrollback too, not
   just at approval time

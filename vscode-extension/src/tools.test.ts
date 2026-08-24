@@ -6,8 +6,58 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { executeTool } from './tools';
+import { executeTool, findSymbolPosition } from './tools';
 import { createThread, saveThreadMessages } from './threadStore';
+
+// The find_definition/find_references/call_hierarchy tools themselves
+// need a real language server (vscode.commands.executeCommand) to do
+// anything meaningful — not testable outside the actual extension
+// host. findSymbolPosition is the one piece of real, non-trivial pure
+// logic in that path (which occurrence of a name resolves), so it's
+// what gets covered here directly.
+describe('findSymbolPosition', () => {
+  it('finds the first whole-word occurrence, not a substring match', () => {
+    const text = 'const userCount = 1;\nfunction user() { return userCount; }';
+    const pos = findSymbolPosition(text, 'user');
+    // Line 0 has "userCount" (not a whole-word match for "user") before
+    // line 1's actual whole-word "user" -- must not stop early on the
+    // substring.
+    expect(pos?.line).toBe(1);
+  });
+
+  it('respects word boundaries on both sides', () => {
+    const text = 'myFunctionCall();\nfunction Call() {}';
+    const pos = findSymbolPosition(text, 'Call');
+    expect(pos?.line).toBe(1); // not the "Call" inside "myFunctionCall"
+  });
+
+  it('returns the correct character offset within the line', () => {
+    const text = '  const target = 5;';
+    const pos = findSymbolPosition(text, 'target');
+    expect(pos?.character).toBe(text.indexOf('target'));
+  });
+
+  it('returns undefined when the symbol never appears', () => {
+    expect(findSymbolPosition('const x = 1;', 'nonexistent')).toBeUndefined();
+  });
+
+  it('finds a $-prefixed identifier (jQuery convention) — a real, valid identifier character that plain regex \\b does not treat as one', () => {
+    const text = 'function noop() {}\nconst $element = document.querySelector(".foo");';
+    const pos = findSymbolPosition(text, '$element');
+    expect(pos?.line).toBe(1);
+    expect(pos?.character).toBe(text.split('\n')[1].indexOf('$element'));
+  });
+
+  it('treats a regex-special character in the symbol name literally, not as regex syntax', () => {
+    // A symbol name is never itself a regex, but the search is
+    // implemented with one -- a name containing a character that's
+    // special in regex syntax must not change what gets matched.
+    // "a.b" as a literal dotted name, not "a" + "any char" + "b".
+    const text = 'const x = aXb;\nconst y = a.b;';
+    const pos = findSymbolPosition(text, 'a.b');
+    expect(pos?.line).toBe(1); // not the unrelated "aXb" on line 0
+  });
+});
 
 // search_past_work is the one tool whose whole job is reading OTHER
 // threads' stored history — real value only comes from testing it

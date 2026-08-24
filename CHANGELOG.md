@@ -96,6 +96,33 @@ an honest gap. Everything before this point lives in git history instead.
   hand-writing the on-disk format) — finds a cross-thread touch,
   excludes the current thread, matches by suffix and basename, and
   correctly reports no record when a file was never touched.
+- Code intelligence: `find_definition`, `find_references`, and
+  `call_hierarchy` — the code-relationship piece explicitly deferred
+  above, now built. Each drives the workspace's own language server
+  (`vscode.executeDefinitionProvider`/`executeReferenceProvider`/
+  `prepareCallHierarchy`+`provide{Incoming,Outgoing}Calls` — the same
+  engine behind VS Code's own Go to Definition/Find All References),
+  not a text search, so results resolve through imports and
+  re-exports correctly and don't match an unrelated same-named symbol
+  elsewhere. The model only ever has a symbol name and a file that
+  mentions it, not a line/column — `findSymbolPosition` resolves the
+  first identifier-boundary occurrence in the file's current text
+  (live editor buffer if open) and hands the language server that
+  position. Custom identifier-boundary lookaround instead of regex's
+  own `\b`, deliberately: `\b` is defined by `\w`
+  (`[A-Za-z0-9_]`), which does not include `$` — a real, valid
+  identifier character in JS/TS (jQuery's whole naming convention) —
+  so a plain `\b`-based search would silently never resolve a
+  `$`-prefixed symbol at all. `call_hierarchy` falls back to pointing
+  at `find_references` when the language server can't build a
+  hierarchy for a given symbol/language (not every language supports
+  it). Not independently testable outside a real language server and
+  a real project — `findSymbolPosition` (the one piece of pure logic
+  in this path, including the `$`-boundary case) has direct unit
+  tests; the rest needs manual verification in the Extension
+  Development Host. `rizo.permissions.disabledTools`'s setting enum
+  updated to include all 4 tools added since it was last touched
+  (this and `search_past_work` above).
 
 ### Changed
 - Tool-call cards with a real diff (`write_file`/`edit_file`) now start

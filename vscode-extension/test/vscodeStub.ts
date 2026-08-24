@@ -59,6 +59,17 @@ export const Uri = {
   file: (p: string) => ({ fsPath: p, toString: () => 'file://' + p, scheme: 'file', path: p }),
 };
 
+// Real vscode.Position is immutable and has line/character readonly
+// properties plus comparison helpers — this only implements the shape
+// tools.ts's findSymbolPosition actually constructs and tests actually
+// read (line/character), not the full API.
+export class Position {
+  constructor(
+    public readonly line: number,
+    public readonly character: number,
+  ) {}
+}
+
 export const ViewColumn = { Beside: 2, Active: -1 };
 export const ConfigurationTarget = { Global: 1, Workspace: 2, WorkspaceFolder: 3 };
 export class EventEmitter {

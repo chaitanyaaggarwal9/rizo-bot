@@ -104,6 +104,55 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'find_definition',
+      description:
+        "Jump to where a symbol (function, class, variable, type) is actually defined — uses the workspace's own language server (same engine as VS Code's \"Go to Definition\"), not a text search, so it resolves through imports and re-exports correctly. Faster and more accurate than grepping for the declaration by hand.",
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative path to a file that references the symbol' },
+          symbol: { type: 'string', description: 'The exact symbol name to look up (case-sensitive)' },
+        },
+        required: ['path', 'symbol'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_references',
+      description:
+        "Find every place a symbol is used across the whole workspace — same engine as VS Code's \"Find All References\", not a text search, so it won't miss a usage or match an unrelated same-named symbol elsewhere. Use before renaming or changing a function's signature to see everything that would break.",
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative path to a file that defines or references the symbol' },
+          symbol: { type: 'string', description: 'The exact symbol name to look up (case-sensitive)' },
+        },
+        required: ['path', 'symbol'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'call_hierarchy',
+      description:
+        "For a function specifically: who calls it, or what it calls — one level, not a text search. \"incoming\" answers \"what breaks if I change this function's behavior\"; \"outgoing\" answers \"what does this function actually depend on\". Falls back to find_references-like behavior if the language server can't build a call hierarchy for this symbol (some languages/positions don't support it).",
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative path to a file that defines the function' },
+          symbol: { type: 'string', description: 'The exact function name to look up (case-sensitive)' },
+          direction: { type: 'string', enum: ['incoming', 'outgoing'], description: '"incoming" = callers of this function, "outgoing" = functions this one calls' },
+        },
+        required: ['path', 'symbol', 'direction'],
+      },
+    },
+  },
 ];
 
 // For the live tool-call transcript in chatPanel.ts's two-tier card: label
@@ -456,6 +505,113 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   });
 }
 
+// find_definition/find_references/call_hierarchy all need a cursor
+// *position*, not just a file — the model only has a symbol name and a
+// file that mentions it, not a line/column it can reliably compute
+// itself. Resolves the FIRST identifier-boundary occurrence in the
+// file's current text (live editor buffer if open, same as read_file)
+// and hands the language server that position instead. A symbol that
+// only appears after the point being searched from, or that's shadowed
+// by an earlier same-named local, can resolve to the wrong occurrence —
+// an accepted tradeoff for not requiring the model to guess exact
+// coordinates, same one the "reads a file, then acts on what it saw"
+// pattern already implies everywhere else in this file.
+//
+// Custom boundary lookaround instead of regex's own \b: \b is defined
+// by \w ([A-Za-z0-9_]), which does NOT include $ — a real, valid
+// identifier character in JS/TS (jQuery's whole naming convention).
+// \b$element\b fails to match at either end since $ itself isn't a
+// word character, so a plain \b-based search would silently never
+// find a $-prefixed symbol at all. This treats $ as part of the
+// identifier class the boundary check itself uses, not just something
+// escape() protects from being read as regex syntax.
+const IDENTIFIER_CHAR = 'A-Za-z0-9_$';
+export function findSymbolPosition(text: string, symbol: string): vscode.Position | undefined {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?<![${IDENTIFIER_CHAR}])${escaped}(?![${IDENTIFIER_CHAR}])`);
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const match = pattern.exec(lines[i]);
+    if (match) return new vscode.Position(i, match.index);
+  }
+  return undefined;
+}
+
+// vscode.executeDefinitionProvider can return either shape depending on
+// the language server — Location (uri/range) or LocationLink
+// (targetUri/targetRange, plus an origin range this doesn't need).
+// executeReferenceProvider and the call-hierarchy commands only ever
+// return plain Location-shaped data, but reusing one formatter for all
+// of them means it needs to handle both regardless.
+function formatLocations(locations: (vscode.Location | vscode.LocationLink)[], root: string): string {
+  return locations
+    .map((loc) => {
+      const uri = 'targetUri' in loc ? loc.targetUri : loc.uri;
+      const range = 'targetRange' in loc ? loc.targetRange : loc.range;
+      const rel = path.relative(root, uri.fsPath) || path.basename(uri.fsPath);
+      return `${rel}:${range.start.line + 1}`;
+    })
+    .join('\n');
+}
+
+async function findDefinitionTool(filePath: string, symbol: string, extraRoots: string[]): Promise<string> {
+  const resolved = resolveSafePath(filePath, extraRoots);
+  if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
+  const pos = findSymbolPosition(currentContent(resolved), symbol);
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  const results = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
+    'vscode.executeDefinitionProvider',
+    vscode.Uri.file(resolved),
+    pos,
+  );
+  if (!results || results.length === 0) {
+    return `No definition found for "${symbol}" at that position — the language server may not be ready yet (just opened this project?), or this isn't a resolvable symbol here.`;
+  }
+  return `Definition of "${symbol}":\n${formatLocations(results, getWorkspaceRoot())}`;
+}
+
+async function findReferencesTool(filePath: string, symbol: string, extraRoots: string[]): Promise<string> {
+  const resolved = resolveSafePath(filePath, extraRoots);
+  if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
+  const pos = findSymbolPosition(currentContent(resolved), symbol);
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  const results = await vscode.commands.executeCommand<vscode.Location[]>(
+    'vscode.executeReferenceProvider',
+    vscode.Uri.file(resolved),
+    pos,
+  );
+  if (!results || results.length === 0) return `No references found for "${symbol}".`;
+  return `${results.length} reference(s) to "${symbol}":\n${formatLocations(results, getWorkspaceRoot())}`;
+}
+
+async function callHierarchyTool(filePath: string, symbol: string, direction: string, extraRoots: string[]): Promise<string> {
+  const resolved = resolveSafePath(filePath, extraRoots);
+  if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
+  const pos = findSymbolPosition(currentContent(resolved), symbol);
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  const items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
+    'vscode.prepareCallHierarchy',
+    vscode.Uri.file(resolved),
+    pos,
+  );
+  if (!items || items.length === 0) {
+    return `Could not build a call hierarchy for "${symbol}" here — not every language/position supports it. Try find_references instead; it works for any resolvable symbol.`;
+  }
+  const root = getWorkspaceRoot();
+  const lines: string[] = [];
+  for (const item of items) {
+    if (direction === 'incoming') {
+      const calls = await vscode.commands.executeCommand<vscode.CallHierarchyIncomingCall[]>('vscode.provideIncomingCalls', item);
+      for (const c of calls || []) lines.push(`${c.from.name} (${path.relative(root, c.from.uri.fsPath)}:${c.from.range.start.line + 1})`);
+    } else {
+      const calls = await vscode.commands.executeCommand<vscode.CallHierarchyOutgoingCall[]>('vscode.provideOutgoingCalls', item);
+      for (const c of calls || []) lines.push(`${c.to.name} (${path.relative(root, c.to.uri.fsPath)}:${c.to.range.start.line + 1})`);
+    }
+  }
+  if (lines.length === 0) return `No ${direction === 'incoming' ? 'callers' : 'calls'} found for "${symbol}".`;
+  return `${direction === 'incoming' ? 'Callers of' : 'Calls made by'} "${symbol}":\n${lines.join('\n')}`;
+}
+
 // Two stored paths for the same file rarely match byte-for-byte across
 // threads (a different cwd, a leading "./", a model that dropped a
 // subdirectory) — exact match first, then falls back to "one is the
@@ -588,6 +744,15 @@ export async function executeTool(
 
       case 'search_past_work':
         return searchPastWork(context, args.path, currentThreadId);
+
+      case 'find_definition':
+        return await findDefinitionTool(args.path, args.symbol, extraRoots);
+
+      case 'find_references':
+        return await findReferencesTool(args.path, args.symbol, extraRoots);
+
+      case 'call_hierarchy':
+        return await callHierarchyTool(args.path, args.symbol, args.direction, extraRoots);
 
       default:
         return `Error: unknown tool "${name}"`;

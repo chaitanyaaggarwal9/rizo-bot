@@ -53,12 +53,18 @@ never sacrifices continuity.**
   entirely for a variant that doesn't support it
 - **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
   read-only, reads the live editor buffer directly when a file's open
-  with unsaved changes), `write_file`/`edit_file` (diff preview + modal
-  approval before anything touches disk), `run_command` (approval-gated,
-  with an elevated, non-bypassable warning for destructive-looking
-  commands and for shell indirection that hides what's actually
-  running). A live tool-call transcript shows each call as it happens,
-  collapsible for the full input/output
+  with unsaved changes), `write_file`/`edit_file` (native diff preview +
+  modal approval before anything touches disk), `run_command`
+  (approval-gated, with an elevated, non-bypassable warning for
+  destructive-looking commands and for shell indirection that hides what's
+  actually running), `search_past_work` (searches every *other* thread's
+  stored history for prior work on a file — when it was touched, in
+  which thread, what was being asked — deterministic, built entirely
+  from what earlier turns already touched, no separate index and no
+  extra LLM call to populate it). A live tool-call transcript shows each
+  call as it happens, collapsible for the full input/output — a
+  write/edit's card keeps its own +/- line diff on scrollback too, not
+  just at approval time
 - **Attachments** — any file via the OS picker, a workspace quick pick,
   or paste an image directly into the composer. Checked against the
   current variant's own vision support before sending
@@ -142,7 +148,7 @@ Inside `vscode-extension/`:
 ```
 vscode-extension/
 ├── src/                  Extension source — one module per concern
-│   ├── *.test.ts             Unit tests (vitest) for every pure-logic module
+│   ├── *.test.ts             Unit tests (vitest) — pure-logic modules directly, chatPanel.ts via test/vscodeStub.ts
 │   ├── chatPanel.ts           Webview host: panel lifecycle, the send/tool-call loop
 │   ├── tools.ts                read_file / write_file / edit_file / run_command
 │   ├── threadStore.ts          Thread persistence (VS Code global storage)

@@ -1,6 +1,6 @@
 # Backend API Taste
 
-The Frontend Taste counterpart for the other half of the stack: an API is judged on consistency and honesty about its contract, not on any single endpoint looking clever.
+The Web Design Taste counterpart for the other half of the stack: an API is judged on consistency and honesty about its contract, not on any single endpoint looking clever.
 
 ### 1. Read the brief first
 

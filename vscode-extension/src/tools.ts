@@ -10,6 +10,7 @@ import { exec } from 'child_process';
 import { isDestructive } from './destructiveCommands';
 import { scanDangerousPatterns } from './dangerousPatterns';
 import { redactSecrets } from './outputRedaction';
+import { listThreads, loadThread } from './threadStore';
 
 export interface ToolDefinition {
   type: 'function';
@@ -90,6 +91,19 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_past_work',
+      description:
+        "Search every OTHER chat thread in this workspace (not this one — that's already in your context) for prior work touching a specific file: which threads touched it, when, and what was being asked at the time. Useful before a risky change, or when the user asks something like \"didn't we already fix this?\" Deterministic — built from what read_file/write_file/edit_file actually touched in each past turn, not an AI guess at relevance.",
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: 'Relative file path to search for' } },
+        required: ['path'],
+      },
+    },
+  },
 ];
 
 // For the live tool-call transcript in chatPanel.ts's two-tier card: label
@@ -105,7 +119,25 @@ export interface ToolCallSummary {
   label: string;
   title: string;
   detail?: string;
+  // diffOld/diffNew: present only for write_file/edit_file, and only when
+  // small enough to be worth rendering inline (see DIFF_MAX_CHARS below).
+  // The transcript card renders these as a real +/- line diff instead of
+  // the flat IN/OUT text everything else gets — the one other place this
+  // change is visible, showApprovalDiff's native vscode.diff view, is
+  // already gone by the time anyone scrolls back through the chat.
+  diffOld?: string;
+  diffNew?: string;
+  // true for a write_file call creating a file that doesn't exist yet —
+  // diffOld is meaningless there (nothing to diff against), so the card
+  // renders diffNew as all-new content instead of a diff.
+  isNewFile?: boolean;
 }
+
+// Above this, an inline line-diff isn't worth the O(n*m) LCS cost or the
+// DOM size — showApprovalDiff's real vscode.diff view already showed the
+// change once, at approval time, which is what actually matters. The
+// transcript card just falls back to no diff for anything this large.
+const DIFF_MAX_CHARS = 20000;
 
 // A truncated write_file/edit_file call (hit the model's token ceiling
 // mid-content — see openrouter.ts's MAX_TOKENS comment) fails JSON.parse
@@ -119,7 +151,7 @@ function extractPathFallback(argsJson: string): string | undefined {
   return match ? match[1].replace(/\\(.)/g, '$1') : undefined;
 }
 
-export function summarizeToolCall(name: string, argsJson: string): ToolCallSummary {
+export function summarizeToolCall(name: string, argsJson: string, extraRoots: string[] = []): ToolCallSummary {
   let args: any = {};
   try {
     args = JSON.parse(argsJson);
@@ -130,10 +162,34 @@ export function summarizeToolCall(name: string, argsJson: string): ToolCallSumma
   switch (name) {
     case 'read_file':
       return { label: 'Read', title: path ?? '(unknown path)' };
-    case 'write_file':
-      return { label: 'Write', title: path ?? '(unknown path)' };
-    case 'edit_file':
-      return { label: 'Edit', title: path ?? '(unknown path)' };
+    case 'write_file': {
+      // Best-effort: this runs before executeTool, purely to decide what
+      // to show in the transcript, so a read failure here (permissions,
+      // path resolves outside the workspace, whatever) just means "no
+      // diff shown" rather than surfacing an error of its own —
+      // executeTool's own resolveSafePath call is still the one that
+      // actually enforces the trust boundary and can reject the write.
+      let existing: string | undefined;
+      try {
+        const resolved = resolveSafePath(path, extraRoots);
+        if (fs.existsSync(resolved)) existing = currentContent(resolved);
+      } catch {
+        /* unresolvable path — fall through with no diff */
+      }
+      const newContent: string | undefined = typeof args.content === 'string' ? args.content : undefined;
+      const tooBig = (existing?.length ?? 0) > DIFF_MAX_CHARS || (newContent?.length ?? 0) > DIFF_MAX_CHARS;
+      return tooBig || newContent === undefined
+        ? { label: 'Write', title: path ?? '(unknown path)' }
+        : { label: 'Write', title: path ?? '(unknown path)', diffOld: existing, diffNew: newContent, isNewFile: existing === undefined };
+    }
+    case 'edit_file': {
+      const oldString: string | undefined = args.old_string;
+      const newString: string | undefined = args.new_string;
+      const tooBig = (oldString?.length ?? 0) > DIFF_MAX_CHARS || (newString?.length ?? 0) > DIFF_MAX_CHARS;
+      return tooBig || oldString === undefined || newString === undefined
+        ? { label: 'Edit', title: path ?? '(unknown path)' }
+        : { label: 'Edit', title: path ?? '(unknown path)', diffOld: oldString, diffNew: newString };
+    }
     case 'run_command':
       // description is a required parameter now, but history replayed
       // from before this shipped (or a model that just doesn't comply)
@@ -400,7 +456,56 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   });
 }
 
-export async function executeTool(context: vscode.ExtensionContext, name: string, argsJson: string, extraRoots: string[] = []): Promise<string> {
+// Two stored paths for the same file rarely match byte-for-byte across
+// threads (a different cwd, a leading "./", a model that dropped a
+// subdirectory) — exact match first, then falls back to "one is the
+// other's path suffix" or "same basename," in that order, so a loose
+// match still only fires when there's real overlap, not just a
+// same-named file in an unrelated directory.
+function pathsLikelyMatch(a: string, b: string): boolean {
+  const na = a.replace(/\\/g, '/').replace(/^\.\//, '');
+  const nb = b.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (na === nb) return true;
+  if (na.endsWith('/' + nb) || nb.endsWith('/' + na)) return true;
+  return path.basename(na) === path.basename(nb) && path.basename(na) !== '';
+}
+
+// search_past_work's implementation — deterministic, no LLM call, built
+// entirely from StoredMessage.touchedFiles (threadStore.ts), which the
+// tool loop (chatPanel.ts) already populates as a side effect of calls
+// it's making anyway. currentThreadId is excluded: that thread's own
+// history is already in the model's context, repeating it back would
+// just cost tokens for nothing new.
+function searchPastWork(context: vscode.ExtensionContext, targetPath: string, currentThreadId?: string): string {
+  const hits: { threadName: string; when: string; snippet: string }[] = [];
+  for (const meta of listThreads(context)) {
+    if (meta.id === currentThreadId) continue;
+    const thread = loadThread(context, meta.id);
+    if (!thread) continue;
+    for (let i = 0; i < thread.messages.length; i++) {
+      const msg = thread.messages[i];
+      if (msg.role !== 'assistant' || !msg.touchedFiles?.some((f) => pathsLikelyMatch(f, targetPath))) continue;
+      const userMsg = thread.messages[i - 1];
+      const snippet = userMsg && typeof userMsg.content === 'string' ? userMsg.content.trim().slice(0, 100) : '(no text prompt)';
+      hits.push({ threadName: thread.name, when: thread.updatedAt, snippet });
+    }
+  }
+  if (hits.length === 0) return `No record of "${targetPath}" being touched in any other thread.`;
+  hits.sort((a, b) => b.when.localeCompare(a.when));
+  const shown = hits.slice(0, 10);
+  const lines = shown.map((h) => `- [${h.when}] "${h.threadName}": ${h.snippet}`);
+  const omitted = hits.length - shown.length;
+  if (omitted > 0) lines.push(`… and ${omitted} more, not shown.`);
+  return `${hits.length} prior touch(es) of "${targetPath}" found:\n${lines.join('\n')}`;
+}
+
+export async function executeTool(
+  context: vscode.ExtensionContext,
+  name: string,
+  argsJson: string,
+  extraRoots: string[] = [],
+  currentThreadId?: string,
+): Promise<string> {
   // Backstop for rizo.permissions.disabledTools — chatPanel.ts already
   // filters TOOLS before offering them to the model, so this only matters
   // if a call somehow still arrives here anyway (stale history, a model
@@ -480,6 +585,9 @@ export async function executeTool(context: vscode.ExtensionContext, name: string
 
       case 'run_command':
         return await runCommand(context, args.command);
+
+      case 'search_past_work':
+        return searchPastWork(context, args.path, currentThreadId);
 
       default:
         return `Error: unknown tool "${name}"`;

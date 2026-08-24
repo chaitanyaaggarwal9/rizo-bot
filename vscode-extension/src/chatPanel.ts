@@ -199,7 +199,16 @@ export class ChatPanel {
       'rizoChat',
       'Rizo',
       vscode.ViewColumn.Beside,
-      { enableScripts: true, retainContextWhenHidden: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        // Needed for webview.asWebviewUri() to serve assets/mascot.png —
+        // without an explicit root, asWebviewUri can't resolve anything
+        // and getHtml() had to fall back to inlining the file as a base64
+        // data: URI instead (a ~590KB string for that one image, folded
+        // directly into the HTML handed to webview.html on every render).
+        localResourceRoots: [vscode.Uri.file(context.extensionPath)],
+      },
     );
     // Without this the tab just shows plain text — every other AI chat
     // panel shows its own icon here instead.
@@ -889,6 +898,12 @@ export class ChatPanel {
       let maxConsecutiveToolErrors = 0;
       let madeToolCallThisTurn = false;
       let madeMutatingCallThisTurn = false;
+      // Feeds StoredMessage.touchedFiles (threadStore.ts) — cross-thread
+      // "have I touched this file before" recall (tools.ts's
+      // search_past_work). A Set so touching the same file twice in one
+      // turn is one entry; converted to an array only once, at persist
+      // time.
+      const touchedFilesThisTurn = new Set<string>();
 
       // Live status for the pending bubble — model, running token count,
       // and current action, all previously invisible until the whole
@@ -947,7 +962,17 @@ export class ChatPanel {
           if (toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') {
             madeMutatingCallThisTurn = true;
           }
-          const summary = summarizeToolCall(toolCall.function.name, toolCall.function.arguments);
+          const summary = summarizeToolCall(toolCall.function.name, toolCall.function.arguments, extraRoots);
+          // summary.title is already the extracted (or best-effort
+          // recovered) path for these three tools — reusing it here
+          // instead of re-parsing toolCall.function.arguments ourselves.
+          if (
+            (toolCall.function.name === 'read_file' || toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') &&
+            summary.title &&
+            summary.title !== '(unknown path)'
+          ) {
+            touchedFilesThisTurn.add(summary.title);
+          }
           this.panel.webview.postMessage({
             type: 'toolStart',
             turnId,
@@ -955,6 +980,9 @@ export class ChatPanel {
             label: summary.label,
             title: summary.title,
             detail: summary.detail,
+            diffOld: summary.diffOld,
+            diffNew: summary.diffNew,
+            isNewFile: summary.isNewFile,
           });
           // The last tool call in a response the API itself marked cut
           // off (finish_reason 'length') that still fails to parse is
@@ -971,7 +999,7 @@ export class ChatPanel {
             !isParseableJson(toolCall.function.arguments);
           const result = looksTruncated
             ? `Error: this ${toolCall.function.name} call was cut off before finishing — it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
-            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots);
+            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId);
           const toolOk = !result.startsWith('Error:');
           this.panel.webview.postMessage({
             type: 'toolEnd',
@@ -1037,6 +1065,7 @@ export class ChatPanel {
           totalTokens: totalUsage.totalTokens,
           madeToolCall: madeToolCallThisTurn,
           madeMutatingCall: madeMutatingCallThisTurn,
+          ...(touchedFilesThisTurn.size > 0 ? { touchedFiles: [...touchedFilesThisTurn] } : {}),
         },
       ];
       saveThreadMessages(this.context, threadId, updated);
@@ -1133,10 +1162,18 @@ export class ChatPanel {
 
   private getHtml(): string {
     const nonce = getNonce();
-    const iconPath = path.join(this.context.extensionPath, 'icon.png');
-    const iconDataUri = `data:image/png;base64,${fs.readFileSync(iconPath).toString('base64')}`;
+    // asWebviewUri, not a base64 data: URI — the previous version read
+    // assets/mascot.png (444KB) and inlined it as base64 (~590KB of text)
+    // directly into the HTML string handed to webview.html on every
+    // single render. That's within Electron's technical limits, but it's
+    // exactly the pattern VS Code's own webview guide warns against, and
+    // it's the one thing in this file remotely close to whatever pushed
+    // the webview's document.write past whatever made it choke — asking
+    // the webview to fetch a small vscode-resource:// URI instead avoids
+    // the question entirely rather than needing to pin down the exact
+    // mechanism.
     const mascotPath = path.join(this.context.extensionPath, 'assets', 'mascot.png');
-    const mascotDataUri = `data:image/png;base64,${fs.readFileSync(mascotPath).toString('base64')}`;
+    const mascotUri = this.panel.webview.asWebviewUri(vscode.Uri.file(mascotPath));
     // Trimmed view of providers.ts handed to the webview once — it renders
     // the provider picker grid and each provider's own variant dropdown
     // straight from this, so there's exactly one place (providers.ts) that
@@ -1157,7 +1194,7 @@ export class ChatPanel {
 <html>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src ${this.panel.webview.cspSource} data:; script-src 'nonce-${nonce}';">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -1417,9 +1454,14 @@ export class ChatPanel {
 
   /* --- Messages --- */
   #messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; animation: .18s ease-out fadeIn; }
-  .msg.user { align-self: flex-end; background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-bottom-right-radius: 4px; }
-  .msg.assistant { align-self: flex-start; background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-widget-border); border-bottom-left-radius: 4px; }
+  /* Full-width transcript rows, not chat bubbles — a user turn is a
+     left-accented block (your own input, set off but not boxed-in), an
+     assistant turn is plain text under a thin top divider. Reads as a
+     running log rather than a two-column conversation, same shape as
+     Claude Code's own transcript. */
+  .msg { max-width: 100%; padding: 8px 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; animation: .18s ease-out fadeIn; }
+  .msg.user { align-self: stretch; background: rgba(128,128,128,0.06); border-left: 2px solid var(--vscode-button-background); }
+  .msg.assistant { align-self: stretch; background: transparent; border: none; border-top: 1px solid var(--vscode-widget-border); padding: 12px 10px 8px; }
   .msg .attachedImg { max-width: 220px; max-height: 220px; border-radius: 8px; display: block; margin-top: 6px; }
 
   /* --- Live tool-call transcript --- */
@@ -1439,10 +1481,12 @@ export class ChatPanel {
      was most of what made the old flat transcript read as a wall of text. */
   .toolCard {
     border-radius: 6px;
+    border: 1px solid var(--vscode-widget-border);
     background: rgba(128,128,128,0.08);
     animation: .15s ease-out fadeIn;
     overflow: hidden;
   }
+  .toolCard.failed { border-color: var(--vscode-errorForeground, #f14c4c); }
   .toolHeader {
     display: flex;
     align-items: center;
@@ -1505,6 +1549,7 @@ export class ChatPanel {
   .toolBodyTag {
     font-size: 9.5px;
     font-weight: 600;
+    font-family: var(--vscode-editor-font-family);
     letter-spacing: 0.04em;
     opacity: 0.55;
   }
@@ -1527,6 +1572,28 @@ export class ChatPanel {
     max-height: 260px;
     overflow-y: auto;
   }
+  /* Real +/- line diff for Edit/Write tool cards (see buildDiffView) —
+     same insert/remove theme tokens the native VS Code diff editor uses,
+     so it matches whatever diff colors the user's theme already defines
+     instead of a fixed guess. */
+  .diffBlock {
+    display: flex;
+    flex-direction: column;
+    font-family: var(--vscode-editor-font-family);
+    font-size: 11px;
+    border-radius: 5px;
+    max-height: 320px;
+    overflow: auto;
+  }
+  .diffBlock pre { margin: 0; padding: 8px 10px; }
+  .diffLine { display: flex; gap: 8px; padding: 0 8px; white-space: pre; }
+  .diffMarker { flex-shrink: 0; width: 10px; opacity: 0.7; user-select: none; }
+  .diffCtx { opacity: 0.75; }
+  .diffAdd { background: var(--vscode-diffEditor-insertedTextBackground, rgba(46, 160, 67, 0.15)); }
+  .diffAdd .diffMarker { color: #4ec9b0; }
+  .diffDel { background: var(--vscode-diffEditor-removedTextBackground, rgba(248, 81, 73, 0.15)); }
+  .diffDel .diffMarker { color: #f14c4c; }
+
   .streamedText { display: block; }
 
   /* "Thinking…" replaced with 3 dots pulsing in sequence — same
@@ -1783,7 +1850,7 @@ export class ChatPanel {
     <div id="providerGrid"></div>
   </div>
   <div id="emptyState">
-    <img src="${mascotDataUri}" alt="">
+    <img src="${mascotUri}" alt="">
     <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Every reply in this chat comes from the provider you picked above.</div>
   </div>
   <div id="messages"></div>
@@ -2029,15 +2096,87 @@ export class ChatPanel {
       if (turn && turn.statusTimer) clearInterval(turn.statusTimer);
     }
 
+    // Classic LCS line diff — old/new are already capped by tools.ts's
+    // DIFF_MAX_CHARS before this ever runs, but a small char cap can still
+    // hide a huge line count (20000 blank lines is 20000 "chars"), and the
+    // DP table below is O(n*m) in lines, not chars. The a.length*b.length
+    // guard in buildDiffView is the real backstop against that.
+    function diffLines(oldText, newText) {
+      const a = oldText.split('\\n');
+      const b = newText.split('\\n');
+      const n = a.length, m = b.length;
+      const dp = [];
+      for (let i = 0; i <= n; i++) dp.push(new Int32Array(m + 1));
+      for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+          dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+      const ops = [];
+      let i = 0, j = 0;
+      while (i < n && j < m) {
+        if (a[i] === b[j]) { ops.push({ type: 'ctx', text: a[i] }); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ type: 'del', text: a[i] }); i++; }
+        else { ops.push({ type: 'add', text: b[j] }); j++; }
+      }
+      while (i < n) { ops.push({ type: 'del', text: a[i] }); i++; }
+      while (j < m) { ops.push({ type: 'add', text: b[j] }); j++; }
+      return ops;
+    }
+
+    function diffLine(type, text) {
+      const line = document.createElement('div');
+      line.className = 'diffLine diff' + (type === 'add' ? 'Add' : type === 'del' ? 'Del' : 'Ctx');
+      const marker = document.createElement('span');
+      marker.className = 'diffMarker';
+      marker.textContent = type === 'add' ? '+' : type === 'del' ? '-' : ' ';
+      const text_ = document.createElement('span');
+      text_.className = 'diffText';
+      text_.textContent = text;
+      line.appendChild(marker);
+      line.appendChild(text_);
+      return line;
+    }
+
+    // diffOld undefined/empty means "new file" (write_file with nothing
+    // to diff against) — every line renders as added, no LCS needed.
+    function buildDiffView(oldText, newText) {
+      const wrap = document.createElement('div');
+      wrap.className = 'diffBlock';
+      if (!oldText) {
+        newText.split('\\n').forEach((t) => wrap.appendChild(diffLine('add', t)));
+        return wrap;
+      }
+      const a = oldText.split('\\n');
+      const b = newText.split('\\n');
+      if (a.length * b.length > 250000) {
+        // Too large to line-diff cheaply — falls back to plain before/after
+        // text rather than either freezing on the DP table or silently
+        // showing nothing.
+        const pre = document.createElement('pre');
+        pre.textContent = '--- before ---\\n' + oldText + '\\n--- after ---\\n' + newText;
+        wrap.appendChild(pre);
+        return wrap;
+      }
+      for (const op of diffLines(oldText, newText)) wrap.appendChild(diffLine(op.type, op.text));
+      return wrap;
+    }
+
     // Builds one tool-call's two-tier card. bodyEl only gets an IN block
     // now (if this call has detail — read/write/edit have none, the path
     // in the title already says it all); handleToolEnd appends the OUT
     // block once the result's back. Starts collapsed; the header is a
     // <button> so it's keyboard-toggleable too, not just a click target.
-    function handleToolStart(turnId, callId, label, title, detail) {
+    function handleToolStart(turnId, callId, label, title, detail, diffOld, diffNew, isNewFile) {
       if (!activeTurn || activeTurn.id !== turnId) return;
+      // A write/edit's diff is exactly what "verify every edit inline"
+      // means — starting it collapsed like every other tool call meant
+      // an extra click stood between you and the one thing worth
+      // actually reading. Reads/commands stay collapsed by default;
+      // only a real diff opens automatically.
+      const hasDiff = diffNew !== undefined;
       const card = document.createElement('div');
-      card.className = 'toolCard running';
+      card.className = hasDiff ? 'toolCard running expanded' : 'toolCard running';
 
       const header = document.createElement('button');
       header.type = 'button';
@@ -2052,8 +2191,23 @@ export class ChatPanel {
 
       const body = document.createElement('div');
       body.className = 'toolBody';
-      body.hidden = true;
-      if (detail) {
+      body.hidden = !hasDiff;
+      // Edit/write calls small enough to have made the cut in
+      // summarizeToolCall (tools.ts's DIFF_MAX_CHARS) get a real +/- line
+      // diff here instead of the flat IN text everything else gets —
+      // the only other place this change is ever visible, the native
+      // vscode.diff view shown at approval time, is gone by the time
+      // anyone scrolls back through the chat.
+      if (hasDiff) {
+        const block = document.createElement('div');
+        block.className = 'toolBodyBlock';
+        const tag = document.createElement('span');
+        tag.className = 'toolBodyTag';
+        tag.textContent = isNewFile ? 'NEW FILE' : 'DIFF';
+        block.appendChild(tag);
+        block.appendChild(buildDiffView(diffOld, diffNew));
+        body.appendChild(block);
+      } else if (detail) {
         const block = document.createElement('div');
         block.className = 'toolBodyBlock';
         const tag = document.createElement('span');
@@ -2712,7 +2866,7 @@ export class ChatPanel {
       if (!activeTurn || msg.turnId !== activeTurn.id) return;
 
       if (msg.type === 'toolStart') {
-        handleToolStart(msg.turnId, msg.callId, msg.label, msg.title, msg.detail);
+        handleToolStart(msg.turnId, msg.callId, msg.label, msg.title, msg.detail, msg.diffOld, msg.diffNew, msg.isNewFile);
       } else if (msg.type === 'toolEnd') {
         handleToolEnd(msg.turnId, msg.callId, msg.ok, msg.resultDetail);
       } else if (msg.type === 'textDelta') {

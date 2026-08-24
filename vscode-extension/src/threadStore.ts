@@ -35,6 +35,19 @@ export interface StoredMessage {
   // never treated as false, so old history can't retroactively trigger it.
   madeToolCall?: boolean;
   madeMutatingCall?: boolean;
+  // Workspace-relative paths this turn's read_file/write_file/edit_file
+  // calls touched — the tool loop already knows every one of these as it
+  // runs, this just stops throwing that away once the turn ends (same
+  // "final exchange only" persistence everything else above follows, so
+  // this is the one exception: cheap metadata, not the tool calls
+  // themselves). Powers search_past_work (tools.ts) — cross-thread
+  // "have I touched this file before" recall, built entirely from data
+  // already in hand, no extra tool call and no LLM cost to populate.
+  // Deduplicated per turn (touching the same file twice in one turn is
+  // one entry, not two) but not deduplicated across a thread's history —
+  // repetition across turns is itself part of what search_past_work
+  // reports (touched 4 times vs touched once is a real difference).
+  touchedFiles?: string[];
 }
 
 // Sums totalTokens across every assistant message in a thread — the

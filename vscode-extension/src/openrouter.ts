@@ -5,27 +5,17 @@
 import { ToolDefinition } from './tools';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-// Leaving max_tokens unset lets it default to the model's max (65536 for
-// Sonnet 5), which OpenRouter rejects outright on a low-credit account
-// ("requires more credits... upgrade to a paid account") since it won't
-// risk a completion it can't guarantee you can afford. Needs an explicit
-// cap either way — the real tradeoff is where.
+// Leaving max_tokens unset defaults to the model's max, which OpenRouter
+// rejects outright on a low-credit account. Needs an explicit cap either
+// way.
 //
-// 2026-08-20: real incident — a write_file call for a genuinely large
-// file (a game engine class, several hundred lines) hit the old 2048
-// cap mid-string, every time, on every retry: "Unterminated string in
-// JSON" from tools.ts's own parser, a "(unknown path)" tool card
-// (summarizeToolCall's title-extraction failed on the same truncated
-// JSON), and the model just regenerating the whole thing from scratch
-// each retry — one turn alone hit 583K tokens without ever finishing.
-// Truncation is a strictly worse failure than the low-credit rejection
-// this constant exists to avoid: that one is at least a clear, one-time
-// error the user can act on (add credit); silent mid-JSON truncation
-// looks like a confusing parser bug and burns a full regeneration on
-// every retry with no way to self-correct. Raised 4x — still a bounded,
-// affordable worst case even on the priciest model in the catalog
-// (8192 * $60/M completion = ~$0.49/call, Opus 5) — rather than raise
-// it further and risk that rejection becoming the common case instead.
+// Truncation is a strictly worse failure than that rejection: a cut-off
+// write_file call mid-JSON fails to parse, the model regenerates from
+// scratch each retry with no way to self-correct, and a turn can burn
+// hundreds of thousands of tokens without finishing. Raised from 2048 to
+// 8192 — still a bounded, affordable worst case even on the priciest
+// model in the catalog (~$0.49/call, Opus 5) — rather than risk the
+// rejection becoming the common case instead.
 const MAX_TOKENS = 8192;
 
 export interface ToolCall {
@@ -70,13 +60,10 @@ export interface ChatResult {
   model: string;
   message: AssistantMessage;
   usage: Usage;
-  // 'length' means the completion was cut off by max_tokens, not that
-  // the model chose to stop — chatPanel.ts uses this to tell a genuinely
-  // truncated tool call (mid-write, hit the ceiling) apart from one
-  // that's just malformed for some other reason, and give the model
-  // guidance that actually matches what happened instead of a generic
-  // parse error. Undefined rather than a required field: a provider
-  // that omits finish_reason entirely shouldn't be forced to fake one.
+  // 'length' means the completion was cut off by max_tokens, not a
+  // model-chosen stop — chatPanel.ts uses this to give truncation-specific
+  // guidance instead of a generic parse error. Undefined (not required)
+  // since a provider that omits it shouldn't be forced to fake one.
   finishReason?: string;
 }
 
@@ -95,22 +82,15 @@ export interface CallOptions {
   signal?: AbortSignal;
   // Fired once per streamed text chunk, in order, as it arrives.
   onDelta?: (text: string) => void;
-  // callWithFallback only: fired if a model attempt already pushed at
-  // least one onDelta chunk before failing, right before it moves on to
-  // the next model in the chain — the caller's cue to discard whatever
-  // partial text it displayed rather than let a second model's reply get
-  // appended onto the first's orphaned fragment.
+  // callWithFallback only: fired when a failed attempt already streamed
+  // some text, right before moving to the next model — the caller's cue
+  // to discard the partial text.
   onRestart?: () => void;
-  // How hard THIS model thinks — the token-cost dial, orthogonal to which
-  // model is answering (see providers.ts / chatPanel.ts's effort switcher).
+  // How hard this model thinks — orthogonal to which model answers.
   // OpenRouter's unified `reasoning.effort` field translates this into
-  // whatever the underlying provider actually expects (a literal effort
-  // enum for OpenAI-style models, a thinking-token budget for
-  // Anthropic/Gemini) — one field here covers every provider rather than
-  // this file needing to know each one's native shape. Omitted entirely
-  // for models that don't support reasoning at all (chatPanel.ts checks
-  // ModelVariant.reasoning before setting this) so the request body never
-  // carries a field an unsupporting model might reject.
+  // whatever the underlying provider expects. Omitted for models that
+  // don't support reasoning (chatPanel.ts checks ModelVariant.reasoning)
+  // so the body never carries a field an unsupporting model might reject.
   reasoningEffort?: ReasoningEffort;
 }
 
@@ -153,29 +133,22 @@ export async function callOpenRouter(
   let finalModel = model;
   let finishReason: string | undefined;
   let usage: Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-  // Streamed tool-call arguments arrive as partial JSON string fragments
-  // spread across many delta chunks, keyed by array index — reassembled
-  // here into complete strings before this function ever returns, so
-  // tools.ts's executeTool keeps doing a single JSON.parse exactly as it
-  // does today. Nothing downstream needs to know streaming happened.
+  // Streamed tool-call arguments arrive as partial JSON fragments across
+  // many delta chunks, keyed by array index — reassembled here into
+  // complete strings so executeTool keeps doing one JSON.parse. Nothing
+  // downstream needs to know streaming happened.
   const toolCallAcc: Record<number, { id?: string; name?: string; args: string }> = {};
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  // The SSE spec allows one logical event's data to be split across
-  // several consecutive 'data:' lines — the client is meant to
-  // concatenate their values with '\n' between them and only parse once
-  // a blank line ends the event. The old code treated every single
-  // 'data:' line as a complete, independently-parseable JSON chunk on
-  // its own, which happens to work for the common case of one line per
-  // event but silently breaks the moment a payload is ever legitimately
-  // spread across multiple lines this way (a plausible shape for a large
-  // write_file tool call's arguments) — each line alone fails
-  // JSON.parse, gets silently discarded, and the accumulated tool-call
-  // arguments end up missing a chunk with zero indication anything went
-  // wrong, until executeTool's JSON.parse fails on the complete,
-  // now-corrupted string much later, having already spent the tokens.
+  // The SSE spec allows one event's data to span several consecutive
+  // 'data:' lines, concatenated with '\n' and parsed only once a blank
+  // line ends the event. Treating each 'data:' line as independently
+  // parseable breaks the moment a payload spans multiple lines (plausible
+  // for a large write_file call) — each line alone fails JSON.parse and
+  // gets silently discarded, corrupting the accumulated tool-call
+  // arguments with no indication anything went wrong.
   let dataBuffer = '';
 
   const processEvent = () => {
@@ -193,10 +166,10 @@ export async function callOpenRouter(
 
     if (chunk.model) finalModel = chunk.model;
     if (chunk.usage) usage = extractUsage(chunk); // final chunk, when stream_options.include_usage is honored
-    // finish_reason rides on the same choice as delta, but arrives on
-    // the terminal chunk (often alongside an empty delta) — read it
-    // unconditionally here rather than inside the `if (!delta) return`
-    // guard below, so a chunk that's ONLY the finish reason isn't missed.
+    // finish_reason arrives on the terminal chunk, often alongside an
+    // empty delta — read unconditionally here, not inside the `if
+    // (!delta) return` guard below, so a finish-reason-only chunk isn't
+    // missed.
     const reason = chunk.choices?.[0]?.finish_reason;
     if (reason) finishReason = reason;
 

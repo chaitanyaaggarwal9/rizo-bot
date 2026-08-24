@@ -53,12 +53,23 @@ never sacrifices continuity.**
   entirely for a variant that doesn't support it
 - **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
   read-only, reads the live editor buffer directly when a file's open
-  with unsaved changes), `write_file`/`edit_file` (diff preview + modal
-  approval before anything touches disk), `run_command` (approval-gated,
-  with an elevated, non-bypassable warning for destructive-looking
-  commands and for shell indirection that hides what's actually
-  running). A live tool-call transcript shows each call as it happens,
-  collapsible for the full input/output
+  with unsaved changes), `write_file`/`edit_file` (native diff preview +
+  modal approval before anything touches disk), `run_command`
+  (approval-gated, with an elevated, non-bypassable warning for
+  destructive-looking commands and for shell indirection that hides what's
+  actually running), `search_past_work` (searches every *other* thread's
+  stored history for prior work on a file — when it was touched, in
+  which thread, what was being asked — deterministic, built entirely
+  from what earlier turns already touched, no separate index and no
+  extra LLM call to populate it), and `find_definition`/
+  `find_references`/`call_hierarchy` — the workspace's own language
+  server (same engine behind VS Code's Go to Definition/Find All
+  References), not a text search, so results resolve through imports
+  and re-exports correctly instead of matching an unrelated
+  same-named symbol elsewhere. A live tool-call transcript shows each
+  call as it happens, collapsible for the full input/output — a
+  write/edit's card keeps its own +/- line diff on scrollback too, not
+  just at approval time
 - **Attachments** — any file via the OS picker, a workspace quick pick,
   or paste an image directly into the composer. Checked against the
   current variant's own vision support before sending
@@ -126,6 +137,50 @@ never sacrifices continuity.**
 - **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
   `/test` expand to a full canned prompt tied to the matching skill
 
+## Architecture
+
+How a message flows through the extension, and which file owns each step:
+
+```mermaid
+graph TD
+    You(("You, in the chat panel")) --> Panel
+
+    subgraph EXT["vscode-extension/src/"]
+        Ext["extension.ts<br/><small>activation, commands, CodeLens</small>"] --> Panel
+
+        Panel["chatPanel.ts<br/><small>webview host + the send / tool-call loop</small>"]
+
+        Panel --> Router["modelRouter.ts<br/><small>coding vs general</small>"]
+        Panel --> Complexity["complexityEstimator.ts<br/><small>starting tier for model + effort</small>"]
+        Panel --> Skills["skillsLoader.ts<br/><small>picks skill files to inject</small>"]
+        Panel --> ProjectInstr["projectInstructions.ts<br/><small>.rizo/instructions.md</small>"]
+        Panel --> Slash["slashCommands.ts<br/><small>/commit /review /test</small>"]
+
+        Panel --> Providers["providers.ts<br/><small>company/model catalog</small>"]
+        Providers --> Free["freeModels.ts<br/><small>free-tier fallback chain</small>"]
+        Providers --> OpenRouter["openrouter.ts<br/><small>streaming API client</small>"]
+
+        Panel --> Tools["tools.ts<br/><small>read_file, write_file, edit_file, run_command,<br/>search_past_work, find_definition,<br/>find_references, call_hierarchy</small>"]
+        Tools --> Destructive["destructiveCommands.ts"]
+        Tools --> Dangerous["dangerousPatterns.ts"]
+        Tools --> Redact["outputRedaction.ts"]
+
+        Panel --> Struggle["struggleDetector.ts<br/><small>flags a turn worth auto-escalating</small>"]
+        Panel --> ThreadStore["threadStore.ts<br/><small>per-thread persistence</small>"]
+        Panel --> UsageStore["usageStore.ts<br/><small>running token/cost totals</small>"]
+        UsageStore --> Pricing["pricing.ts"]
+    end
+
+    OpenRouter -.HTTPS.-> API[("OpenRouter API")]
+    Tools -.reads/writes.-> Files[("Your workspace files")]
+    ThreadStore -.reads/writes.-> Disk[("VS Code global storage")]
+```
+
+`skills/` (bundled Markdown, not code) holds the engineering-discipline
+text `skillsLoader.ts` selects from — Coding Discipline, Debugging
+Discipline, Git Hygiene, Security Hygiene, and the rest listed under
+[Personalization](#personalization) above.
+
 ## Project structure
 
 ```
@@ -142,13 +197,13 @@ Inside `vscode-extension/`:
 ```
 vscode-extension/
 ├── src/                  Extension source — one module per concern
-│   ├── *.test.ts             Unit tests (vitest) for every pure-logic module
+│   ├── *.test.ts             Unit tests (vitest) — pure-logic modules directly, chatPanel.ts via test/vscodeStub.ts
 │   ├── chatPanel.ts           Webview host: panel lifecycle, the send/tool-call loop
 │   ├── tools.ts                read_file / write_file / edit_file / run_command
 │   ├── threadStore.ts          Thread persistence (VS Code global storage)
 │   ├── providers.ts            The company/model catalog + Smart Starting Variant/effort mapping
 │   ├── openrouter.ts           OpenRouter streaming client
-│   └── ...                     See the file list above for the rest
+│   └── ...                     See the diagram above for the rest
 ├── skills/                Engineering-discipline instructions, bundled into the extension
 ├── package.json            Extension manifest — commands, settings, contributes
 └── ONBOARDING.md           End-user install/usage guide

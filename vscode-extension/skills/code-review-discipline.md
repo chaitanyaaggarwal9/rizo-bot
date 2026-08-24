@@ -52,5 +52,4 @@ behavior.
 - A review with no verdict — approve, request changes, or comment,
   explicitly.
 
-*Adapted from Jeffallan's claude-skills project (code-reviewer), MIT
-license.*
+

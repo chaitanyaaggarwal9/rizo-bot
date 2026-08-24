@@ -3,15 +3,12 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 // Struggle evidence behind the auto-escalation "↑ Retry with {stronger
-// variant}" offer (see chatPanel.ts's handleSend). Three deliberately
-// cheap, deterministic signals — no extra model call, same "pure logic"
-// approach as complexityEstimator.ts — pulled out into their own testable
-// function rather than left inline, the way the original single-turn
-// version of this shipped, because a real usage transcript caught a gap
-// inline reasoning alone hadn't: a cheap model that writes a broken
-// multi-file page, then spends several more turns re-checking the same
-// missing file instead of writing it. Zero tool errors, nowhere near the
-// iteration cap — invisible to the first two signals.
+// variant}" offer. Three cheap, deterministic signals, no extra model
+// call. The cross-turn check exists because a single-turn view alone
+// misses a real failure mode: a cheap model writes a broken multi-file
+// page, then spends several more turns re-checking the same missing file
+// instead of writing it — zero tool errors, nowhere near the iteration
+// cap, invisible to the first two signals.
 export interface TurnToolActivity {
   // Whether this turn called any tool at all.
   madeToolCall: boolean;

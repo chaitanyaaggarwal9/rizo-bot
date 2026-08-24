@@ -43,4 +43,3 @@ The real error message, stack trace, and line number — not the closest-looking
 - A special-case branch that papers over the root cause instead of fixing it.
 - Declaring it fixed because the immediate crash stopped, without checking the underlying condition that caused it.
 
-*Rule 3's "grep every caller" tactic adapted from DietrichGebert/ponytail, MIT license.*

@@ -70,6 +70,4 @@ explicitly what images the page still needs — don't fake it.
 - Declaring a redesign "done" without checking it against the original
   brief's constraints (accessibility, brand assets, audience).
 
-*Adapted from jeffallan/claude-skills' `design-taste-frontend` (taste-skill),
-MIT license — condensed from ~1200 lines to the rules that hold regardless
-of brief.*
+

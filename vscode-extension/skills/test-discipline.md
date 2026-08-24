@@ -36,3 +36,5 @@ Mock external things you don't control — network, filesystem, clock, third-par
 ### 7. Confirm before calling it done
 
 Tests pass on the current code, and — for anything non-trivial — fail if you temporarily reintroduce the bug or delete the logic they claim to cover. If a test can't be made to fail that way, it isn't testing what you think it is.
+
+"Done" is a PASS/FAIL check against something you actually ran, not a guess: if a test suite exists, run it (`run_command`) before saying the turn is finished — don't declare success on the strength of the code looking right. "I ran out of steps but this should work" and "the tests pass" are different claims; only make the second one after actually seeing it pass. A failing or skipped check you didn't mention is worse than admitting the turn isn't done yet.

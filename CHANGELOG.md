@@ -9,6 +9,155 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-08-24
+
+### Fixed
+- Real, reproducing crash: the whole chat panel could fail to load at
+  all, throwing `Uncaught SyntaxError: Failed to execute 'write' on
+  'Document': Invalid or unexpected token` from VS Code's own webview
+  host. Root cause: `getHtml()` builds the entire webview (including
+  its own embedded `<script>`) as one large outer TypeScript template
+  literal, and several `.split('\n')`/string-literal calls *inside*
+  that literal were written with a single backslash instead of two —
+  `\n` gets consumed by the *outer* literal's own escape processing
+  into a real newline character, silently corrupting the nested
+  script's source the moment it's parsed as its own separate program.
+  `tsc` can't catch this class of bug (the whole webview script is
+  just string content to the outer compile), which is exactly why it
+  shipped — caught this time by extracting the actual rendered script
+  from a real HTML dump and running `node --check` against it,
+  confirmed via the same escaping mistake reproduced in isolation
+  before fixing it. Several occurrences fixed, each applied and
+  verified programmatically (construct-and-compare, not hand-edited)
+  given this project's own prior history with this exact mistake. Now
+  covered by an automated regression test (below) instead of relying on
+  remembering to check by hand.
+- The panel's mascot image now loads via `webview.asWebviewUri()`
+  instead of being read and base64-inlined directly into the HTML
+  string on every single render (~590KB of text for one 444KB PNG).
+  Not the actual cause of the crash above, but the same category of
+  "avoid what the webview guide already tells you not to do," found
+  while investigating it.
+
+### Added
+- Tool-call transcript cards for `write_file`/`edit_file` now show a
+  real +/- line diff instead of flat IN/OUT text, using the same
+  insert/removed theme tokens the native VS Code diff editor uses —
+  reads correctly regardless of the user's color theme instead of a
+  fixed guess. Capped at 20,000 chars per side (`DIFF_MAX_CHARS` in
+  `tools.ts`) before falling back to no diff — the modal approval
+  dialog's own native `vscode.diff` view already showed the real
+  change once, at approval time; this is about the transcript still
+  being legible on scrollback, not re-doing that job at a size where
+  the DOM cost isn't worth it.
+- Transcript rows redesigned from chat bubbles to full-width rows — a
+  user turn is a left-accented block, an assistant turn is plain text
+  under a thin top divider — reading as a running log rather than a
+  two-column conversation, matching Claude Code's own transcript shape.
+- `chatPanel.test.ts` + `test/vscodeStub.ts` — the crash above shipped
+  because nothing automated ever actually parsed the webview's own
+  generated script as JavaScript; `tsc` only ever sees it as a string.
+  A real (if minimal) `vscode` module stub, aliased in
+  `vitest.config.mts`, lets `ChatPanel.createOrShow()` run outside the
+  actual extension host so its real output can be captured and checked
+  with `new Function(script)` — parses the generated script without
+  executing it, throwing exactly the SyntaxError a broken build would
+  produce. Verified against a deliberately reintroduced instance of
+  this exact bug before trusting it (fails correctly, not just "looks
+  like it should").
+- Cross-thread memory: `search_past_work`, a new agent tool that
+  searches every *other* thread's stored history for prior work on a
+  specific file — which threads touched it, when, and what was being
+  asked at the time. Useful before a risky change, or when you ask
+  "didn't we already fix this?" and the answer is buried in a
+  different chat. Deterministic and zero extra LLM cost to populate:
+  `StoredMessage` gains a `touchedFiles` field the tool loop was
+  already in a position to know (every `read_file`/`write_file`/
+  `edit_file` call already passes through it) and simply wasn't
+  keeping — this is the one exception to "persist only the final
+  exchange, not the tool-call sub-steps," and it's cheap metadata, not
+  the tool calls themselves. Excludes the current thread (already in
+  context) and matches file paths loosely — exact, then path-suffix,
+  then basename — since the same file rarely gets referenced
+  byte-identically across sessions.
+
+  First concrete step on the "graph of all my chats, thinks like a
+  brain" idea — scoped down from the full multi-modal
+  code+docs+PDF+image+video knowledge-graph vision to what Rizo
+  already owns (its own thread history) and can build without a new
+  dependency or per-project pre-index cost. Code-relationship queries
+  (call graphs, references) are a separate, still-open piece — VS
+  Code's own language servers already compute that; better to expose
+  those than reimplement them.
+
+  Verified with real end-to-end tests against actual thread files on
+  disk (`tools.test.ts`, using `threadStore.ts`'s own
+  `createThread`/`saveThreadMessages` to build fixtures rather than
+  hand-writing the on-disk format) — finds a cross-thread touch,
+  excludes the current thread, matches by suffix and basename, and
+  correctly reports no record when a file was never touched.
+- Code intelligence: `find_definition`, `find_references`, and
+  `call_hierarchy` — the code-relationship piece explicitly deferred
+  above, now built. Each drives the workspace's own language server
+  (`vscode.executeDefinitionProvider`/`executeReferenceProvider`/
+  `prepareCallHierarchy`+`provide{Incoming,Outgoing}Calls` — the same
+  engine behind VS Code's own Go to Definition/Find All References),
+  not a text search, so results resolve through imports and
+  re-exports correctly and don't match an unrelated same-named symbol
+  elsewhere. The model only ever has a symbol name and a file that
+  mentions it, not a line/column — `findSymbolPosition` resolves the
+  first identifier-boundary occurrence in the file's current text
+  (live editor buffer if open) and hands the language server that
+  position. Custom identifier-boundary lookaround instead of regex's
+  own `\b`, deliberately: `\b` is defined by `\w`
+  (`[A-Za-z0-9_]`), which does not include `$` — a real, valid
+  identifier character in JS/TS (jQuery's whole naming convention) —
+  so a plain `\b`-based search would silently never resolve a
+  `$`-prefixed symbol at all. `call_hierarchy` falls back to pointing
+  at `find_references` when the language server can't build a
+  hierarchy for a given symbol/language (not every language supports
+  it). Not independently testable outside a real language server and
+  a real project — `findSymbolPosition` (the one piece of pure logic
+  in this path, including the `$`-boundary case) has direct unit
+  tests; the rest needs manual verification in the Extension
+  Development Host. `rizo.permissions.disabledTools`'s setting enum
+  updated to include all 4 tools added since it was last touched
+  (this and `search_past_work` above).
+
+### Changed
+- Tool-call cards with a real diff (`write_file`/`edit_file`) now start
+  expanded instead of collapsed — first step of a broader push to make
+  Rizo feel less like a general-purpose chat product and more like a
+  tool built for engineers who want to verify every edit inline. Reads
+  and commands with no diff still start collapsed; this is specifically
+  about the one thing actually worth seeing without an extra click.
+- Tool-call cards now have a real border (`1px solid
+  var(--vscode-widget-border)`, red-tinted on failure) instead of only
+  a background tint — closes the gap against a bordered-card design
+  target checked line-by-line against the actual CSS. Failed cards'
+  border, title, and status now all use the same error color, instead
+  of just the text.
+- The IN/OUT/DIFF/NEW FILE tag labels inside a tool card now use the
+  editor font (`--vscode-editor-font-family`) like every other piece of
+  text in that card already did — only the tag label itself had been
+  inheriting the general UI font.
+- `test-discipline.md` rule 7 sharpened with an explicit PASS/FAIL exit
+  condition: if a test suite exists, run it before declaring the turn
+  done — "the code looks right" and "the tests pass" are different
+  claims, only make the second one after actually seeing it pass.
+  Evaluated a 4-part prompting framework (Context Boundary / Execution
+  Protocol / Internal Critic / Exit Condition) against what Rizo
+  already has: the first two are already the whole point of `skills/`,
+  and `code-review-discipline.md` already refuses a review with no
+  explicit verdict — this closes the one real gap, an explicit exit
+  condition for testing specifically. Deliberately NOT adding an
+  automatic generate→critique→refine loop (especially a separate
+  Generator+Judge model call) — that's 2-4x the token cost of a turn
+  every time it runs, the wrong default for a product whose whole
+  thesis is cost-efficient routing. If that's ever wanted, it belongs
+  as something asked for via `/review`, not automatic behavior baked
+  into every turn.
+
 ## [0.4.6] - 2026-08-20
 
 ### Fixed

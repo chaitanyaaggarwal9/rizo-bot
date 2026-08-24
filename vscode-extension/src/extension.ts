@@ -13,17 +13,15 @@ export function activate(context: vscode.ExtensionContext) {
   const changeApiKey = vscode.commands.registerCommand('rizo.changeApiKey', () => {
     ChatPanel.changeApiKey(context);
   });
-  // Not bound to Cmd/Ctrl+Shift+T — that's VS Code's own "Reopen Closed
-  // Editor" shortcut already; stepping on it wasn't worth the parallel to
-  // Claude Code's binding. Command palette only.
+  // Not bound to Cmd/Ctrl+Shift+T — that's already VS Code's "Reopen
+  // Closed Editor" shortcut. Command palette only.
   const reopenClosedSession = vscode.commands.registerCommand('rizo.reopenClosedSession', () => {
     ChatPanel.createOrShow(context);
     ChatPanel.currentPanel?.restoreLastDeleted();
   });
-  // uri comes from the Explorer/editor-tab context menu VS Code invoked
-  // this from (the clicked resource) — undefined if somehow run from the
-  // command palette instead, where there's no "the file you right-clicked"
-  // to fall back to, so that case just declines rather than guessing.
+  // uri is the clicked resource from the Explorer/editor-tab context menu
+  // — undefined from the command palette, where there's nothing to fall
+  // back to, so it declines.
   const addFileToThread = vscode.commands.registerCommand('rizo.addFileToThread', (uri?: vscode.Uri) => {
     if (!uri) {
       vscode.window.showWarningMessage('Right-click a file in the Explorer or an editor tab to use this.');
@@ -33,14 +31,10 @@ export function activate(context: vscode.ExtensionContext) {
     ChatPanel.currentPanel?.addFileToThread(uri.fsPath);
   });
 
-  // uri/line/lineText come from TodoCodeLensProvider's own CodeLens
-  // arguments (todoCodeLens.ts). Hidden from the command palette
-  // (package.json's commandPalette menu entry, "when": "false") since
-  // there's no "which TODO" to act on from there — but hiding a command
-  // from the palette doesn't stop vscode.commands.executeCommand from
-  // still reaching it (a keybinding, another extension, a stale palette
-  // history entry), so it still needs its own guard, same as
-  // addFileToThread's.
+  // uri/line/lineText come from TodoCodeLensProvider's CodeLens arguments.
+  // Hidden from the command palette (no "which TODO" to act on there),
+  // but that doesn't stop executeCommand from reaching it directly —
+  // still needs its own guard.
   const implementTodo = vscode.commands.registerCommand(
     'rizo.implementTodo',
     (uri?: vscode.Uri, line?: number, lineText?: string) => {

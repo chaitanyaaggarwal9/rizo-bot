@@ -2,11 +2,9 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
-// A soft, deterministic backstop for security-hygiene.md: the skill only
-// shapes the model's behavior, and the model can still miss its own rules.
-// This scans what's actually about to be written, regex-only, no LLM call —
-// high-signal patterns only, on purpose. Pure logic, no vscode dependency,
-// same shape as destructiveCommands.ts.
+// A deterministic backstop for security-hygiene.md — the skill shapes the
+// model's behavior, but it can still miss its own rules. Regex-only,
+// high-signal patterns, no LLM call.
 export interface DangerousPatternMatch {
   description: string;
 }
@@ -20,12 +18,8 @@ const DANGEROUS_PATTERNS: { pattern: RegExp; description: string }[] = [
   { pattern: /child_process\.exec\s*\([^)]*[`+]/, description: 'child_process.exec with string interpolation — shell injection risk' },
   { pattern: /subprocess\.(call|Popen|run)\([^)]*shell\s*=\s*True/, description: 'subprocess ... shell=True — shell injection risk' },
   { pattern: /\bos\.system\s*\(/, description: 'os.system() — unsanitized shell execution' },
-  // cPickle/cloudpickle/dill/marshal/shelve are all the same deserialize-
-  // untrusted-data-executes-code class as bare pickle — extended to catch
-  // the variants after comparing against Claude Code's own
-  // security-guidance plugin (its regex layer, not the LLM-review one —
-  // same relationship dangerousPatterns.ts already has to it per the
-  // file comment above).
+  // cPickle/cloudpickle/dill/marshal/shelve are the same deserialize-
+  // untrusted-data-executes-code class as bare pickle.
   { pattern: /\b(pickle|cPickle|cloudpickle|dill)\.(load|loads)\s*\(/, description: 'Deserializing untrusted data (pickle or a variant) can execute arbitrary code' },
   { pattern: /\bmarshal\.loads?\s*\(/, description: 'marshal.load(s) — same deserialization-executes-code risk as pickle' },
   { pattern: /\bshelve\.open\s*\(/, description: 'shelve.open() — built on pickle, same deserialization risk with untrusted data' },
@@ -47,8 +41,7 @@ const DANGEROUS_PATTERNS: { pattern: RegExp; description: string }[] = [
   { pattern: /<script\s+(?![^>]{0,400}integrity\s*=)[^>]{0,200}src\s*=\s*['"](?:https?:)?\/\/[^'"]{1,300}['"]/, description: 'External <script> tag with no Subresource Integrity hash — a compromised CDN could inject anything' },
   { pattern: /\bAES\.MODE_ECB\b|\bmodes\.ECB\s*\(|['"]aes-\d+-ecb['"]/, description: 'AES in ECB mode — leaks plaintext structure (identical blocks encrypt identically)' },
   { pattern: /\bcrypto\.(createCipher|createDecipher)\b/, description: "Node's crypto.createCipher/createDecipher — derives the key insecurely (no IV); use createCipheriv/createDecipheriv" },
-  // The one non-JS/Python entry — Rizo had zero coverage for Go before
-  // this, and shell-wrapped exec.Command is the exact same
+  // The one non-JS/Python entry — shell-wrapped exec.Command is the same
   // shell-injection shape as child_process.exec/os.system above.
   { pattern: /exec\.Command\(\s*"(?:sh|bash|\/bin\/sh|\/bin\/bash)"/, description: 'exec.Command with a shell interpreter — shell injection risk, same as child_process.exec' },
 ];

@@ -4,11 +4,9 @@
 
 // The company/model catalog behind the new-chat provider picker. A chat is
 // locked to one company for its whole life — the in-chat switcher only ever
-// offers that company's own variants (see chatPanel.ts), never a different
-// provider. That's deliberate: it keeps every swap within one tool-calling
-// convention, one system-prompt format, one context window and pricing
-// model, which is what made switching companies mid-task unreliable before
-// (see modelRouter.ts's git history / the Aug 2026 portfolio-repo incident).
+// offers that company's own variants, never a different provider. Keeps
+// every swap within one tool-calling convention, system-prompt format,
+// context window, and pricing model.
 //
 // ⚠️ THESE MODEL IDS AND PRICES GO STALE — periodically check
 // https://openrouter.ai/models and update, same as freeModels.ts / pricing.ts.
@@ -21,12 +19,9 @@ export interface ModelVariant {
   // false explicitly where a variant genuinely can't see images, so a
   // clear error can be shown instead of a confusing raw API failure.
   vision?: boolean;
-  // Whether the Effort switcher's choice (see chatPanel.ts) actually gets
-  // sent to this variant, as OpenRouter's unified `reasoning.effort`
-  // field (openrouter.ts). Defaults to true — every named model here
-  // supports some form of adjustable reasoning (a literal effort enum,
-  // or a thinking-token budget OpenRouter translates it into). Only the
-  // Free provider's rotating, unpredictable underlying model sets this
+  // Whether the Effort switcher's choice gets sent to this variant, as
+  // OpenRouter's unified `reasoning.effort` field. Defaults to true.
+  // Only Free's rotating, unpredictable underlying model sets this
   // false, so the field is never sent somewhere it might be rejected.
   reasoning?: boolean;
 }
@@ -79,33 +74,24 @@ export const PROVIDERS: Record<string, Provider> = {
   kimi: {
     id: 'kimi',
     label: 'Kimi',
-    // 2026-08-20: kimi-k2-turbo was pulled from OpenRouter entirely
-    // (real users hit "not a valid model ID" on it) — replaced this
-    // whole lineup with what's actually live now rather than patch just
-    // the one dead id, since k2/k2-thinking had also drifted close
-    // enough in price ($0.57/$2.30 vs $0.60/$2.50) to barely function as
-    // separate tiers anymore. k2.5 and k3 both gained image input since
-    // the old lineup was set up.
+    // kimi-k2-turbo was pulled from OpenRouter entirely — replaced the
+    // whole lineup with what's live now, since k2/k2-thinking had also
+    // drifted too close in price ($0.57/$2.30 vs $0.60/$2.50) to function
+    // as separate tiers.
     variants: [
       { id: 'moonshotai/kimi-k2.5', label: 'K2.5', tagline: 'Fastest, for quick answers' },
       { id: 'moonshotai/kimi-k2-thinking', label: 'K2 Thinking', tagline: 'Most efficient for everyday tasks', vision: false },
       { id: 'moonshotai/kimi-k3', label: 'K3', tagline: 'For complex reasoning tasks' },
     ],
   },
-  // Not a real company, and these 6 variants aren't tiers of one lineage
-  // the way every other provider's are — free-tier availability on
-  // OpenRouter comes from a different, shifting set of companies
-  // entirely (no free Claude or Gemini exists), so there's no honest
-  // "cheapest → strongest" ladder to build here. variants[0] (Auto)
-  // stays the default and is what defaultModelForProvider/
-  // startingModelForProvider fall back to; chatPanel.ts's handleSend
-  // explicitly excludes 'free' from Smart Starting Variant's auto-
-  // upgrade for exactly this reason — a 0/1/2 tier has nothing coherent
-  // to map onto 5 unrelated specific picks, so it stays fully manual.
-  // Auto's own routing (callModel, freeChainForTaskType) is unchanged;
-  // picking one of the 5 named models tries it first, then still falls
-  // back through the same taskType-ranked chain if it's down or rate-
-  // limited — an explicit pick doesn't lose Auto's resilience.
+  // Not a real company — these 6 variants aren't tiers of one lineage;
+  // free-tier availability comes from a shifting set of companies (no
+  // free Claude or Gemini exists), so there's no honest cheapest→strongest
+  // ladder. variants[0] (Auto) stays the default; Smart Starting Variant
+  // explicitly excludes 'free' since a 0/1/2 tier has nothing coherent to
+  // map onto 5 unrelated picks. Picking a named model tries it first, then
+  // still falls back through the taskType-ranked chain if it's down or
+  // rate-limited.
   free: {
     id: 'free',
     label: 'Free',
@@ -126,12 +112,10 @@ export function defaultModelForProvider(providerId: string): string {
   return PROVIDERS[providerId]?.variants[0]?.id ?? PROVIDERS.free.variants[0].id;
 }
 
-// The smart-starting-variant pick — same company defaultModelForProvider
-// would've picked, but at the tier estimateStartingTier's heuristic
-// thinks the thread's first message actually needs, clamped to however
-// many variants this company actually has (Free has just the one).
-// Never called past a thread's first message — see
-// complexityEstimator.ts's own comment for why that boundary matters.
+// Same company defaultModelForProvider would've picked, but at the tier
+// estimateStartingTier's heuristic thinks the message needs, clamped to
+// however many variants this company has. Never called past a thread's
+// first message.
 export function startingModelForProvider(providerId: string, tier: number): string {
   const variants = PROVIDERS[providerId]?.variants ?? PROVIDERS.free.variants;
   const clamped = Math.min(tier, variants.length - 1);
@@ -154,14 +138,11 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 export const DEFAULT_EFFORT: EffortLevel = 'medium';
 
-// Effort auto-suggestion's tier -> level mapping (Roadmap Priority 3, see
-// chatPanel.ts's handleSend). Deliberately the same 0/1/2 tier
-// complexityEstimator.ts's estimateStartingTier already produces for Smart
-// Starting Variant, not a second classifier — reasoning depth needed and
-// model strength needed correlate on the same signals (code blocks, stack
-// traces, "refactor the whole thing" phrasing), so one heuristic serves
-// both call sites. EFFORT_LEVELS has exactly 3 entries, one per tier, so
-// this is really just an array index with a defensive clamp.
+// Effort auto-suggestion's tier→level mapping. Reuses estimateStartingTier's
+// 0/1/2 tier rather than a second classifier — reasoning depth needed and
+// model strength needed correlate on the same signals. EFFORT_LEVELS has
+// exactly 3 entries, one per tier, so this is an array index with a
+// defensive clamp.
 export function effortForTier(tier: number): EffortLevel {
   return EFFORT_LEVELS[Math.min(Math.max(tier, 0), EFFORT_LEVELS.length - 1)];
 }

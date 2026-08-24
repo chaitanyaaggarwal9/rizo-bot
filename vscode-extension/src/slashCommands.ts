@@ -2,13 +2,11 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
-// Shortcuts for the handful of workflows Rizo already has dedicated skill
-// files for. Each handler expands to a canned prompt that starts with
-// "/name — ..." on purpose, so the chat bubble still visually reads as the
-// slash command instead of a wall of unexplained instructions — that's
-// also what gets stored and replayed in thread history, since there's no
-// separate "what the user actually typed" display field to carry the
-// literal "/commit" instead.
+// Shortcuts for workflows Rizo already has dedicated skill files for. Each
+// handler starts with "/name — ..." on purpose, so the chat bubble still
+// reads as the slash command rather than a wall of instructions — there's
+// no separate "what the user typed" field, so this is also what gets
+// stored and replayed in history.
 const SLASH_COMMANDS: Record<string, (rest: string) => string> = {
   commit: (rest) =>
     `/commit — Review the currently staged and unstaged changes (use \`git status\` / \`git diff\` via run_command), then stage and commit them. Follow Git Hygiene: imperative-mood subject line, a body explaining why not just what, one coherent change per commit — if the diff bundles unrelated changes, say so and propose splitting rather than committing it all as one lump. Confirm before pushing or running anything destructive.${rest ? `\n\nAdditional context: ${rest}` : ''}`,

@@ -4,21 +4,17 @@
 
 import * as vscode from 'vscode';
 
-// Matches TODO/FIXME regardless of comment style (//, #, <!--, /*, --) —
-// the same pragmatic "scan the raw line text" approach every lightweight
-// todo-lens extension uses (Codex's own included, per its shipped
-// chatgpt.commentCodeLensEnabled setting), not a real per-language
-// comment parser. A string literal that happens to contain "TODO:" is a
-// false positive this accepts in exchange for not needing a parser per
-// language grammar.
+// Matches TODO/FIXME regardless of comment style (//, #, <!--, /*, --) by
+// scanning raw line text, not a real per-language comment parser. A
+// string literal containing "TODO:" is a false positive this accepts in
+// exchange for not needing a parser per language grammar.
 const TODO_PATTERN = /\b(TODO|FIXME)\b:?\s*(.*)$/i;
 
 export class TodoCodeLensProvider implements vscode.CodeLensProvider {
-  // VS Code only re-queries provideCodeLenses for an already-open,
-  // unedited document when this fires — without it, toggling
-  // rizo.todoCodeLens.enabled off left stale lenses visible until the
-  // user edited or reopened the file. registerTodoCodeLens wires this to
-  // the config-change listener below.
+  // VS Code only re-queries provideCodeLenses for an open, unedited
+  // document when this fires — without it, toggling
+  // rizo.todoCodeLens.enabled off left stale lenses visible until
+  // edit/reopen.
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
 

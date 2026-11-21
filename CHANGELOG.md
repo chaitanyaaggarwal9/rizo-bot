@@ -10,6 +10,13 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **Azure AI Foundry.** Use your own Azure deployments with your own key:
+  run **Rizo: Connect Azure AI Foundry**, enter your endpoint and key,
+  pick your deployments, and choose Azure AI Foundry when you start a
+  chat. Requests go straight to your Azure resource (never through
+  OpenRouter), the key is kept in your OS keychain, and only real Azure
+  endpoints are accepted, so your key can't be sent anywhere else.
+  Summaries of long Azure chats are made by the same deployment.
 - **Current models.** Every provider's tiers are up to date: Claude Haiku
   5.5 / Sonnet 5.5 / Fable 5.2, OpenAI GPT-6 Luna / GPT-6.2 Sol / GPT-6.2
   Astra, Gemini 3.5 Flash Lite / 3.8 Flash / Gemini 4 Neon, DeepSeek V4.1

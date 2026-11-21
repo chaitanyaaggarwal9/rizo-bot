@@ -100,8 +100,34 @@ export interface CallOptions {
   maxTokensFor?: (model: string) => Promise<number | undefined>;
 }
 
-// An HTTP error from OpenRouter, keeping the status for the retry logic.
-class OpenRouterHttpError extends Error {
+// Where a chat-completions request goes and how its body is shaped. The
+// streaming and parsing below are shared by every OpenAI-compatible
+// backend (OpenRouter, Azure AI Foundry); only these details differ.
+export interface CompletionTarget {
+  url: string;
+  headers: Record<string, string>;
+  // Adjusts the standard body for this backend (field names, extras).
+  shapeBody: (body: Record<string, unknown>, options: CallOptions | undefined) => Record<string, unknown>;
+  label: string; // for error messages
+}
+
+function openRouterTarget(apiKey: string): CompletionTarget {
+  return {
+    url: OPENROUTER_URL,
+    headers: { Authorization: `Bearer ${apiKey}` },
+    label: 'OpenRouter',
+    shapeBody: (body, options) => ({
+      ...body,
+      // Asks OpenRouter to include the exact cost in the usage it reports.
+      usage: { include: true },
+      ...(options?.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
+    }),
+  };
+}
+
+// An HTTP error from a chat-completions backend, keeping the status for
+// retry logic.
+export class OpenRouterHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -118,8 +144,9 @@ export async function callOpenRouter(
   options?: CallOptions,
 ): Promise<ChatResult> {
   const maxTokens = options?.maxTokens ?? (await options?.maxTokensFor?.(model)) ?? FALLBACK_MAX_OUTPUT_TOKENS;
+  const target = openRouterTarget(apiKey);
   try {
-    return await requestCompletion(apiKey, model, messages, tools, options, maxTokens);
+    return await requestCompletion(target, model, messages, tools, options, maxTokens);
   } catch (err) {
     if (!(err instanceof OpenRouterHttpError)) throw err;
     const affordable = parseAffordableTokens(err.message);
@@ -129,41 +156,38 @@ export async function callOpenRouter(
           `Your OpenRouter credit only covers about ${affordable} more tokens of reply from ${model}. Add credit at https://openrouter.ai/settings/credits, or switch this chat to a cheaper or Free model.`,
         );
       }
-      return requestCompletion(apiKey, model, messages, tools, options, Math.floor(affordable * 0.95));
+      return requestCompletion(target, model, messages, tools, options, Math.floor(affordable * 0.95));
     }
     if (err.status === 400 && /max_tokens|max_completion_tokens|maximum (output|completion)/i.test(err.message) && maxTokens > SAFE_MAX_TOKENS) {
-      return requestCompletion(apiKey, model, messages, tools, options, SAFE_MAX_TOKENS);
+      return requestCompletion(target, model, messages, tools, options, SAFE_MAX_TOKENS);
     }
     throw err;
   }
 }
 
-async function requestCompletion(
-  apiKey: string,
+// One streamed chat-completions request. maxTokens undefined sends no cap
+// (the backend's own default).
+export async function requestCompletion(
+  target: CompletionTarget,
   model: string,
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
   options: CallOptions | undefined,
-  maxTokens: number,
+  maxTokens: number | undefined,
 ): Promise<ChatResult> {
-  const body: Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     model,
     messages,
-    max_tokens: maxTokens,
     stream: true,
     stream_options: { include_usage: true },
-    // Asks OpenRouter to include the exact cost in the usage it reports.
-    usage: { include: true },
   };
-  if (tools && tools.length) body.tools = tools;
-  if (options?.reasoningEffort) body.reasoning = { effort: options.reasoningEffort };
+  if (maxTokens !== undefined) base.max_tokens = maxTokens;
+  if (tools && tools.length) base.tools = tools;
+  const body = target.shapeBody(base, options);
 
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetch(target.url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { ...target.headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal: options?.signal,
   });
@@ -174,7 +198,7 @@ async function requestCompletion(
     const message = data?.error?.message || data?.error || `HTTP ${response.status}`;
     throw new OpenRouterHttpError(typeof message === 'string' ? message : JSON.stringify(message), response.status);
   }
-  if (!response.body) throw new Error('OpenRouter response had no body to stream.');
+  if (!response.body) throw new Error(`${target.label} response had no body to stream.`);
 
   let content = '';
   let finalModel = model;

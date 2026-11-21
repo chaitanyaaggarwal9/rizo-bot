@@ -26,13 +26,9 @@ function chatTemplate(extensionPath: string): string {
 // files, so the script is ordinary JavaScript rather than text inside a
 // TypeScript template literal, where escapes behave differently). Only
 // per-render values are filled in here.
-export function buildChatHtml(webview: vscode.Webview, extensionPath: string): string {
-  const fileUri = (...parts: string[]) =>
-    webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, ...parts))).toString();
-  // Trimmed view of providers.ts handed to the webview once, so the
-  // picker grid renders from the same catalog isValidProviderModel
-  // enforces — no risk of drift.
-  const providerCatalog = PROVIDER_ORDER.map((id) => ({
+// The OpenRouter companies, trimmed for the chat view's provider picker.
+export function openRouterProviderCatalog() {
+  return PROVIDER_ORDER.map((id) => ({
     id,
     label: PROVIDERS[id].label,
     variants: PROVIDERS[id].variants.map((v) => ({
@@ -42,6 +38,11 @@ export function buildChatHtml(webview: vscode.Webview, extensionPath: string): s
       reasoning: v.reasoning !== false,
     })),
   }));
+}
+
+export function buildChatHtml(webview: vscode.Webview, extensionPath: string, providerCatalog: unknown = openRouterProviderCatalog()): string {
+  const fileUri = (...parts: string[]) =>
+    webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, ...parts))).toString();
   const values: Record<string, string> = {
     nonce: getNonce(),
     cspSource: webview.cspSource,

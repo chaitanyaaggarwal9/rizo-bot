@@ -6,7 +6,10 @@ Guide for working on Rizo (`vscode-extension/`) and its marketing site
 not permitted. Issues and pull requests are welcome; by opening one
 you're contributing under that same license. For anything beyond a small
 fix, open an issue first so we can agree on the approach before you put
-time into an implementation.
+time into an implementation. Please follow the
+[Code of Conduct](CODE_OF_CONDUCT.md), and report security problems
+privately as described in [SECURITY.md](SECURITY.md), never in an issue
+or pull request.
 
 ## Coding standards
 

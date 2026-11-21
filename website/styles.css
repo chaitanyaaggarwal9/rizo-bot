@@ -709,3 +709,10 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; }
 }
+
+/* Utility and one-off classes (replace inline style attributes so the
+   Content-Security-Policy doesn't need 'unsafe-inline'). */
+.mt-24 { margin-top: 24px; }
+.table-note-lead { margin-top: 14px; font-size: 0.95rem; }
+.safety-title { font-family: var(--font-mono); display: block; margin-bottom: 2px; }
+.safety-desc { color: var(--text-dim); font-size: 0.95rem; }

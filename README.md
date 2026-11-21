@@ -46,9 +46,9 @@ never sacrifices continuity.**
 
 ### Core chat
 
-- **Provider picker** (`src/providers.ts`) — a new chat opens with a
+- **Provider picker** (`src/models/providers.ts`) — a new chat opens with a
   one-time choice of company. That choice locks in for the thread's
-  whole life (`ThreadData.provider`/`.model` in `src/threadStore.ts`)
+  whole life (`ThreadData.provider`/`.model` in `src/storage/threadStore.ts`)
   and the in-chat switcher only ever offers that same company's other
   variants, never a different one. Free is the one exception to "3
   tiers, cheapest to strongest": no free Claude or Gemini exists on
@@ -59,13 +59,13 @@ never sacrifices continuity.**
   multi-root VS Code workspace is usable, not just the first one, and
   naming a real absolute path in your own message (not the model's own
   tool-call arguments) grants access to it for the rest of that thread
-  (`Thread.extraRoots` in `src/threadStore.ts`) — same trust boundary
+  (`Thread.extraRoots` in `src/storage/threadStore.ts`) — same trust boundary
   "Attach file..." already relies on for a human-driven pick
 - **Effort switcher** — a second pill (Low/Medium/High) maps to
   OpenRouter's unified `reasoning.effort` field — *how hard* the
   already-picked model thinks, never *which* model answers. Hidden
   entirely for a variant that doesn't support it
-- **Agentic tools** (`src/tools.ts`) — `read_file` (auto-approved,
+- **Agentic tools** (`src/tools/tools.ts`) — `read_file` (auto-approved,
   read-only, reads the live editor buffer directly when a file's open
   with unsaved changes), `write_file`/`edit_file` (native diff preview +
   modal approval before anything touches disk), `run_command`
@@ -93,19 +93,19 @@ never sacrifices continuity.**
 
 ### Smart routing
 
-- **Smart Starting Variant** (`src/complexityEstimator.ts`) — a
+- **Smart Starting Variant** (`src/routing/complexityEstimator.ts`) — a
   thread's first message picks which variant *within its already-locked
   provider* to start on, instead of always defaulting to the cheapest.
   A cheap keyword/shape heuristic (no extra model call) scores the
   message for coding-flavor, code blocks, stack traces, attachments,
   length, and "big ask" phrasing — runs once, only on the first
   message, and only when you haven't already picked a variant yourself
-- **Effort auto-suggestion** (`effortForTier` in `src/providers.ts`) —
+- **Effort auto-suggestion** (`effortForTier` in `src/models/providers.ts`) —
   reuses that same heuristic to also pick the Effort level, every turn
   rather than only the first (effort is a per-request parameter, not a
   thread-level trait). Backs off permanently the moment you pick an
   effort level yourself
-- **Auto-escalation** (`src/struggleDetector.ts`) — when a turn shows
+- **Auto-escalation** (`src/routing/struggleDetector.ts`) — when a turn shows
   real evidence of struggling (hits the tool-call iteration cap, keeps
   re-hitting the same failing tool call, or shows two turns in a row
   that both poked around with tools but never wrote anything), the
@@ -119,11 +119,11 @@ never sacrifices continuity.**
 
 ### Safety and cost visibility
 
-- **Command-output redaction** (`src/outputRedaction.ts`) —
+- **Command-output redaction** (`src/safety/outputRedaction.ts`) —
   `run_command`'s stdout/stderr is scanned for API keys, tokens, and
   private keys and redacted in place before the result ever reaches the
   model or gets written into thread history
-- **Security pattern-scan on diffs** (`src/dangerousPatterns.ts`) —
+- **Security pattern-scan on diffs** (`src/safety/dangerousPatterns.ts`) —
   before a write/edit approval dialog, the proposed change is scanned
   for high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
   unsafe deserialization, hardcoded-looking secrets, disabled TLS
@@ -131,7 +131,7 @@ never sacrifices continuity.**
 - **Configurable permissions** — `rizo.permissions
   .autoApproveCommandPatterns` (has no effect on destructive commands)
   and `rizo.permissions.disabledTools`
-- **Cost visibility** (`src/pricing.ts`) — every reply shows tokens
+- **Cost visibility** (`src/api/pricing.ts`) — every reply shows tokens
   used and elapsed time; the chat as a whole and the extension overall
   both show running token/cost totals
 - **Truncated writes fail informatively, not silently** — a large
@@ -141,14 +141,14 @@ never sacrifices continuity.**
 
 ### Personalization
 
-- **Skills** (`src/skillsLoader.ts`, `vscode-extension/skills/`) —
+- **Skills** (`src/prompt/skillsLoader.ts`, `vscode-extension/skills/`) —
   per-topic engineering-discipline instructions, selectively loaded by
   keyword match so a one-line question doesn't pay for the full
   instruction set
-- **Project-specific instructions** (`src/projectInstructions.ts`) —
+- **Project-specific instructions** (`src/prompt/projectInstructions.ts`) —
   an optional `.rizo/instructions.md` in your own workspace, read fresh
   every message and appended after the bundled skills
-- **Slash commands** (`src/slashCommands.ts`) — `/commit`, `/review`,
+- **Slash commands** (`src/prompt/slashCommands.ts`) — `/commit`, `/review`,
   `/test` expand to a full canned prompt tied to the matching skill
 
 ## Architecture
@@ -201,7 +201,7 @@ Discipline, Git Hygiene, Security Hygiene, and the rest listed under
 .
 ├── vscode-extension/        Rizo itself — see below
 ├── website/                 Marketing site (rizobot.com) — see website/README.md
-├── .github/workflows/       CI: extension build + test, tag-triggered release
+├── .github/workflows/       CI, CodeQL, dependency review, malware scan, release
 ├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
 └── .gitignore
 ```
@@ -210,15 +210,21 @@ Inside `vscode-extension/`:
 
 ```
 vscode-extension/
-├── src/                  Extension source — one module per concern
-│   ├── *.test.ts             Unit tests (vitest) — pure-logic modules directly, chatPanel.ts via test/vscodeStub.ts
-│   ├── chatPanel.ts           Webview host: panel lifecycle, the send/tool-call loop
-│   ├── tools.ts                read_file / write_file / edit_file / run_command
-│   ├── threadStore.ts          Thread persistence (VS Code global storage)
-│   ├── providers.ts            The company/model catalog + Smart Starting Variant/effort mapping
-│   ├── openrouter.ts           OpenRouter streaming client
-│   └── ...                     See the diagram above for the rest
-├── skills/                Engineering-discipline instructions, bundled into the extension
+├── src/
+│   ├── extension.ts        Activation: registers commands and the TODO CodeLens
+│   ├── ui/                 Chat panel host (chatPanel.ts), webview HTML (webviewHtml.ts),
+│   │                       trust prompts, TODO CodeLens
+│   ├── agent/              Attachments, folder mentions, history summarizer
+│   ├── api/                OpenRouter streaming client, pricing
+│   ├── models/             Provider/model catalog, free-model fallback chains
+│   ├── routing/            Task classification, starting tier, struggle detection
+│   ├── prompt/             Bundled skills loader, project notes, slash commands
+│   ├── storage/            Threads and usage (VS Code storage)
+│   ├── safety/             Permissions, path policy, command analysis, redaction, pattern scan
+│   └── tools/              read_file / write_file / edit_file / run_command / code navigation
+│   (tests sit next to their modules as *.test.ts; vscode-dependent ones use test/vscodeStub.ts)
+├── media/                  Chat view: chat.html, chat.css, chat.js
+├── skills/                 Engineering-discipline instructions, bundled into the extension
 ├── package.json            Extension manifest — commands, settings, contributes
 └── ONBOARDING.md           End-user install/usage guide
 ```

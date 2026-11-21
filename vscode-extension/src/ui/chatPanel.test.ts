@@ -14,7 +14,7 @@ import { ChatPanel } from './chatPanel';
 // to load. The view now lives in media/chat.html, chat.css and chat.js,
 // and these tests check the pieces still fit together.
 
-const extensionRoot = path.resolve(__dirname, '..');
+const extensionRoot = path.resolve(__dirname, '..', '..');
 
 describe('chat view', () => {
   let tmpDir: string;

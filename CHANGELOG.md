@@ -15,6 +15,11 @@ an honest gap. Everything before this point lives in git history instead.
   `media/chat.html`, `media/chat.css` and `media/chat.js`. No visible
   change. The script is now ordinary JavaScript, so the escaping bug
   class that once broke the whole panel can't recur.
+- `src/` is organized into folders (`ui/`, `agent/`, `api/`, `models/`,
+  `routing/`, `prompt/`, `storage/`, `safety/`, `tools/`), and the
+  attachment reading, folder-mention detection, history-summary prompt
+  and webview HTML building moved out of `chatPanel.ts` into their own
+  tested modules. No visible change.
 
 ### Security
 - The chat view's script nonce is generated with `crypto.randomBytes`

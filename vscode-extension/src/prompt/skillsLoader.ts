@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { TaskType } from './modelRouter';
+import { TaskType } from '../routing/modelRouter';
 
 // Every coding-classified message gets this as the base layer — the other
 // skill files' own text says they build on top of it.

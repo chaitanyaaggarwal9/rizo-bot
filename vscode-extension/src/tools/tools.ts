@@ -6,11 +6,11 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
-import { destructiveReasons } from './destructiveCommands';
-import { capOutput, filterEnvironment } from './commandPolicy';
-import { scanDangerousPatterns } from './dangerousPatterns';
-import { redactSecrets } from './outputRedaction';
-import { hasShellControl, isProtectedPath, isSecretFile, matchesAutoApprove } from './permissions';
+import { destructiveReasons } from '../safety/destructiveCommands';
+import { capOutput, filterEnvironment } from '../safety/commandPolicy';
+import { scanDangerousPatterns } from '../safety/dangerousPatterns';
+import { redactSecrets } from '../safety/outputRedaction';
+import { hasShellControl, isProtectedPath, isSecretFile, matchesAutoApprove } from '../safety/permissions';
 import {
   looksBinary,
   makePrivateTempDir,
@@ -19,8 +19,8 @@ import {
   resolveWithinRoots,
   safeWriteFile,
   sliceForReading,
-} from './pathPolicy';
-import { listThreads, loadThread } from './threadStore';
+} from '../safety/pathPolicy';
+import { listThreads, loadThread } from '../storage/threadStore';
 
 export interface ToolDefinition {
   type: 'function';

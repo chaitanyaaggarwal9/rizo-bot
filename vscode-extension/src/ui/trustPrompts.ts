@@ -10,8 +10,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { checkFolderGrant, contentFingerprint } from './permissions';
-import { listThreads } from './threadStore';
+import { checkFolderGrant, contentFingerprint } from '../safety/permissions';
+import { listThreads } from '../storage/threadStore';
 
 // ---------- extra folders ----------
 

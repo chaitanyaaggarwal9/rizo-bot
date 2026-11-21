@@ -5,17 +5,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as crypto from 'crypto';
-import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from './openrouter';
-import { detectTaskType, TaskType } from './modelRouter';
-import { freeChainForTaskType } from './freeModels';
-import { loadSkillsContent } from './skillsLoader';
-import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from './tools';
-import { expandSlashCommand } from './slashCommands';
-import { loadProjectInstructions, projectInstructionsPath } from './projectInstructions';
+import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from '../api/openrouter';
+import { detectTaskType, TaskType } from '../routing/modelRouter';
+import { freeChainForTaskType } from '../models/freeModels';
+import { loadSkillsContent } from '../prompt/skillsLoader';
+import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from '../tools/tools';
+import { expandSlashCommand } from '../prompt/slashCommands';
+import { loadProjectInstructions, projectInstructionsPath } from '../prompt/projectInstructions';
 import {
   PROVIDERS,
-  PROVIDER_ORDER,
   EFFORT_LEVELS,
   EffortLevel,
   DEFAULT_EFFORT,
@@ -25,11 +23,11 @@ import {
   findVariant,
   supportsReasoning,
   effortForTier,
-} from './providers';
-import { estimateStartingTier } from './complexityEstimator';
-import { detectStruggle } from './struggleDetector';
-import { estimateCost } from './pricing';
-import { getUsage, recordUsage } from './usageStore';
+} from '../models/providers';
+import { estimateStartingTier } from '../routing/complexityEstimator';
+import { detectStruggle } from '../routing/struggleDetector';
+import { estimateCost } from '../api/pricing';
+import { getUsage, recordUsage } from '../storage/usageStore';
 import {
   ThreadData,
   StoredMessage,
@@ -48,9 +46,13 @@ import {
   upgradeThreadTaskType,
   sumThreadTokens,
   sumThreadCost,
-} from './threadStore';
-import { frameProjectNotes, isValidThreadId } from './permissions';
+} from '../storage/threadStore';
+import { frameProjectNotes, isValidThreadId } from '../safety/permissions';
 import { approvedProjectNotes, requestFolderGrants } from './trustPrompts';
+import { buildChatHtml } from './webviewHtml';
+import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignoreExcludeGlobs } from '../agent/attachments';
+import { findMentionedPaths } from '../agent/folderMentions';
+import { planSummary, SUMMARY_MODEL } from '../agent/summarizer';
 
 // Caps a runaway tool loop while leaving room for a normal multi-file
 // task (read, edit, verify) to actually finish.
@@ -64,36 +66,10 @@ const LAST_DELETED_THREAD_KEY = 'rizo.lastDeletedThread';
 // Cheapest available model — summarizing old history is internal
 // housekeeping, not a user-facing reply, so it shouldn't use the
 // thread's own (possibly expensive) model.
-const SUMMARY_MODEL = PROVIDERS.openai.variants[0].id;
 
-// Threads longer than this stop replaying full raw history — everything
-// older than the last SUMMARY_KEEP_TAIL folds into a running summary.
-const SUMMARIZE_THRESHOLD = 20;
-const SUMMARY_KEEP_TAIL = 10;
 
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB — generous for a screenshot, not for a video
 
-interface IncomingAttachment {
-  name: string;
-  type: 'text' | 'image';
-  content: string; // utf-8 text, or base64 for images
-  mimeType?: string;
-}
 
-// Cryptographically random, so a script injected into the chat view can't
-// guess it and satisfy the Content-Security-Policy.
-function getNonce(): string {
-  return crypto.randomBytes(16).toString('hex');
-}
-
-// media/chat.html, read once per session (it only changes with a new
-// extension version).
-let chatTemplateCache: string | undefined;
-function chatTemplate(extensionPath: string): string {
-  chatTemplateCache ??= fs.readFileSync(path.join(extensionPath, 'media', 'chat.html'), 'utf-8');
-  return chatTemplateCache;
-}
 
 function emptyUsage(): Usage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -108,51 +84,7 @@ function isParseableJson(text: string): boolean {
   }
 }
 
-// Extracts absolute paths the user's message names that exist on disk.
-// These are only CANDIDATES: trustPrompts.ts's requestFolderGrants asks
-// the user about each one before Rizo may use it, because the text can
-// come from a paste or a pre-filled TODO, not just the user's typing.
-// Regex extraction is deliberately loose; fs.existsSync is the real
-// filter, so anything path-shaped but not real just gets dropped.
-function detectExtraRoots(text: string): string[] {
-  const candidates = new Set<string>();
-  for (const m of text.matchAll(/(['"])(\/[^'"]+)\1/g)) candidates.add(m[2]);
-  for (const m of text.matchAll(/\/[^\s'"]+/g)) candidates.add(m[0].replace(/[.,;:!?)]+$/, ''));
-  const found: string[] = [];
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) found.push(fs.realpathSync(candidate));
-    } catch {
-      /* not a real path on this OS (too long, invalid characters, etc.) — skip it */
-    }
-  }
-  return found;
-}
 
-// Merges the workspace's .gitignore into the file-picker's exclude
-// pattern — VS Code's own findFiles exclude param doesn't consult
-// .gitignore at all. Simple line-by-line glob conversion, not a full
-// parser (no negation, no nested .gitignore) — enough to keep build
-// output and vendored deps out of the picker.
-function gitignoreExcludeGlobs(folder: vscode.Uri): string[] {
-  try {
-    const content = fs.readFileSync(path.join(folder.fsPath, '.gitignore'), 'utf-8');
-    return content
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'))
-      // A bare `**/dist` glob only matches something literally named
-      // "dist", not anything inside it — but most .gitignore entries have
-      // no trailing slash and match both files and dirs. Emitting both
-      // forms per line covers both cases without statting the filesystem.
-      .flatMap((line) => {
-        const name = line.replace(/\/+$/, '');
-        return [`**/${name}`, `**/${name}/**`];
-      });
-  } catch {
-    return [];
-  }
-}
 
 export class ChatPanel {
   public static currentPanel: ChatPanel | undefined;
@@ -237,14 +169,7 @@ export class ChatPanel {
             // Fields from the webview are checked, not trusted.
             if (typeof message.text !== 'string' || typeof message.turnId !== 'string') break;
             const attachments: IncomingAttachment[] = Array.isArray(message.attachments)
-              ? message.attachments.filter(
-                  (a: unknown): a is IncomingAttachment =>
-                    !!a &&
-                    typeof (a as IncomingAttachment).name === 'string' &&
-                    typeof (a as IncomingAttachment).content === 'string' &&
-                    ((a as IncomingAttachment).type === 'text' || (a as IncomingAttachment).type === 'image') &&
-                    ((a as IncomingAttachment).mimeType === undefined || typeof (a as IncomingAttachment).mimeType === 'string'),
-                )
+              ? message.attachments.filter(isIncomingAttachment)
               : [];
             await this.handleSend(message.text, message.turnId, attachments);
             break;
@@ -509,7 +434,7 @@ export class ChatPanel {
     }
     const exclude = `{${[
       '**/node_modules/**', '**/.git/**', '**/out/**', '**/dist/**', '**/build/**',
-      ...gitignoreExcludeGlobs(folder.uri),
+      ...gitignoreExcludeGlobs(folder.uri.fsPath),
     ].join(',')}}`;
     const files = await vscode.workspace.findFiles('**/*', exclude, 500);
     const items = files.map((uri) => ({
@@ -544,53 +469,14 @@ export class ChatPanel {
   }
 
   private async readAndSendAttachment(fsPath: string) {
-    try {
-      const stat = fs.statSync(fsPath);
-      if (stat.size > MAX_ATTACHMENT_BYTES) {
-        vscode.window.showWarningMessage(
-          `${path.basename(fsPath)} is over the 5MB attachment limit — pick a smaller file.`,
-        );
-        return;
-      }
-
-      const ext = path.extname(fsPath).toLowerCase();
-      const name = path.basename(fsPath);
-
-      if (IMAGE_EXTENSIONS.has(ext)) {
-        const buf = fs.readFileSync(fsPath);
-        const mimeType = ext === '.jpg' ? 'image/jpeg' : `image/${ext.slice(1)}`;
-        const attachment: IncomingAttachment = { name, type: 'image', content: buf.toString('base64'), mimeType };
-        this.panel.webview.postMessage({ type: 'attachmentAdded', attachment });
-        return;
-      }
-
-      // Reject anything that doesn't look like text rather than dumping
-      // garbled bytes — a null byte in the first slice is the standard
-      // cheap tell (same heuristic git uses).
-      const buf = fs.readFileSync(fsPath);
-      if (buf.subarray(0, 8000).includes(0)) {
-        vscode.window.showWarningMessage(`${name} looks like a binary file Rizo can't read as text.`);
-        return;
-      }
-      const text = buf.toString('utf-8');
-      const attachment: IncomingAttachment = { name, type: 'text', content: text };
-      this.panel.webview.postMessage({ type: 'attachmentAdded', attachment });
-    } catch (err: any) {
-      vscode.window.showWarningMessage(`Couldn't attach ${path.basename(fsPath)}: ${err.message}`);
+    const result = readAttachmentFile(fsPath);
+    if ('warning' in result) {
+      vscode.window.showWarningMessage(result.warning);
+      return;
     }
+    this.panel.webview.postMessage({ type: 'attachmentAdded', attachment: result.attachment });
   }
 
-  // Flattens stored/API message content down to plain text, for the
-  // summarizer prompt — an attached image becomes a plain marker since the
-  // summary itself never needs to carry the image data forward.
-  private static contentToPlainText(content: string | ContentPart[] | null | undefined): string {
-    if (!content) return '';
-    if (typeof content === 'string') return content;
-    return content
-      .map((part) => (part.type === 'text' ? part.text : '[image attached]'))
-      .join(' ')
-      .trim();
-  }
 
   // Past SUMMARIZE_THRESHOLD messages, folds everything older than
   // SUMMARY_KEEP_TAIL into a running summary via one cheap-tier call —
@@ -600,33 +486,12 @@ export class ChatPanel {
   private async maybeSummarize(apiKey: string, threadId: string) {
     const thread = loadThread(this.context, threadId);
     if (!thread) return;
-
-    const already = thread.summarizedCount || 0;
-    const total = thread.messages.length;
-    if (total - already < SUMMARIZE_THRESHOLD) return;
-
-    const foldEnd = total - SUMMARY_KEEP_TAIL;
-    const toFold = thread.messages.slice(already, foldEnd);
-    if (toFold.length === 0) return;
-
-    const transcript = toFold
-      .map((m) => `${m.role}: ${ChatPanel.contentToPlainText(m.content)}`)
-      .join('\n\n');
-    const priorSummary = thread.summary ? `Existing summary so far:\n${thread.summary}\n\n` : '';
-
-    const prompt: ChatMessage[] = [
-      {
-        role: 'system',
-        content:
-          'Summarize this conversation excerpt concisely for use as background context in a follow-up request. Preserve concrete facts, decisions, file names, and code details that matter; drop pleasantries. A short paragraph, not a list.',
-      },
-      { role: 'user', content: `${priorSummary}New turns to fold in:\n\n${transcript}` },
-    ];
-
+    const plan = planSummary(thread.messages, thread.summarizedCount || 0, thread.summary);
+    if (!plan) return;
     try {
-      const { message } = await callOpenRouter(apiKey, SUMMARY_MODEL, prompt);
+      const { message } = await callOpenRouter(apiKey, SUMMARY_MODEL, plan.prompt);
       const newSummary = (message.content as string) || thread.summary || '';
-      if (newSummary) updateThreadSummary(this.context, threadId, newSummary, foldEnd);
+      if (newSummary) updateThreadSummary(this.context, threadId, newSummary, plan.foldEnd);
     } catch {
       // Best-effort — the thread just keeps replaying full history until
       // this succeeds on a later turn.
@@ -691,7 +556,7 @@ export class ChatPanel {
           return f.uri.fsPath;
         }
       });
-      const extraRoots = await requestFolderGrants(this.context, threadId, detectExtraRoots(effectiveText), workspaceRoots);
+      const extraRoots = await requestFolderGrants(this.context, threadId, findMentionedPaths(effectiveText), workspaceRoots);
 
       const messageTaskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
       // Sticky: a short follow-up ("yes", "continue") rarely has a coding
@@ -1053,43 +918,8 @@ export class ChatPanel {
     saveThreadMessages(this.context, threadId, updated);
   }
 
-  // The chat view lives in media/chat.html, chat.css and chat.js (plain
-  // files, so the script is ordinary JavaScript rather than text inside a
-  // TypeScript template literal, where escapes behave differently). Only
-  // per-render values are filled in here.
   private getHtml(): string {
-    const webview = this.panel.webview;
-    const fileUri = (...parts: string[]) =>
-      webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, ...parts))).toString();
-    // Trimmed view of providers.ts handed to the webview once, so the
-    // picker grid renders from the same catalog isValidProviderModel
-    // enforces — no risk of drift.
-    const providerCatalog = PROVIDER_ORDER.map((id) => ({
-      id,
-      label: PROVIDERS[id].label,
-      variants: PROVIDERS[id].variants.map((v) => ({
-        id: v.id,
-        label: v.label,
-        tagline: v.tagline,
-        reasoning: v.reasoning !== false,
-      })),
-    }));
-    const values: Record<string, string> = {
-      nonce: getNonce(),
-      cspSource: webview.cspSource,
-      chatCssUri: fileUri('media', 'chat.css'),
-      chatJsUri: fileUri('media', 'chat.js'),
-      // asWebviewUri, not a base64 data: URI — inlining a 444KB image on
-      // every render is what VS Code's webview guide warns against.
-      mascotUri: fileUri('assets', 'mascot.png'),
-      // Embedded in a <script type="application/json"> element: "<" is
-      // escaped so the data can never close the element early.
-      providerCatalogJson: JSON.stringify(providerCatalog).replace(/</g, '\\u003c'),
-    };
-    // A replacer function, so "$" in a value is inserted literally.
-    return chatTemplate(this.context.extensionPath).replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
-      Object.prototype.hasOwnProperty.call(values, key) ? values[key] : placeholder,
-    );
+    return buildChatHtml(this.panel.webview, this.context.extensionPath);
   }
 
   public dispose() {

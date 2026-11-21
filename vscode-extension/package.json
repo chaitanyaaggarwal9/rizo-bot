@@ -32,6 +32,16 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Rizo reads and edits files and runs commands in your workspace, so it only runs in folders you trust."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Rizo needs files on disk and a terminal."
+    }
+  },
   "contributes": {
     "commands": [
       {
@@ -45,6 +55,10 @@
       {
         "command": "rizo.reopenClosedSession",
         "title": "Rizo: Reopen Closed Session"
+      },
+      {
+        "command": "rizo.manageFolderAccess",
+        "title": "Rizo: Manage Folder Access"
       },
       {
         "command": "rizo.addFileToThread",
@@ -89,7 +103,8 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Regex patterns tested against the full `run_command` string. A match skips the approval dialog entirely. **Has no effect on destructive commands** (force-push, `reset --hard`, `branch -D`, `rm -rf`, etc.) — those always ask, regardless of this setting."
+          "markdownDescription": "Regular expressions for `run_command` commands that may run without the approval dialog. Each pattern must match the **whole** command (`npm test` approves exactly `npm test`; use `npm test( .*)?` to allow arguments). Commands that chain, pipe, substitute or redirect (`;` `&&` `|` `` ` `` `$(` `>` `<`) always ask. **Destructive commands always ask** (force-push, `reset --hard`, `branch -D`, `rm -rf`, etc.). This is a user setting only: a workspace's own settings can't change it.",
+          "scope": "application"
         },
         "rizo.permissions.disabledTools": {
           "type": "array",

@@ -9,6 +9,34 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Security
+- Folders outside the workspace are only used after you allow them. A
+  path in your message now opens a "Let Rizo read files there for this
+  chat?" prompt instead of granting access silently. The home folder,
+  the disk root, credential folders (`~/.ssh`, `~/.aws`, …) and system
+  folders are never offered. Access is kept per workspace (it no longer
+  follows a chat into other projects) and can be revoked with the new
+  **Rizo: Manage Folder Access** command. Access granted by earlier
+  versions is not carried over.
+- `.rizo/instructions.md` is only used after you agree to it, once per
+  version of the file, and is shown to the model as repository notes
+  that can't override its rules or your approvals.
+- `rizo.permissions.autoApproveCommandPatterns` is now a user-only
+  setting (a repository's `.vscode/settings.json` can't set it), each
+  pattern must match the whole command, and chained, piped, substituted
+  or redirected commands always ask.
+- "Always Allow" for commands no longer covers chained, piped or
+  redirected commands, and "Always Allow" for edits no longer covers
+  editor, git, CI or Rizo config files (`.vscode/`, `.git/`, `.github/`,
+  `.rizo/`, `.npmrc`, …).
+- Rizo declares that it doesn't run in untrusted (Restricted Mode) or
+  virtual workspaces.
+- Messages from the chat view are validated before use.
+
+### Fixed
+- `.rizo/instructions.md` over 8 KB is now cut at 8 KB of bytes, not
+  characters.
+
 ## [0.4.7] - 2026-08-24
 
 ### Fixed

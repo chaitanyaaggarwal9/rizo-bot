@@ -11,7 +11,7 @@ import { freeChainForTaskType } from './freeModels';
 import { loadSkillsContent } from './skillsLoader';
 import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from './tools';
 import { expandSlashCommand } from './slashCommands';
-import { loadProjectInstructions } from './projectInstructions';
+import { loadProjectInstructions, projectInstructionsPath } from './projectInstructions';
 import {
   PROVIDERS,
   PROVIDER_ORDER,
@@ -45,10 +45,11 @@ import {
   setThreadModel,
   setThreadEffort,
   upgradeThreadTaskType,
-  addThreadExtraRoots,
   sumThreadTokens,
   sumThreadCost,
 } from './threadStore';
+import { frameProjectNotes, isValidThreadId } from './permissions';
+import { approvedProjectNotes, requestFolderGrants } from './trustPrompts';
 
 // Caps a runaway tool loop while leaving room for a normal multi-file
 // task (read, edit, verify) to actually finish.
@@ -101,11 +102,12 @@ function isParseableJson(text: string): boolean {
   }
 }
 
-// Extracts absolute paths the user's own message names and confirms
-// exist on disk — a human-named path is trusted where a model-named one
-// isn't (see Thread.extraRoots in threadStore.ts). Regex extraction is
-// deliberately loose; fs.existsSync is the real filter, so anything
-// path-shaped but not real (a version number, a date) just gets dropped.
+// Extracts absolute paths the user's message names that exist on disk.
+// These are only CANDIDATES: trustPrompts.ts's requestFolderGrants asks
+// the user about each one before Rizo may use it, because the text can
+// come from a paste or a pre-filled TODO, not just the user's typing.
+// Regex extraction is deliberately loose; fs.existsSync is the real
+// filter, so anything path-shaped but not real just gets dropped.
 function detectExtraRoots(text: string): string[] {
   const candidates = new Set<string>();
   for (const m of text.matchAll(/(['"])(\/[^'"]+)\1/g)) candidates.add(m[2]);
@@ -222,9 +224,22 @@ export class ChatPanel {
             this.sendInit();
             this.resolveReady();
             break;
-          case 'send':
-            await this.handleSend(message.text, message.turnId, message.attachments || []);
+          case 'send': {
+            // Fields from the webview are checked, not trusted.
+            if (typeof message.text !== 'string' || typeof message.turnId !== 'string') break;
+            const attachments: IncomingAttachment[] = Array.isArray(message.attachments)
+              ? message.attachments.filter(
+                  (a: unknown): a is IncomingAttachment =>
+                    !!a &&
+                    typeof (a as IncomingAttachment).name === 'string' &&
+                    typeof (a as IncomingAttachment).content === 'string' &&
+                    ((a as IncomingAttachment).type === 'text' || (a as IncomingAttachment).type === 'image') &&
+                    ((a as IncomingAttachment).mimeType === undefined || typeof (a as IncomingAttachment).mimeType === 'string'),
+                )
+              : [];
+            await this.handleSend(message.text, message.turnId, attachments);
             break;
+          }
           case 'cancel':
             this.activeAbortController?.abort();
             this.cancelledTurnId = message.turnId;
@@ -240,6 +255,9 @@ export class ChatPanel {
             this.sendInit();
             break;
           case 'switchThread':
+            // The id ends up in a file path (threads/<id>.json), so only
+            // ids of threads that actually exist are accepted.
+            if (!isValidThreadId(message.id) || !listThreads(this.context).some((t) => t.id === message.id)) break;
             this.activeThreadId = message.id;
             this.sendInit();
             break;
@@ -654,12 +672,17 @@ export class ChatPanel {
       const slashExpansion = expandSlashCommand(text);
       const effectiveText = slashExpansion ?? text;
 
-      // A real path this message names, outside every open workspace
-      // folder, grants read_file/write_file/edit_file access to it for
-      // this and every future turn in this thread — see detectExtraRoots.
-      const newExtraRoots = detectExtraRoots(effectiveText);
-      if (newExtraRoots.length > 0) addThreadExtraRoots(this.context, threadId, newExtraRoots);
-      const extraRoots = [...new Set([...(thread.extraRoots || []), ...newExtraRoots])];
+      // A real path outside the workspace that this message names is
+      // offered to the user ("Let Rizo read files there for this chat?").
+      // Only folders they allow, in this workspace, are usable.
+      const workspaceRoots = (vscode.workspace.workspaceFolders || []).map((f) => {
+        try {
+          return fs.realpathSync(f.uri.fsPath);
+        } catch {
+          return f.uri.fsPath;
+        }
+      });
+      const extraRoots = await requestFolderGrants(this.context, threadId, detectExtraRoots(effectiveText), workspaceRoots);
 
       const messageTaskType: TaskType = slashExpansion ? 'coding' : detectTaskType(effectiveText);
       // Sticky: a short follow-up ("yes", "continue") rarely has a coding
@@ -706,16 +729,17 @@ export class ChatPanel {
       ];
       if (skillsContent) systemParts.push(skillsContent);
 
-      // The user's own .rizo/instructions.md, if present — unlike skills,
-      // not gated to 'coding' since project intent can matter for any
-      // reply. Silently absent if the file doesn't exist.
+      // The repository's .rizo/instructions.md, if present and the user
+      // agreed to use this version of it (asked once per version). Not
+      // gated to 'coding', since project context can matter for any
+      // reply. Framed as repository content, not as instructions.
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const projectInstructions = loadProjectInstructions(workspaceRoot);
-      if (projectInstructions) {
-        systemParts.push(
-          `Project-specific instructions (from .rizo/instructions.md in this workspace):\n${projectInstructions}`,
-        );
-      }
+      const projectNotes = await approvedProjectNotes(
+        this.context,
+        loadProjectInstructions(workspaceRoot),
+        projectInstructionsPath(workspaceRoot),
+      );
+      if (projectNotes) systemParts.push(frameProjectNotes(projectNotes));
 
       // Once folded by maybeSummarize, replays the summary plus only what's
       // newer — not the full raw history. Storage/UI still show everything;

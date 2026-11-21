@@ -9,6 +9,31 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Fixed
+- **Stop** now really stops: nothing from a stopped turn is saved (it used
+  to save a fake "I ran out of steps" reply that was replayed to the model
+  later), a change or command approved after Stop is not applied, and a
+  running command is ended.
+- Sending again right after Stop, or switching chats mid-reply, can no
+  longer make two turns overwrite each other's history: turns on the same
+  chat now run one after another, and each turn re-reads the chat before
+  saving.
+- **Retry with a stronger model**, and changing the model, effort or chat
+  name mid-reply, no longer wipe the live reply and drop queued messages.
+- Closing the panel stops its running turns (no more tokens spent or
+  approval dialogs after closing).
+- When a turn fails after doing some work, its tool cards and text stay
+  visible with the error below them, and the saved history notes which
+  files it had already read or changed.
+- List items and headings that start with `inline code` no longer show
+  the literal text `INLINECODE0`, and code no longer gets extra spaces
+  around it.
+- Text from separate steps of one reply no longer runs together while
+  streaming.
+- A chat renamed while a reply was running keeps its new name.
+- Errors while handling chat-view actions are shown instead of failing
+  silently.
+
 ### Changed
 - The chat view's HTML, CSS and JavaScript moved out of `chatPanel.ts`
   (where they were one 1,600-line TypeScript template string) into

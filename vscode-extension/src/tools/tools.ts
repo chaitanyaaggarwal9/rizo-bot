@@ -500,6 +500,7 @@ interface CommandResult {
   code: number | null;
   signal: NodeJS.Signals | null;
   timedOut: boolean;
+  stopped?: boolean;
   spawnError?: string;
 }
 
@@ -536,17 +537,18 @@ function killProcessTree(child: ChildProcess): void {
   }, 2000).unref();
 }
 
-function runShell(command: string, cwd: string, env: Record<string, string>): Promise<CommandResult> {
+function runShell(command: string, cwd: string, env: Record<string, string>, signal?: AbortSignal): Promise<CommandResult> {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
     let settled = false;
-    const finish = (r: Omit<CommandResult, 'stdout' | 'stderr' | 'timedOut'>) => {
+    const finish = (r: Omit<CommandResult, 'stdout' | 'stderr' | 'timedOut' | 'stopped'>) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ stdout, stderr, timedOut, ...r });
+      signal?.removeEventListener('abort', onAbort);
+      resolve({ stdout, stderr, timedOut, stopped, ...r });
     };
 
     let child: ChildProcess;
@@ -569,6 +571,13 @@ function runShell(command: string, cwd: string, env: Record<string, string>): Pr
       timedOut = true;
       killProcessTree(child);
     }, COMMAND_TIMEOUT_MS);
+    // Stop ends the command and everything it started.
+    let stopped = false;
+    const onAbort = () => {
+      stopped = true;
+      killProcessTree(child);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
@@ -583,10 +592,11 @@ function runShell(command: string, cwd: string, env: Record<string, string>): Pr
   });
 }
 
-async function runCommand(context: vscode.ExtensionContext, command: string): Promise<string> {
+async function runCommand(context: vscode.ExtensionContext, command: string, signal?: AbortSignal): Promise<string> {
   if (typeof command !== 'string' || !command.trim()) return 'Error: run_command needs a non-empty "command" string.';
   const approved = await approveCommand(context, command);
   if (!approved) return 'User rejected running this command. Do not retry without asking why.';
+  if (signal?.aborted) return 'Stopped: the user stopped this turn, so this command was not run.';
 
   // The editor's environment minus variables that usually hold
   // credentials (tokens, cloud keys), unless the user allowed them by name
@@ -594,7 +604,7 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   const allow = vscode.workspace.getConfiguration('rizo').get<string[]>('permissions.passEnvironmentVariables', []);
   const { env, removed } = filterEnvironment(process.env, Array.isArray(allow) ? allow : []);
 
-  const r = await runShell(command, getWorkspaceRoot(), env);
+  const r = await runShell(command, getWorkspaceRoot(), env, signal);
   // A command's output is often an accidental exposure (`env`, `cat
   // .env`, `git log -p` on a repo with a committed secret). Redacted so it
   // never enters the model's context or thread history, then capped.
@@ -602,7 +612,8 @@ async function runCommand(context: vscode.ExtensionContext, command: string): Pr
   if (r.stdout) parts.push(`stdout:\n${capOutput(redactSecrets(r.stdout))}`);
   if (r.stderr) parts.push(`stderr:\n${capOutput(redactSecrets(r.stderr))}`);
   if (r.spawnError) parts.push(`error: could not start the command: ${r.spawnError}`);
-  if (r.timedOut) parts.push(`stopped after ${COMMAND_TIMEOUT_MS / 1000}s (timeout); the command and everything it started were ended`);
+  if (r.stopped) parts.push('stopped: the user pressed Stop; the command and everything it started were ended');
+  else if (r.timedOut) parts.push(`stopped after ${COMMAND_TIMEOUT_MS / 1000}s (timeout); the command and everything it started were ended`);
   else if (r.code !== 0 && r.code !== null) parts.push(`exit code: ${r.code}`);
   else if (r.signal) parts.push(`ended by signal ${r.signal}`);
   if (removed.length && r.code !== 0) {
@@ -756,6 +767,10 @@ export async function executeTool(
   argsJson: string,
   extraRoots: string[] = [],
   currentThreadId?: string,
+  // The turn's Stop/close signal. Checked after every approval dialog:
+  // a change approved after the user pressed Stop (or closed the panel)
+  // is not applied, and a running command is ended.
+  signal?: AbortSignal,
 ): Promise<string> {
   // Backstop for rizo.permissions.disabledTools — chatPanel.ts already
   // filters TOOLS before offering them to the model, so this only matters
@@ -813,6 +828,7 @@ export async function executeTool(
         if (changedSince(filePath, isNew ? undefined : oldContent)) {
           return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the change.`;
         }
+        if (signal?.aborted) return 'Stopped: the user stopped this turn, so this change was not applied.';
         await applyFileContent(filePath, args.content);
         return `Wrote ${args.path} (${isNew ? 'created' : 'overwritten'}).`;
       }
@@ -835,12 +851,13 @@ export async function executeTool(
         if (changedSince(filePath, oldContent)) {
           return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the edit.`;
         }
+        if (signal?.aborted) return 'Stopped: the user stopped this turn, so this change was not applied.';
         await applyFileContent(filePath, result.content);
         return `Edited ${args.path}.`;
       }
 
       case 'run_command':
-        return await runCommand(context, args.command);
+        return await runCommand(context, args.command, signal);
 
       case 'search_past_work':
         return searchPastWork(context, args.path, currentThreadId);

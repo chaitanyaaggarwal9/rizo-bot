@@ -594,3 +594,11 @@ body.focusMode .transcript { display: none; }
   opacity: 0.55;
 }
 #queueNote { color: var(--vscode-descriptionForeground); }
+
+/* A turn that failed after doing some work: the work stays visible, the
+   error is shown below it. */
+.turnError {
+  margin-top: 8px;
+  color: var(--vscode-errorForeground, #f14c4c);
+  white-space: pre-wrap;
+}

@@ -53,6 +53,7 @@ import { buildChatHtml } from './webviewHtml';
 import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignoreExcludeGlobs } from '../agent/attachments';
 import { findMentionedPaths } from '../agent/folderMentions';
 import { planSummary, SUMMARY_MODEL } from '../agent/summarizer';
+import { TurnTracker } from '../agent/turnTracker';
 
 // Caps a runaway tool loop while leaving room for a normal multi-file
 // task (read, edit, verify) to actually finish.
@@ -92,11 +93,9 @@ export class ChatPanel {
   private readonly context: vscode.ExtensionContext;
   private disposables: vscode.Disposable[] = [];
   private activeThreadId: string;
-  // Set for one in-flight handleSend call; 'cancel' aborts the fetch via
-  // the controller and records turnId so the tool loop (uninterruptible
-  // mid-iteration) at least refuses to start the next one.
-  private activeAbortController: AbortController | undefined;
-  private cancelledTurnId: string | undefined;
+  // Running turns: one AbortController each, and one-at-a-time per thread.
+  private readonly turns = new TurnTracker();
+  private disposed = false;
   // Resolves once the webview sends 'ready' — a postMessage sent before
   // then (e.g. addFileToThread invoked before Rizo's first open) would
   // otherwise race past the listener and silently do nothing.
@@ -160,6 +159,23 @@ export class ChatPanel {
 
     this.panel.webview.onDidReceiveMessage(
       async (message) => {
+        // One bad message (or a failed settings/thread write) must not
+        // become an unhandled rejection with no feedback.
+        try {
+          await this.routeMessage(message);
+        } catch (err: any) {
+          void vscode.window.showErrorMessage(`Rizo: ${err?.message ?? String(err)}`);
+        }
+      },
+      null,
+      this.disposables,
+    );
+
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+  }
+
+  private async routeMessage(message: any) {
+    if (!message || typeof message !== 'object') return;
         switch (message.type) {
           case 'ready':
             this.sendInit();
@@ -175,8 +191,7 @@ export class ChatPanel {
             break;
           }
           case 'cancel':
-            this.activeAbortController?.abort();
-            this.cancelledTurnId = message.turnId;
+            if (typeof message.turnId === 'string') this.turns.cancel(message.turnId);
             break;
           case 'attachFile':
             await this.handleAttachFile();
@@ -217,14 +232,14 @@ export class ChatPanel {
             const thread = loadThread(this.context, this.activeThreadId);
             if (thread?.provider && isValidProviderModel(thread.provider, message.model)) {
               setThreadModel(this.context, this.activeThreadId, thread.provider, message.model);
-              this.sendInit();
+              this.sendStateUpdate();
             }
             break;
           }
           case 'selectEffort': {
             if ((EFFORT_LEVELS as readonly string[]).includes(message.effort)) {
               setThreadEffort(this.context, this.activeThreadId, message.effort);
-              this.sendInit();
+              this.sendStateUpdate();
             }
             break;
           }
@@ -249,19 +264,46 @@ export class ChatPanel {
             await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:ChaitanyaAggarwal.rizo');
             break;
         }
-      },
-      null,
-      this.disposables,
-    );
+  }
 
-    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+  // Posts to the chat view unless the panel is gone. postMessage on a
+  // disposed webview throws or rejects; a turn still unwinding after the
+  // panel closed must not turn that into an unhandled rejection.
+  private post(message: unknown): void {
+    if (this.disposed) return;
+    try {
+      void Promise.resolve(this.panel.webview.postMessage(message)).catch(() => undefined);
+    } catch {
+      /* panel disposed between the check and the call */
+    }
+  }
+
+  // Everything init carries except the message list: used for changes
+  // that can happen mid-turn (model, effort, rename) so the live reply,
+  // the Stop button and queued messages aren't reset.
+  private sendStateUpdate() {
+    const thread = loadThread(this.context, this.activeThreadId);
+    const messages = thread?.messages || [];
+    const usage = getUsage(this.context);
+    this.post({
+      type: 'stateUpdate',
+      threads: listThreads(this.context),
+      activeThreadId: this.activeThreadId,
+      provider: thread?.provider,
+      model: thread?.model,
+      effort: thread?.effort || DEFAULT_EFFORT,
+      threadTokens: sumThreadTokens(messages),
+      threadCost: sumThreadCost(messages),
+      dayTokens: usage.dayTokens,
+      monthCost: usage.monthCost,
+    });
   }
 
   private sendInit() {
     const thread = loadThread(this.context, this.activeThreadId);
     const messages = thread?.messages || [];
     const usage = getUsage(this.context);
-    this.panel.webview.postMessage({
+    this.post({
       type: 'init',
       threads: listThreads(this.context),
       activeThreadId: this.activeThreadId,
@@ -287,7 +329,7 @@ export class ChatPanel {
   // tracking if a setting changes mid-turn. Only touches these two
   // values, never messages/turn state.
   private sendSettingsUpdate() {
-    this.panel.webview.postMessage({
+    this.post({
       type: 'settingsUpdate',
       sendKey: vscode.workspace.getConfiguration('rizo').get<string>('composer.sendKey', 'enter'),
       focusMode: vscode.workspace.getConfiguration('rizo').get<boolean>('view.focusMode', false),
@@ -303,7 +345,7 @@ export class ChatPanel {
     });
     if (name && name.trim()) {
       renameThread(this.context, this.activeThreadId, name.trim());
-      this.sendInit();
+      this.sendStateUpdate();
     }
   }
 
@@ -465,7 +507,7 @@ export class ChatPanel {
   public async prefillComposer(text: string) {
     this.panel.reveal();
     await this.ready;
-    this.panel.webview.postMessage({ type: 'prefillComposer', text });
+    this.post({ type: 'prefillComposer', text });
   }
 
   private async readAndSendAttachment(fsPath: string) {
@@ -474,7 +516,7 @@ export class ChatPanel {
       vscode.window.showWarningMessage(result.warning);
       return;
     }
-    this.panel.webview.postMessage({ type: 'attachmentAdded', attachment: result.attachment });
+    this.post({ type: 'attachmentAdded', attachment: result.attachment });
   }
 
 
@@ -505,23 +547,46 @@ export class ChatPanel {
     // messages would save under whatever thread happens to be active
     // when it finishes.
     const threadId = this.activeThreadId;
+    // Waits for any earlier turn on this thread to finish first, so two
+    // turns never load the same history and overwrite each other.
+    const turn = this.turns.begin(turnId, threadId);
+    try {
+      await turn.ready;
+      if (turn.signal.aborted) {
+        this.post({ type: 'cancelled', turnId });
+        return;
+      }
+      await this.runTurn(text, turnId, attachments, threadId, turn.signal);
+    } finally {
+      turn.finish();
+    }
+  }
+
+  private async runTurn(
+    text: string,
+    turnId: string,
+    attachments: IncomingAttachment[],
+    threadId: string,
+    signal: AbortSignal,
+  ) {
 
     const apiKey = await this.getApiKey();
     if (!apiKey) {
-      this.panel.webview.postMessage({ type: 'error', error: 'No API key provided.', turnId });
+      this.post({ type: 'error', error: 'No API key provided.', turnId });
       return;
     }
 
     const startedAt = Date.now();
-    const controller = new AbortController();
-    this.activeAbortController = controller;
     // Hoisted above the try so the catch block can still persist it on a
     // genuine failure (network error, etc.) — see the catch block below.
     let userContent: string | ContentPart[] | undefined;
+    // Files this turn read or changed (deduplicated). Also hoisted, so a
+    // failed turn's saved error can say what it had already touched.
+    const touchedFilesThisTurn = new Set<string>();
 
     const thread = loadThread(this.context, threadId);
     if (!thread?.provider || !thread?.model) {
-      this.panel.webview.postMessage({ type: 'error', error: 'Pick a provider for this chat first.', turnId });
+      this.post({ type: 'error', error: 'Pick a provider for this chat first.', turnId });
       return;
     }
     const provider = thread.provider;
@@ -656,7 +721,7 @@ export class ChatPanel {
       if (hasImage) {
         const variant = findVariant(provider, model);
         if (variant?.vision === false) {
-          this.panel.webview.postMessage({
+          this.post({
             type: 'error',
             turnId,
             error: `${variant.label} isn't vision-capable — switch to a different ${PROVIDERS[provider].label} variant to use an image in this chat.`,
@@ -693,33 +758,31 @@ export class ChatPanel {
       let maxConsecutiveToolErrors = 0;
       let madeToolCallThisTurn = false;
       let madeMutatingCallThisTurn = false;
-      // Deduplicated per turn; converted to an array at persist time.
-      const touchedFilesThisTurn = new Set<string>();
 
       // Sent after Smart Starting Variant resolves model, so the bubble
       // never shows a value that turns out wrong.
-      this.panel.webview.postMessage({ type: 'turnModel', turnId, model });
+      this.post({ type: 'turnModel', turnId, model });
 
       for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-        if (this.cancelledTurnId === turnId) break;
+        if (signal.aborted) break;
 
         const { model: usedModel, message, usage, finishReason } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
-          signal: controller.signal,
+          signal,
           // Dropped for a variant that doesn't support it rather than sent
           // and possibly rejected; callWithFallback never forwards it
           // regardless.
           reasoningEffort: supportsReasoning(provider, model) ? effort : undefined,
-          onDelta: (chunk) => this.panel.webview.postMessage({ type: 'textDelta', turnId, text: chunk }),
+          onDelta: (chunk) => this.post({ type: 'textDelta', turnId, text: chunk }),
           // Clears partial streamed text before the next model's attempt,
           // so the two don't visually run together.
-          onRestart: () => this.panel.webview.postMessage({ type: 'textReset', turnId }),
+          onRestart: () => this.post({ type: 'textReset', turnId }),
         });
         answeredBy = usedModel;
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
         totalUsage.totalTokens += usage.totalTokens;
         // Running total — a multi-tool-call turn makes several round-trips.
-        this.panel.webview.postMessage({ type: 'turnUsage', turnId, totalTokens: totalUsage.totalTokens });
+        this.post({ type: 'turnUsage', turnId, totalTokens: totalUsage.totalTokens });
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
           finalReply = message.content || '';
@@ -734,7 +797,7 @@ export class ChatPanel {
         // Cancellation only stops the next call from starting — a call
         // already in flight still runs to completion.
         for (const toolCall of message.tool_calls) {
-          if (this.cancelledTurnId === turnId) break;
+          if (signal.aborted) break;
           madeToolCallThisTurn = true;
           if (toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') {
             madeMutatingCallThisTurn = true;
@@ -750,7 +813,7 @@ export class ChatPanel {
           ) {
             touchedFilesThisTurn.add(summary.title);
           }
-          this.panel.webview.postMessage({
+          this.post({
             type: 'toolStart',
             turnId,
             callId: toolCall.id,
@@ -773,9 +836,9 @@ export class ChatPanel {
             !isParseableJson(toolCall.function.arguments);
           const result = looksTruncated
             ? `Error: this ${toolCall.function.name} call was cut off before finishing — it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
-            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId);
+            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal);
           const toolOk = !result.startsWith('Error:');
-          this.panel.webview.postMessage({
+          this.post({
             type: 'toolEnd',
             turnId,
             callId: toolCall.id,
@@ -788,6 +851,14 @@ export class ChatPanel {
         }
       }
 
+      // Stopped: the chat view already shows "Stopped.". Nothing is saved,
+      // so a half-finished turn isn't replayed to the model as if it
+      // were a real answer.
+      if (signal.aborted) {
+        this.post({ type: 'cancelled', turnId });
+        return;
+      }
+
       const elapsedMs = Date.now() - startedAt;
 
       // previousAssistantMsg reads thread.messages before this turn's own
@@ -797,7 +868,7 @@ export class ChatPanel {
       // dead button.
       const previousAssistantMsg = [...(thread?.messages || [])].reverse().find((m) => m.role === 'assistant');
       const struggled = detectStruggle({
-        wasCancelled: this.cancelledTurnId === turnId,
+        wasCancelled: signal.aborted,
         completedNormally,
         maxConsecutiveToolErrors,
         current: { madeToolCall: madeToolCallThisTurn, madeMutatingCall: madeMutatingCallThisTurn },
@@ -822,8 +893,11 @@ export class ChatPanel {
       const globalUsage = recordUsage(this.context, totalUsage.totalTokens, turnCost);
 
       // Persist only the final exchange — not the tool-call sub-steps.
+      // Re-read the thread first: it may have been renamed or summarized
+      // while this turn ran, and those changes must not be lost.
+      const latest = loadThread(this.context, threadId) ?? thread;
       const updated: StoredMessage[] = [
-        ...(thread?.messages || []),
+        ...latest.messages,
         { role: 'user', content: userContent },
         {
           role: 'assistant',
@@ -842,16 +916,16 @@ export class ChatPanel {
 
       // Auto-name the thread from its first message, only when it's still
       // the default name — never overrides a Rename.
-      if ((thread?.messages.length ?? 0) === 0 && thread?.name === DEFAULT_THREAD_NAME) {
+      if (thread.messages.length === 0 && latest.name === DEFAULT_THREAD_NAME) {
         renameThread(this.context, threadId, deriveThreadName(effectiveText));
-        this.panel.webview.postMessage({
+        this.post({
           type: 'threadListUpdated',
           threads: listThreads(this.context),
           activeThreadId: this.activeThreadId,
         });
       }
 
-      this.panel.webview.postMessage({
+      this.post({
         type: 'reply',
         turnId,
         model: answeredBy,
@@ -882,24 +956,22 @@ export class ChatPanel {
       // persisted — an aborted turn isn't a failure the next turn needs a
       // history record of.
       if (err.name === 'AbortError') {
-        this.panel.webview.postMessage({ type: 'cancelled', turnId });
+        this.post({ type: 'cancelled', turnId });
       } else if (/user not found|401|unauthorized/i.test(err.message)) {
         // "User not found" / 401 means OpenRouter didn't recognize the key
         // at all — clear it so the next send re-prompts instead of failing
         // forever on a bad stored key.
         await this.context.secrets.delete(SECRET_KEY);
         const error = `${err.message} — cleared the stored key. Send your message again to re-enter it.`;
-        this.panel.webview.postMessage({ type: 'error', turnId, error });
+        this.post({ type: 'error', turnId, error });
         this.persistFailedTurn(threadId, userContent, error);
       } else {
-        this.panel.webview.postMessage({ type: 'error', turnId, error: err.message });
-        this.persistFailedTurn(threadId, userContent, `Error: ${err.message}`);
+        this.post({ type: 'error', turnId, error: err.message });
+        const touched = touchedFilesThisTurn.size
+          ? `\n\n(Before the error, this turn had already read or changed: ${[...touchedFilesThisTurn].join(', ')}.)`
+          : '';
+        this.persistFailedTurn(threadId, userContent, `Error: ${err.message}${touched}`);
       }
-    } finally {
-      // Only clear if this turn still owns the controller — a rapid
-      // second send() before this one's finally runs would otherwise wipe
-      // out the newer turn's own controller.
-      if (this.activeAbortController === controller) this.activeAbortController = undefined;
     }
   }
 
@@ -923,6 +995,11 @@ export class ChatPanel {
   }
 
   public dispose() {
+    // Closing the panel stops its turns: no more tokens spent, and an
+    // approval answered after this won't be applied (tools.ts checks the
+    // turn's signal before writing or running anything).
+    this.disposed = true;
+    this.turns.cancelAll();
     ChatPanel.currentPanel = undefined;
     this.panel.dispose();
     while (this.disposables.length) {

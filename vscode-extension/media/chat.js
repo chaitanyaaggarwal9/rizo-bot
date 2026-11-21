@@ -82,14 +82,13 @@
     // placeholder-protected so emphasis regexes never fire inside them —
     // what stands between this and XSS in model output.
     function renderMarkdown(raw) {
-      let text = escapeHtml(raw);
-
-      // No backslash-escape sequences below (newline, digit, whitespace,
-      // word-char shorthand, escaped asterisk) — this script sits inside
-      // an outer TS template literal, which processes backslash escapes
-      // in its own pass before this code ever reaches a JS engine,
-      // silently corrupting them. Character classes ([*], [0-9], [^]) and
-      // fromCharCode for newline sidestep that entirely.
+      // Code is swapped out for placeholders while the rest is formatted,
+      // then put back. The placeholders are wrapped in NUL characters,
+      // which can't appear in the text (they're stripped first) and don't
+      // depend on surrounding spaces, so list items and headings that
+      // start with code render correctly.
+      let text = escapeHtml(String(raw).split(String.fromCharCode(0)).join(''));
+      const NUL = String.fromCharCode(0);
       const NL = String.fromCharCode(10);
       const TICK = String.fromCharCode(96);
       const FENCE = TICK + TICK + TICK;
@@ -99,14 +98,14 @@
         const idx = codeBlocks.length;
         const trimmed = code.charAt(code.length - 1) === NL ? code.slice(0, -1) : code;
         codeBlocks.push('<pre><code>' + trimmed + '</code></pre>');
-        return ' CODEBLOCK' + idx + ' ';
+        return NUL + 'C' + idx + NUL;
       });
 
       const inlineCodes = [];
       text = text.replace(new RegExp(TICK + '([^' + TICK + ']+)' + TICK, 'g'), (_, code) => {
         const idx = inlineCodes.length;
         inlineCodes.push('<code>' + code + '</code>');
-        return ' INLINECODE' + idx + ' ';
+        return NUL + 'I' + idx + NUL;
       });
 
       text = text.replace(/[*][*]([^*]+)[*][*]/g, '<strong>$1</strong>');
@@ -129,8 +128,8 @@
       if (inList) out.push('</ul>');
       text = out.join(NL);
 
-      text = text.replace(/ INLINECODE([0-9]+) /g, (_, i) => inlineCodes[Number(i)]);
-      text = text.replace(/ CODEBLOCK([0-9]+) /g, (_, i) => codeBlocks[Number(i)]);
+      text = text.replace(new RegExp(NUL + '([CI])([0-9]+)' + NUL, 'g'), (_, kind, i) =>
+        (kind === 'C' ? codeBlocks : inlineCodes)[Number(i)] || '');
       return text;
     }
 
@@ -275,6 +274,7 @@
     // block once the result's back. Starts collapsed; the header is a
     // <button> so it's keyboard-toggleable too, not just a click target.
     function handleToolStart(turnId, callId, label, title, detail, diffOld, diffNew, isNewFile) {
+      if (activeTurn && activeTurn.id === turnId && activeTurn.hasText) activeTurn.needsBreak = true;
       if (!activeTurn || activeTurn.id !== turnId) return;
       // A write/edit's diff opens automatically — the one thing worth
       // reading shouldn't need an extra click. Reads/commands stay
@@ -376,6 +376,10 @@
         activeTurn.currentAction = 'Writing reply…';
         renderTurnStatus(activeTurn);
       }
+      // Text from a new step (after a tool call) starts a new paragraph
+      // instead of running into the previous step's text.
+      if (activeTurn.needsBreak && activeTurn.textBuffer) activeTurn.textBuffer += String.fromCharCode(10, 10);
+      activeTurn.needsBreak = false;
       activeTurn.textBuffer += text;
       activeTurn.bufferEl.textContent = activeTurn.textBuffer;
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -931,6 +935,19 @@
         renderSettingsState(msg.sendKey, msg.focusMode);
         return;
       }
+      if (msg.type === 'stateUpdate') {
+        // Model, effort or name changed (possibly mid-turn). Unlike init,
+        // this leaves the message list, the live turn and the queue alone.
+        renderThreadList(msg.threads, msg.activeThreadId);
+        currentProvider = msg.provider || null;
+        currentModel = msg.model || null;
+        currentEffort = msg.effort || 'medium';
+        renderModelSwitch(currentProvider, currentModel);
+        renderEffortSwitch(currentProvider, currentModel, currentEffort);
+        renderThreadStats(msg.threadTokens, msg.threadCost);
+        renderUsageStats(msg.dayTokens, msg.monthCost);
+        return;
+      }
       if (msg.type === 'attachmentAdded') {
         pendingAttachments.push(msg.attachment);
         renderChips();
@@ -977,10 +994,29 @@
         activeTurn.liveTokens = msg.totalTokens;
         renderTurnStatus(activeTurn);
       } else if (msg.type === 'error') {
-        stopTurnStatusTimer(activeTurn);
-        activeTurn.el.remove();
+        const turn = activeTurn;
+        stopTurnStatusTimer(turn);
         activeTurn = null;
-        addMessage('assistant', 'Error: ' + msg.error);
+        if (turn.toolLines.size > 0 || turn.hasText) {
+          // Keep what already happened (tool cards, applied diffs, partial
+          // text) visible and add the error below it, so it's clear which
+          // changes were made before things went wrong.
+          turn.el.classList.remove('pending');
+          turn.statusEl.remove();
+          if (turn.hasText) {
+            const cursor = turn.textEl.querySelector('.streamCursor');
+            if (cursor) cursor.remove();
+          } else {
+            turn.textEl.remove();
+          }
+          const errorEl = document.createElement('div');
+          errorEl.className = 'turnError';
+          errorEl.textContent = 'Error: ' + msg.error;
+          turn.el.appendChild(errorEl);
+        } else {
+          turn.el.remove();
+          addMessage('assistant', 'Error: ' + msg.error);
+        }
         dispatchNextQueued();
       }
       // 'cancelled' needs no handling — the local Stop click already

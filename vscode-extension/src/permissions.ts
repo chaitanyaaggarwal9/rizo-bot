@@ -139,3 +139,39 @@ export function frameProjectNotes(content: string): string {
     'PROJECT_NOTES>>>',
   ].join('\n');
 }
+
+// ---------- files that usually hold secrets ----------
+
+// Reading one of these asks every time (tools.ts), since what Rizo reads
+// is sent to the AI provider. Templates like .env.example don't ask.
+const SECRET_BASENAMES = new Set([
+  '.npmrc',
+  '.netrc',
+  '.pypirc',
+  '.git-credentials',
+  '.dockercfg',
+  '.htpasswd',
+  '.pgpass',
+  'credentials',
+  'credentials.json',
+  'credentials.yml',
+  'credentials.yaml',
+  'secrets.json',
+  'secrets.yml',
+  'secrets.yaml',
+  'secrets.toml',
+]);
+const SECRET_EXTENSIONS = /\.(pem|key|p12|pfx|jks|keystore|kdbx|ppk|gpg|tfvars|tfstate)$/i;
+const PRIVATE_KEY_NAME = /^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$/;
+const ENV_TEMPLATE = /\.(example|sample|template|dist|defaults)$/i;
+
+export function isSecretFile(filePath: string): boolean {
+  const parts = path.normalize(filePath).split(/[\\/]+/).filter(Boolean);
+  const base = (parts[parts.length - 1] ?? '').toLowerCase();
+  if (/^\.env(\.|$)/.test(base)) return !ENV_TEMPLATE.test(base);
+  if (SECRET_BASENAMES.has(base)) return true;
+  if (PRIVATE_KEY_NAME.test(base)) return true;
+  if (/^service[-_]?account.*\.json$/.test(base)) return true;
+  if (SECRET_EXTENSIONS.test(base)) return true;
+  return parts.some((p) => p === '.ssh' || p === '.aws' || p === '.gnupg');
+}

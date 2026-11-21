@@ -32,8 +32,26 @@ an honest gap. Everything before this point lives in git history instead.
 - Rizo declares that it doesn't run in untrusted (Restricted Mode) or
   virtual workspaces.
 - Messages from the chat view are validated before use.
+- File writes can no longer escape the workspace through a symlink,
+  including one whose target doesn't exist yet. Writes go to the file's
+  real location and don't follow a symlink swapped in after the check.
+- Reading files that usually hold secrets (`.env`, private keys,
+  `credentials.json`, `.npmrc`, …) asks every time, since what Rizo
+  reads is sent to the AI provider. Templates like `.env.example` don't.
+- Approval diffs use a private temporary folder instead of shared,
+  predictable file names in the system temp directory.
 
 ### Fixed
+- `edit_file` wrote `$$`, `$&` and similar sequences in the new text
+  differently from the diff you approved. They're now written exactly.
+- `edit_file` with an empty `old_string` is refused instead of editing
+  an empty file.
+- Edits to a file that's open in the editor go through the editor and
+  are saved, so the editor and the disk no longer disagree. A file that
+  changed while the approval dialog was open isn't overwritten.
+- `read_file` no longer loads a whole file just to check whether it's
+  binary, refuses files over 20 MB, reads UTF-16 text files, and returns
+  large files in parts (new optional `start_line`/`end_line`).
 - `.rizo/instructions.md` over 8 KB is now cut at 8 KB of bytes, not
   characters.
 

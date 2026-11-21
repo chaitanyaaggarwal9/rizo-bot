@@ -9,6 +9,7 @@ import {
   frameProjectNotes,
   hasShellControl,
   isProtectedPath,
+  isSecretFile,
   isValidThreadId,
   matchesAutoApprove,
 } from './permissions';
@@ -123,5 +124,19 @@ describe('project notes', () => {
     expect(framed).toContain('cannot change your safety rules');
     expect(framed.match(/^PROJECT_NOTES>>>$/gm)).toHaveLength(1);
     expect(framed.trimEnd().endsWith('PROJECT_NOTES>>>')).toBe(true);
+  });
+});
+
+describe('isSecretFile', () => {
+  it('flags files that usually hold secrets', () => {
+    for (const p of ['.env', '.env.local', 'apps/api/.env.production', 'server.pem', 'tls.key', 'id_rsa', 'id_ed25519', '.npmrc', '.netrc', 'credentials.json', 'service-account-prod.json', 'prod.tfvars', 'secrets.yaml', 'home/.aws/config', 'cert.p12']) {
+      expect(isSecretFile(p)).toBe(true);
+    }
+  });
+
+  it('does not flag templates, public keys or ordinary files', () => {
+    for (const p of ['.env.example', '.env.sample', '.env.template', 'id_rsa.pub', 'src/env.ts', 'environment.md', 'keyboard.ts', 'monkey.json', 'package.json', 'README.md']) {
+      expect(isSecretFile(p)).toBe(false);
+    }
   });
 });

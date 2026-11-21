@@ -1,12 +1,26 @@
+<div align="center">
+
 # Rizo
 
-![CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)
+**A bring-your-own-key AI coding assistant for VS Code.**
 
-Rizo is a BYOK AI coding assistant for VS Code — chat, file edits, and
-terminal/git commands, with cost-optimized, company-locked model
-selection. Bring your own [OpenRouter](https://openrouter.ai) API key;
-you're billed directly by OpenRouter for exactly what you use, nothing
-more.
+Pick Claude, Gemini, OpenAI, DeepSeek, Kimi or a free model for each chat through your own OpenRouter key. Rizo chats, edits files and runs terminal and git commands, with a diff before every write, a warning on every destructive command and the cost of every turn in view.
+
+[![CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml)
+[![License: Apache 2.0 + Commons Clause](https://img.shields.io/badge/license-Apache%202.0%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
+
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo)
+![BYOK](https://img.shields.io/badge/BYOK-OpenRouter-0ea5e9)
+![Providers](https://img.shields.io/badge/providers-6-8b5cf6)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Source available](https://img.shields.io/badge/source-available-10b981)
+
+[Website](https://rizobot.com) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo) · [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
+</div>
+
+---
 
 ## Why this exists
 

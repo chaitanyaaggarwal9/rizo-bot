@@ -1,0 +1,67 @@
+name: CI
+
+# Runs on every pull request and every push to main, with no path filters,
+# so its checks can be required by the branch ruleset. Require the
+# "CI passed" job: it only succeeds when every job below succeeded.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  malware-scan:
+    name: Malware scan
+    uses: ./.github/workflows/malware-scan.yml
+
+  extension:
+    name: Extension (build, test, package)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: vscode-extension
+    steps:
+      # Actions are pinned to full commit SHAs so a moved tag cannot change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+      # .npmrc disables dependency install scripts; the flag makes that explicit.
+      - run: npm ci --ignore-scripts
+      - name: Verify npm registry signatures
+        run: npm audit signatures
+      # Type-checks and builds via tsc.
+      - run: npm run compile
+      - run: npm test
+      # Proves vsce can package with install scripts disabled and that
+      # @types/vscode does not exceed engines.vscode.
+      - name: Package .vsix
+        run: npx vsce package --allow-missing-repository --out "$RUNNER_TEMP/rizo.vsix"
+
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [malware-scan, extension]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail unless every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || { echo "::error::A required CI job did not succeed ($r)."; exit 1; }
+          done

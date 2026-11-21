@@ -53,13 +53,22 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-`.github/workflows/release.yml` picks it up from there: compiles, runs
-the test suite, checks the tag matches `package.json`'s version (refuses
-to publish on a mismatch), packages, publishes to the Marketplace, and
-attaches the `.vsix` to a GitHub Release. Needs a `VSCE_PAT` repo
-secret — a Marketplace-scoped Personal Access Token from
-[dev.azure.com](https://dev.azure.com), added under Settings → Secrets
-and variables → Actions.
+`.github/workflows/release.yml` picks it up from there in two jobs:
+
+1. **Build and verify** (read-only token, no credentials): installs with
+   install scripts disabled, verifies npm signatures, compiles, tests,
+   checks the tag matches `package.json`'s version and isn't already on
+   the Marketplace, and packages the `.vsix`.
+2. **Publish to Marketplace** (the `marketplace` environment, which only
+   `v*` tags can deploy to): signs in to Entra ID with GitHub OIDC,
+   publishes that exact `.vsix` with `vsce publish --azure-credential`,
+   and attaches it to a GitHub Release.
+
+There is no Personal Access Token. The `marketplace` environment holds
+two variables, `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. They identify an
+Entra ID app that has a federated credential for
+`repo:chaitanyaaggarwal9/rizo-bot:environment:marketplace` and is a
+member of the `ChaitanyaAggarwal` Marketplace publisher.
 
 To package a `.vsix` locally without publishing (e.g. to test an install
 before tagging a release):

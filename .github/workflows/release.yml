@@ -1,76 +1,130 @@
 name: Release
 
-# Tag-triggered on purpose, not "publish on every push to main" — a
-# Marketplace publish is hard to fully undo (you can ship a new version
-# over it, you can't erase that one was live), so it only fires when you
-# explicitly cut a release: git tag v0.2.0 && git push origin v0.2.0.
+# Tag-triggered on purpose: a Marketplace publish can't be fully undone,
+# so it only runs when a release is cut explicitly:
+#   git tag v0.5.0 && git push origin v0.5.0
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  # Everything that runs dependency code happens here, in a job with a
+  # read-only token and no way to get publish credentials.
+  build:
+    name: Build and verify
     runs-on: ubuntu-latest
-    # softprops/action-gh-release needs write access to create the release
-    # and upload the .vsix — without this, the default GITHUB_TOKEN is
-    # read-only and that step 403s even though everything before it
-    # (including the actual Marketplace publish) succeeds fine.
-    permissions:
-      contents: write
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: vscode-extension
+    outputs:
+      vsix: ${{ steps.package.outputs.vsix }}
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 24
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
-
-      - run: npm ci
-
+      - run: npm ci --ignore-scripts
+      - name: Verify npm registry signatures
+        run: npm audit signatures
       - run: npm run compile
-
       - run: npm test
 
-      # Refuses to publish if the tag and package.json disagree — catches
-      # "forgot to bump the version" or "tagged the wrong commit" before
-      # anything irreversible happens, rather than after. ::error:: makes
-      # this a red annotation at the top of the run, not just a line
-      # buried in a step's log.
       - name: Verify tag matches package.json version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag is v$TAG_VERSION but package.json says $PKG_VERSION — refusing to publish a mismatch. Fix the tag or the version and push again."
+            echo "::error::Tag is v$TAG_VERSION but package.json says $PKG_VERSION. Fix the tag or the version and push again."
             exit 1
           fi
 
-      # A second, cheaper re-run of an already-published tag (exactly what
-      # happened cutting v0.2.0) used to fail deep inside `vsce publish`
-      # with little context. Catch it here instead, with a message that
-      # says what to actually do about it.
       - name: Check this version isn't already on the Marketplace
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           ALREADY=$(npx vsce show ChaitanyaAggarwal.rizo --json | jq -r --arg v "$PKG_VERSION" '[.versions[].version] | index($v) != null')
           if [ "$ALREADY" = "true" ]; then
-            echo "::error::v$PKG_VERSION is already published to the Marketplace. Bump the version in vscode-extension/package.json, commit, and tag again — this tag can't be reused to republish."
+            echo "::error::v$PKG_VERSION is already on the Marketplace. Bump the version in vscode-extension/package.json, commit, and tag again."
             exit 1
           fi
 
       - name: Package .vsix
-        run: npx vsce package --allow-missing-repository
+        id: package
+        run: |
+          VSIX="rizo-${GITHUB_REF_NAME#v}.vsix"
+          npx vsce package --allow-missing-repository --out "$VSIX"
+          sha256sum "$VSIX"
+          echo "vsix=$VSIX" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vsix
+          path: vscode-extension/${{ steps.package.outputs.vsix }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # Publishes the exact .vsix built above. Runs in the "marketplace"
+  # environment, which only v* tags can deploy to and which holds the
+  # Entra ID app's client and tenant IDs. No PAT exists anywhere: GitHub
+  # issues a short-lived OIDC token that Entra ID exchanges for an
+  # Azure DevOps token.
+  publish:
+    name: Publish to Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: marketplace
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # request the OIDC token for azure/login
+    defaults:
+      run:
+        working-directory: vscode-extension
+    steps:
+      # Checked out only so npm ci can install the pinned vsce from the lockfile.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
+      - run: npm ci --ignore-scripts
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vsix
+          path: vscode-extension
+
+      - name: Sign in to Entra ID with OIDC
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
 
       - name: Publish to VS Code Marketplace
-        run: npx vsce publish --allow-missing-repository -p "${{ secrets.VSCE_PAT }}"
+        env:
+          VSIX: ${{ needs.build.outputs.vsix }}
+        run: |
+          sha256sum "$VSIX"
+          npx vsce publish --packagePath "$VSIX" --azure-credential
 
       - name: Attach the .vsix to a GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
-          files: vscode-extension/*.vsix
+          files: vscode-extension/${{ needs.build.outputs.vsix }}
           generate_release_notes: true

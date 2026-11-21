@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { ChatPanel } from './chatPanel';
 import { registerTodoCodeLens } from './todoCodeLens';
+import { manageFolderAccess } from './trustPrompts';
 
 export function activate(context: vscode.ExtensionContext) {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
@@ -50,7 +51,20 @@ export function activate(context: vscode.ExtensionContext) {
   );
   registerTodoCodeLens(context);
 
-  context.subscriptions.push(openChat, changeApiKey, reopenClosedSession, addFileToThread, implementTodo);
+  // Lists folders outside the workspace that chats were allowed to use
+  // (trustPrompts.ts) and revokes the ones the user picks.
+  const manageFolderAccessCmd = vscode.commands.registerCommand('rizo.manageFolderAccess', () =>
+    manageFolderAccess(context),
+  );
+
+  context.subscriptions.push(
+    openChat,
+    changeApiKey,
+    reopenClosedSession,
+    addFileToThread,
+    implementTodo,
+    manageFolderAccessCmd,
+  );
 }
 
 export function deactivate() {}

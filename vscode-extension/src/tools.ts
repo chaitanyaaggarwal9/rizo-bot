@@ -10,6 +10,7 @@ import { exec } from 'child_process';
 import { isDestructive } from './destructiveCommands';
 import { scanDangerousPatterns } from './dangerousPatterns';
 import { redactSecrets } from './outputRedaction';
+import { hasShellControl, isProtectedPath, matchesAutoApprove } from './permissions';
 import { listThreads, loadThread } from './threadStore';
 
 export interface ToolDefinition {
@@ -284,9 +285,9 @@ function getWorkspaceRoots(): string[] {
 // resolves the actual target; walks up to the nearest existing ancestor
 // first since a new file has no realpath of its own yet.
 //
-// extraRoots (default none): paths chatPanel.ts's handleSend found in
-// the human's own message text and verified exist — see threadStore.ts's
-// Thread.extraRoots for why only that source is trusted.
+// extraRoots (default none): folders outside the workspace that the user
+// explicitly allowed for this chat in this workspace (trustPrompts.ts's
+// requestFolderGrants). Never taken from a model's tool-call arguments.
 function resolveSafePath(relativePath: string, extraRoots: string[] = []): string {
   const roots = [...getWorkspaceRoots(), ...extraRoots.map((r) => fs.realpathSync(r))];
   // path.resolve treats an already-absolute second argument as an
@@ -350,8 +351,11 @@ async function showApprovalDiff(
   scanTarget: string,
 ): Promise<boolean> {
   const matches = scanDangerousPatterns(scanTarget);
+  // Editor, git, CI and Rizo config files can turn on auto-approval or
+  // run code on their own, so they always ask, even with Always Allow on.
+  const isProtected = isProtectedPath(relativePath);
 
-  if (context.workspaceState.get(ALWAYS_ALLOW_EDITS_KEY)) {
+  if (!isProtected && context.workspaceState.get(ALWAYS_ALLOW_EDITS_KEY)) {
     // Always Allow skips the dialog entirely, but a dangerous-pattern match
     // still deserves to be seen — fire a non-blocking toast instead of
     // going completely dark for a workspace that's already flipped this on.
@@ -379,11 +383,14 @@ async function showApprovalDiff(
       ? `⚠️ Patterns worth a second look:\n${matches.map((m) => `• ${m.description}`).join('\n')}\n\n`
       : '';
     const showDialog = matches.length ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+    const protectedNote = isProtected
+      ? 'This file controls editor, git, CI or Rizo settings, so changes to it always ask.\n\n'
+      : '';
     const choice = await showDialog(
-      `${warningPrefix}Apply this change to ${relativePath}?`,
+      `${warningPrefix}${protectedNote}Apply this change to ${relativePath}?`,
       { modal: true },
       'Approve',
-      'Always Allow (this project)',
+      ...(isProtected ? [] : ['Always Allow (this project)']),
       'Reject',
     );
     if (choice === 'Always Allow (this project)') {
@@ -397,20 +404,16 @@ async function showApprovalDiff(
   }
 }
 
-// rizo.permissions.autoApproveCommandPatterns — regex strings tested against
-// the full command. A bad/invalid regex from the user is skipped rather
-// than crashing the extension over a settings typo.
+// rizo.permissions.autoApproveCommandPatterns. The setting is
+// application-scoped (package.json), so a repository's own
+// .vscode/settings.json can't set it. matchesAutoApprove anchors each
+// pattern to the whole command and never approves chained, piped,
+// substituted or redirected commands.
 function isAutoApproved(command: string): boolean {
   const patterns = vscode.workspace
     .getConfiguration('rizo')
     .get<string[]>('permissions.autoApproveCommandPatterns', []);
-  return patterns.some((p) => {
-    try {
-      return new RegExp(p).test(command);
-    } catch {
-      return false;
-    }
-  });
+  return matchesAutoApprove(command, Array.isArray(patterns) ? patterns : []);
 }
 
 async function approveCommand(context: vscode.ExtensionContext, command: string): Promise<boolean> {
@@ -427,13 +430,19 @@ async function approveCommand(context: vscode.ExtensionContext, command: string)
   }
 
   if (isAutoApproved(command)) return true;
-  if (context.workspaceState.get(ALWAYS_ALLOW_COMMANDS_KEY)) return true;
+  // "Always Allow" covers single commands only: anything chained, piped,
+  // substituted or redirected still asks, since one approved-looking
+  // command could carry a second one along with it.
+  const chained = hasShellControl(command);
+  if (!chained && context.workspaceState.get(ALWAYS_ALLOW_COMMANDS_KEY)) return true;
 
   const choice = await vscode.window.showInformationMessage(
-    `Run this command?\n\n${command}`,
+    chained
+      ? `Run this command? It chains, pipes or redirects, so it always asks.\n\n${command}`
+      : `Run this command?\n\n${command}`,
     { modal: true },
     'Approve',
-    'Always Allow (this project)',
+    ...(chained ? [] : ['Always Allow (this project)']),
     'Reject',
   );
   if (choice === 'Always Allow (this project)') {

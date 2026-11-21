@@ -88,15 +88,6 @@ export interface ThreadData extends ThreadMeta {
   // silently lose skill-file loading. Undefined/'general' means not
   // upgraded yet.
   taskType?: 'coding' | 'general';
-  // Absolute paths outside every open workspace folder that this thread
-  // is allowed to read/write — populated only when the human's own
-  // message text names a real path, never from a model's tool-call
-  // arguments. Same trust boundary as tools.ts's workspace check: a model
-  // reaching outside the workspace on its own (possibly via prompt
-  // injection) is the risk that boundary stops; a human naming a path
-  // deliberately isn't that risk. Persisted per-thread, so a folder
-  // mentioned once stays usable for the rest of the conversation.
-  extraRoots?: string[];
 }
 
 function storageRoot(context: vscode.ExtensionContext): string {
@@ -214,18 +205,6 @@ export function setThreadModel(context: vscode.ExtensionContext, id: string, pro
   if (!thread) return;
   thread.provider = provider;
   thread.model = model;
-  fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
-}
-
-// Merges newly-detected paths into extraRoots — additive and deduped,
-// never removes a prior root. Only called with paths already verified to
-// exist and come from the human's own message text.
-export function addThreadExtraRoots(context: vscode.ExtensionContext, id: string, roots: string[]): void {
-  if (roots.length === 0) return;
-  const thread = loadThread(context, id);
-  if (!thread) return;
-  const merged = new Set([...(thread.extraRoots || []), ...roots]);
-  thread.extraRoots = [...merged];
   fs.writeFileSync(threadFilePath(context, id), JSON.stringify(thread, null, 2));
 }
 

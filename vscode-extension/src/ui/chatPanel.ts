@@ -753,7 +753,7 @@ export class ChatPanel {
           this.post({
             type: 'error',
             turnId,
-            error: `${label} isn't vision-capable — switch to a different ${PROVIDERS[provider].label} model to use an image in this chat.`,
+            error: `${label} isn't vision-capable. Switch to a different ${PROVIDERS[provider].label} model to use an image in this chat.`,
           });
           return;
         }
@@ -775,7 +775,7 @@ export class ChatPanel {
       const limits = vscode.workspace.getConfiguration('rizo.limits');
       const maxSteps = Math.max(0, Math.floor(Number(limits.get<number>('maxStepsPerTurn', 0)) || 0));
       const maxOutputTokens = Math.max(0, Math.floor(Number(limits.get<number>('maxOutputTokens', 0)) || 0));
-      let finalReply = `I stopped after ${maxSteps} steps (your rizo.limits.maxStepsPerTurn setting) — say 'continue' and I'll pick back up.`;
+      let finalReply = `I stopped after ${maxSteps} steps (your rizo.limits.maxStepsPerTurn setting). Say 'continue' and I'll pick back up.`;
       const totalUsage = emptyUsage();
       let allCostsReported = true;
 
@@ -877,7 +877,7 @@ export class ChatPanel {
             (toolCall.function.name === 'write_file' || toolCall.function.name === 'edit_file') &&
             !isParseableJson(toolCall.function.arguments);
           const result = looksTruncated
-            ? `Error: this ${toolCall.function.name} call was cut off before finishing — it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
+            ? `Error: this ${toolCall.function.name} call was cut off before finishing: it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
             : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal);
           const toolOk = !result.startsWith('Error:');
           this.post({
@@ -1008,7 +1008,7 @@ export class ChatPanel {
         // at all — clear it so the next send re-prompts instead of failing
         // forever on a bad stored key.
         await this.context.secrets.delete(SECRET_KEY);
-        const error = `${err.message} — cleared the stored key. Send your message again to re-enter it.`;
+        const error = `${err.message}. Cleared the stored key. Send your message again to re-enter it.`;
         this.post({ type: 'error', turnId, error });
         this.persistFailedTurn(threadId, userContent, error);
       } else {

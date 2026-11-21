@@ -58,7 +58,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'write_file',
       description:
-        'Create a new file, or fully overwrite an existing one, with the given content. Requires user approval — a diff is shown before anything is written to disk. Prefer edit_file for changes to existing files.',
+        'Create a new file, or fully overwrite an existing one, with the given content. Requires user approval: a diff is shown before anything is written to disk. Prefer edit_file for changes to existing files.',
       parameters: {
         type: 'object',
         properties: {
@@ -74,7 +74,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'edit_file',
       description:
-        'Make a surgical edit to an existing file by replacing one exact occurrence of old_string with new_string. Prefer this over write_file for existing files — touch only what changed. Requires user approval before anything is written.',
+        'Make a surgical edit to an existing file by replacing one exact occurrence of old_string with new_string. Prefer this over write_file for existing files: touch only what changed. Requires user approval before anything is written.',
       parameters: {
         type: 'object',
         properties: {
@@ -91,7 +91,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'run_command',
       description:
-        'Run a shell command in the workspace root — git, npm, tests, build scripts, etc. Requires user approval before running. Commands that look destructive (force-push, hard reset, branch deletion, rm -rf) or that hide what they actually run (piping a remote download into a shell, `bash -c "..."`, `eval`) get an extra emphasized warning, per Git Hygiene\'s rule that hard-to-reverse or opaque operations need the same confirm-first habit as any other risky action.',
+        'Run a shell command in the workspace root: git, npm, tests, build scripts, etc. Requires user approval before running. Commands that look destructive (force-push, hard reset, branch deletion, rm -rf) or that hide what they actually run (piping a remote download into a shell, `bash -c "..."`, `eval`) get an extra emphasized warning, per Git Hygiene\'s rule that hard-to-reverse or opaque operations need the same confirm-first habit as any other risky action.',
       parameters: {
         type: 'object',
         properties: {
@@ -99,7 +99,7 @@ export const TOOLS: ToolDefinition[] = [
           description: {
             type: 'string',
             description:
-              'A short (5-10 word), imperative-mood, present-tense summary of what this command does and why, e.g. "Check whether the release tag matches package.json" — NOT a restatement of the command text itself. Shown as the line in the live transcript; the exact command is available on expand.',
+              'A short (5-10 word), imperative-mood, present-tense summary of what this command does and why, e.g. "Check whether the release tag matches package.json", NOT a restatement of the command text itself. Shown as the line in the live transcript; the exact command is available on expand.',
           },
         },
         required: ['command', 'description'],
@@ -111,7 +111,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'search_past_work',
       description:
-        "Search every OTHER chat thread in this workspace (not this one — that's already in your context) for prior work touching a specific file: which threads touched it, when, and what was being asked at the time. Useful before a risky change, or when the user asks something like \"didn't we already fix this?\" Deterministic — built from what read_file/write_file/edit_file actually touched in each past turn, not an AI guess at relevance.",
+        "Search every OTHER chat thread in this workspace (not this one, that's already in your context) for prior work touching a specific file: which threads touched it, when, and what was being asked at the time. Useful before a risky change, or when the user asks something like \"didn't we already fix this?\" Deterministic: built from what read_file/write_file/edit_file actually touched in each past turn, not an AI guess at relevance.",
       parameters: {
         type: 'object',
         properties: { path: { type: 'string', description: 'Relative file path to search for' } },
@@ -124,7 +124,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'find_definition',
       description:
-        "Jump to where a symbol (function, class, variable, type) is actually defined — uses the workspace's own language server (same engine as VS Code's \"Go to Definition\"), not a text search, so it resolves through imports and re-exports correctly. Faster and more accurate than grepping for the declaration by hand.",
+        "Jump to where a symbol (function, class, variable, type) is actually defined. Uses the workspace's own language server (same engine as VS Code's \"Go to Definition\"), not a text search, so it resolves through imports and re-exports correctly. Faster and more accurate than grepping for the declaration by hand.",
       parameters: {
         type: 'object',
         properties: {
@@ -140,7 +140,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'find_references',
       description:
-        "Find every place a symbol is used across the whole workspace — same engine as VS Code's \"Find All References\", not a text search, so it won't miss a usage or match an unrelated same-named symbol elsewhere. Use before renaming or changing a function's signature to see everything that would break.",
+        "Find every place a symbol is used across the whole workspace, same engine as VS Code's \"Find All References\", not a text search, so it won't miss a usage or match an unrelated same-named symbol elsewhere. Use before renaming or changing a function's signature to see everything that would break.",
       parameters: {
         type: 'object',
         properties: {
@@ -156,7 +156,7 @@ export const TOOLS: ToolDefinition[] = [
     function: {
       name: 'call_hierarchy',
       description:
-        "For a function specifically: who calls it, or what it calls — one level, not a text search. \"incoming\" answers \"what breaks if I change this function's behavior\"; \"outgoing\" answers \"what does this function actually depend on\". Falls back to find_references-like behavior if the language server can't build a call hierarchy for this symbol (some languages/positions don't support it).",
+        "For a function specifically, who calls it or what it calls (one level, not a text search). \"incoming\" answers \"what breaks if I change this function's behavior\"; \"outgoing\" answers \"what does this function actually depend on\". Falls back to find_references-like behavior if the language server can't build a call hierarchy for this symbol (some languages/positions don't support it).",
       parameters: {
         type: 'object',
         properties: {
@@ -270,7 +270,7 @@ export function summarizeToolResult(result: string): string {
 function getWorkspaceRoot(): string {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    throw new Error('No workspace folder is open — open a folder to let the agent read/edit files.');
+    throw new Error('No workspace folder is open. Open a folder to let the agent read/edit files.');
   }
   return folders[0].uri.fsPath;
 }
@@ -284,7 +284,7 @@ function getWorkspaceRoot(): string {
 function getWorkspaceRoots(): string[] {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    throw new Error('No workspace folder is open — open a folder to let the agent read/edit files.');
+    throw new Error('No workspace folder is open. Open a folder to let the agent read/edit files.');
   }
   return folders.map((f) => fs.realpathSync(f.uri.fsPath));
 }
@@ -668,14 +668,14 @@ async function findDefinitionTool(filePath: string, symbol: string, extraRoots: 
   const resolved = resolveSafePath(filePath, extraRoots);
   if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
   const pos = findSymbolPosition(currentContent(resolved), symbol);
-  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath}. Check the spelling, or point at a file that actually mentions it.`;
   const results = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(
     'vscode.executeDefinitionProvider',
     vscode.Uri.file(resolved),
     pos,
   );
   if (!results || results.length === 0) {
-    return `No definition found for "${symbol}" at that position — the language server may not be ready yet (just opened this project?), or this isn't a resolvable symbol here.`;
+    return `No definition found for "${symbol}" at that position. The language server may not be ready yet (just opened this project?), or this isn't a resolvable symbol here.`;
   }
   return `Definition of "${symbol}":\n${formatLocations(results, getWorkspaceRoot())}`;
 }
@@ -684,7 +684,7 @@ async function findReferencesTool(filePath: string, symbol: string, extraRoots: 
   const resolved = resolveSafePath(filePath, extraRoots);
   if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
   const pos = findSymbolPosition(currentContent(resolved), symbol);
-  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath}. Check the spelling, or point at a file that actually mentions it.`;
   const results = await vscode.commands.executeCommand<vscode.Location[]>(
     'vscode.executeReferenceProvider',
     vscode.Uri.file(resolved),
@@ -698,14 +698,14 @@ async function callHierarchyTool(filePath: string, symbol: string, direction: st
   const resolved = resolveSafePath(filePath, extraRoots);
   if (!fs.existsSync(resolved)) return `Error: file not found: ${filePath}`;
   const pos = findSymbolPosition(currentContent(resolved), symbol);
-  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath} — check the spelling, or point at a file that actually mentions it.`;
+  if (!pos) return `Error: "${symbol}" doesn't appear in ${filePath}. Check the spelling, or point at a file that actually mentions it.`;
   const items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
     'vscode.prepareCallHierarchy',
     vscode.Uri.file(resolved),
     pos,
   );
   if (!items || items.length === 0) {
-    return `Could not build a call hierarchy for "${symbol}" here — not every language/position supports it. Try find_references instead; it works for any resolvable symbol.`;
+    return `Could not build a call hierarchy for "${symbol}" here: not every language/position supports it. Try find_references instead; it works for any resolvable symbol.`;
   }
   const root = getWorkspaceRoot();
   const lines: string[] = [];
@@ -810,7 +810,7 @@ export async function executeTool(
         // as UTF-8 and handed to the model as noise. Only the first 8 KB is
         // read for this check.
         if (looksBinary(readFileHead(filePath))) {
-          return `Error: ${args.path} looks like a binary file — can't read it as text (no PDF/image/archive text extraction here). If you need its contents, ask the user to describe it or attach it as an image if it's a screenshot.`;
+          return `Error: ${args.path} looks like a binary file, so it can't be read as text (no PDF/image/archive text extraction here). If you need its contents, ask the user to describe it or attach it as an image if it's a screenshot.`;
         }
         if (isSecretFile(filePath) && !(await approveSecretRead(args.path))) {
           return `The user did not allow reading ${args.path} (it usually holds secrets). Don't retry; ask the user for the specific value or setting you need instead.`;
@@ -844,7 +844,7 @@ export async function executeTool(
         if (!result.ok) {
           if (result.reason === 'empty') return 'Error: old_string is empty. Give the exact text to replace, or use write_file. No changes made.';
           if (result.reason === 'not-found') return `Error: old_string not found in ${args.path}. No changes made.`;
-          return `Error: old_string appears ${result.count} times in ${args.path} — must be unique. No changes made.`;
+          return `Error: old_string appears ${result.count} times in ${args.path}. It must be unique. No changes made.`;
         }
         const approved = await showApprovalDiff(context, args.path, oldContent, result.content, false, args.new_string);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';

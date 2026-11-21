@@ -38,9 +38,9 @@
     let currentSendKey = 'enter';
     let currentFocusMode = false;
     const EFFORT_LEVELS = [
-      { id: 'low', label: 'Low', tagline: 'Fast, cheapest — trivial follow-ups' },
-      { id: 'medium', label: 'Medium', tagline: 'Balanced — the default' },
-      { id: 'high', label: 'High', tagline: 'Slower, priciest — hard problems' },
+      { id: 'low', label: 'Low', tagline: 'Fast, cheapest: trivial follow-ups' },
+      { id: 'medium', label: 'Medium', tagline: 'Balanced (the default)' },
+      { id: 'high', label: 'High', tagline: 'Slower, priciest: hard problems' },
     ];
     // Current provider/model/effort for this thread — null/default until
     // the picker's used once. Gates sending and populates the switchers.
@@ -430,7 +430,7 @@
           retryBtn.disabled = true;
           retryBtn.textContent = 'Retrying with ' + escalationLabel + '…';
           vscode.postMessage({ type: 'selectModel', model: escalationModel });
-          const retryText = 'Please try that again with more capability — take another look and finish it properly.';
+          const retryText = 'Please try that again with more capability. Take another look and finish it properly.';
           addMessage('user', retryText);
           if (activeTurn) {
             messageQueue.push({ text: retryText, attachments: [] });
@@ -815,7 +815,7 @@
         const file = item.getAsFile();
         if (!file) continue;
         if (file.size > MAX_PASTED_IMAGE_BYTES) {
-          addMessage('assistant', 'That pasted image is over the 5MB limit — try a smaller one.');
+          addMessage('assistant', 'That pasted image is over the 5MB limit. Try a smaller one.');
           continue;
         }
         e.preventDefault();
@@ -837,7 +837,7 @@
 
     function renderQueueNote() {
       queueNoteEl.textContent = messageQueue.length
-        ? messageQueue.length + ' message' + (messageQueue.length > 1 ? 's' : '') + ' queued — sends once this reply finishes'
+        ? messageQueue.length + ' message' + (messageQueue.length > 1 ? 's' : '') + ' queued, sends once this reply finishes'
         : '';
     }
 

@@ -2,7 +2,7 @@
 
 Guide for working on Rizo (`vscode-extension/`) and its marketing site
 (`website/`). Licensed Apache 2.0 + Commons Clause (see
-[LICENSE](LICENSE)) — source-available, free to use and modify, resale
+[LICENSE](LICENSE)): source-available, free to use and modify, resale
 not permitted. Issues and pull requests are welcome; by opening one
 you're contributing under that same license. For anything beyond a small
 fix, open an issue first so we can agree on the approach before you put
@@ -13,7 +13,7 @@ or pull request.
 
 ## Coding standards
 
-Read `vscode-extension/skills/` before making a change — those files
+Read `vscode-extension/skills/` before making a change. Those files
 (Coding Discipline, Debugging Discipline, Git Hygiene, Test Discipline,
 Security Hygiene, and the rest) are the actual standard this project
 holds itself to, not just what Rizo loads into its own system prompt.
@@ -29,17 +29,17 @@ npm run compile      # or `npm run watch` while iterating
 
 Launch via VS Code's Run and Debug panel (F5) to open an Extension
 Development Host with your changes loaded. `.vscode/launch.json` is
-already configured — no setup needed beyond `npm install`.
+already configured, so no setup is needed beyond `npm install`.
 
 **Before proposing a change:**
-- Compile clean (`npm run compile`) — no TypeScript errors
-- Run the test suite (`npm test`) — pure-logic modules (task
+- Compile clean (`npm run compile`) with no TypeScript errors
+- Run the test suite (`npm test`). Pure-logic modules (task
   classification, model/effort selection, destructive-command detection,
   struggle detection, pricing, thread storage) are all written to be
   testable outside the extension host (no direct `vscode` import at the
   module level)
 - Manually verify in the Extension Development Host for anything
-  touching the webview, approval dialogs, or file/terminal tools — those
+  touching the webview, approval dialogs, or file/terminal tools, since those
   need the real host to test meaningfully
 
 **Releasing to the Marketplace:**
@@ -85,12 +85,12 @@ npx vsce package --allow-missing-repository
 
 ## Website (`website/`)
 
-Static HTML/CSS/JS, no build step — see [website/README.md](website/README.md)
+Static HTML/CSS/JS, no build step. See [website/README.md](website/README.md)
 for local preview and deploy instructions.
 
 ## Before every push
 
 Per Git Hygiene's rule 7: check whether your change invalidates anything
 `README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` currently claims. Update
-what's now wrong, create what's missing and needed, leave the rest alone —
+what's now wrong, create what's missing and needed, leave the rest alone, and
 don't touch a doc just to touch it.

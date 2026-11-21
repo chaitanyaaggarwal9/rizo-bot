@@ -3,19 +3,19 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 // Shortcuts for workflows Rizo already has dedicated skill files for. Each
-// handler starts with "/name — ..." on purpose, so the chat bubble still
+// handler starts with "/name: ..." on purpose, so the chat bubble still
 // reads as the slash command rather than a wall of instructions — there's
 // no separate "what the user typed" field, so this is also what gets
 // stored and replayed in history.
 const SLASH_COMMANDS: Record<string, (rest: string) => string> = {
   commit: (rest) =>
-    `/commit — Review the currently staged and unstaged changes (use \`git status\` / \`git diff\` via run_command), then stage and commit them. Follow Git Hygiene: imperative-mood subject line, a body explaining why not just what, one coherent change per commit — if the diff bundles unrelated changes, say so and propose splitting rather than committing it all as one lump. Confirm before pushing or running anything destructive.${rest ? `\n\nAdditional context: ${rest}` : ''}`,
+    `/commit: Review the currently staged and unstaged changes (use \`git status\` / \`git diff\` via run_command), then stage and commit them. Follow Git Hygiene: imperative-mood subject line, a body explaining why not just what, one coherent change per commit. If the diff bundles unrelated changes, say so and propose splitting rather than committing it all as one lump. Confirm before pushing or running anything destructive.${rest ? `\n\nAdditional context: ${rest}` : ''}`,
 
   review: (rest) =>
-    `/review — Review the current diff (\`git diff\` against the base branch, or whatever files I mention) for correctness bugs first, then reuse/simplification/taste. Follow Code Review Discipline: state what the change is trying to do in one sentence before judging how, separate blocking issues from nice-to-haves and label which is which, end with an explicit verdict (approve / request changes / comment).${rest ? `\n\nAdditional context: ${rest}` : ''}`,
+    `/review: Review the current diff (\`git diff\` against the base branch, or whatever files I mention) for correctness bugs first, then reuse/simplification/taste. Follow Code Review Discipline: state what the change is trying to do in one sentence before judging how, separate blocking issues from nice-to-haves and label which is which, end with an explicit verdict (approve / request changes / comment).${rest ? `\n\nAdditional context: ${rest}` : ''}`,
 
   test: (rest) =>
-    `/test — Write tests for the change we're discussing (ask me what to target if it's unclear), following Test Discipline: turn the ask into checkable cases first — reproduce a bug with a failing test before fixing it, write invalid-input cases for new validation — before writing implementation to satisfy them.${rest ? `\n\nAdditional context: ${rest}` : ''}`,
+    `/test: Write tests for the change we're discussing (ask me what to target if it's unclear), following Test Discipline: turn the ask into checkable cases first (reproduce a bug with a failing test before fixing it, write invalid-input cases for new validation) before writing implementation to satisfy them.${rest ? `\n\nAdditional context: ${rest}` : ''}`,
 };
 
 const SLASH_PATTERN = /^\/([a-zA-Z][\w-]*)\s*([\s\S]*)$/;

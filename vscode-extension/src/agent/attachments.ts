@@ -37,7 +37,7 @@ export function isIncomingAttachment(a: unknown): a is IncomingAttachment {
 // the first 8 KB, the same cheap tell git uses), with a message to show.
 export function readAttachmentFile(fsPath: string): { attachment: IncomingAttachment } | { warning: string } {
   const name = path.basename(fsPath);
-  const tooBig = { warning: `${name} is over the 5MB attachment limit — pick a smaller file.` };
+  const tooBig = { warning: `${name} is over the 5MB attachment limit. Pick a smaller file.` };
   let fd: number | undefined;
   try {
     // One open file handle for both the size check and the read, so the

@@ -906,7 +906,9 @@
     window.addEventListener('message', (event) => {
       // Messages come from the extension through VS Code's webview host.
       // Ignore anything from another origin and anything without a type.
-      if (typeof event.origin === 'string' && event.origin !== '' && !event.origin.startsWith('vscode-webview://')) return;
+      // (VS Code relays them from a frame with the same origin as this one.)
+      const origin = typeof event.origin === 'string' ? event.origin : '';
+      if (origin && origin !== window.location.origin && !origin.startsWith('vscode-webview://')) return;
       const msg = event.data;
       if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
       if (msg.type === 'init') {

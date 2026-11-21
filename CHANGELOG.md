@@ -9,6 +9,10 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-21
+
+A security release. Upgrading is recommended for everyone.
+
 ### Security
 - Folders outside the workspace are only used after you allow them. A
   path in your message now opens a "Let Rizo read files there for this

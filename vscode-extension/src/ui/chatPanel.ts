@@ -56,7 +56,7 @@ import { callAzure } from '../api/azure';
 import { buildChatHtml, openRouterProviderCatalog } from './webviewHtml';
 import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignoreExcludeGlobs } from '../agent/attachments';
 import { findMentionedPaths } from '../agent/folderMentions';
-import { planSummary, SUMMARY_MODEL } from '../agent/summarizer';
+import { contentToPlainText, planSummary, SUMMARY_MODEL } from '../agent/summarizer';
 import { TurnTracker } from '../agent/turnTracker';
 import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
@@ -753,7 +753,11 @@ export class ChatPanel {
       // Only coding-classified messages get skill instructions — general
       // chat doesn't need engineering-discipline guidance.
       const skillsDir = path.join(this.context.extensionPath, 'skills');
-      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType);
+      // The previous user message lets a short follow-up ("now add the
+      // tests") keep that request's specialist skills.
+      const previousUser = [...thread.messages].reverse().find((m) => m.role === 'user');
+      const previousUserText = previousUser ? contentToPlainText(previousUser.content) : undefined;
+      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType, previousUserText);
 
       // Without any system prompt, some models (DeepSeek in particular)
       // default to Chinese on short/ambiguous input — this instruction

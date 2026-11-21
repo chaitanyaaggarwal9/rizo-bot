@@ -9,7 +9,22 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
-### Added
+### Changed
+- **Smarter, more reliable coding guidance.** The built-in skills Rizo
+  gives the model were rewritten and now actually load when they should:
+  - Requests like "write unit tests", "is this secure?", "why does it
+    crash?", "add an endpoint" or "review my changes" used to load no
+    specialist guidance at all; they do now, and short follow-ups keep it.
+  - The base skill teaches Rizo's own tools (read before editing, exact
+    edits, searching with `rg`) and to verify work with the project's own
+    typecheck, lint and tests before saying it's done.
+  - Corrected advice (idempotency keys, TypeScript type guards, argon2id
+    over bcrypt, JWT checks) and added authorization, path traversal,
+    SSRF and dependency-safety rules; removed contradictions (e.g. a rule
+    to create docs before every push).
+  - New skill for exploring an unfamiliar codebase.
+  - At most two specialist skills load at once, and all skills together
+    are about 40% smaller, which helps small and free models.
 - **Azure AI Foundry.** Use your own Azure deployments with your own key:
   run **Rizo: Connect Azure AI Foundry**, enter your endpoint and key,
   pick your deployments, and choose Azure AI Foundry when you start a

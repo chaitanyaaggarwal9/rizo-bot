@@ -1,45 +1,31 @@
 # Backend API Taste
 
-The Web Design Taste counterpart for the other half of the stack: an API is judged on consistency and honesty about its contract, not on any single endpoint looking clever.
+Purpose: build APIs that are consistent, safe and honest about their contract.
 
-### 1. Read the brief first
+### Match what exists first
+- Follow the existing API's naming, casing, pagination, response envelope, error shape and versioning before applying these defaults.
+- Resources are plural nouns (`POST /orders`, not `/createOrder`). Dates in ISO 8601 with timezone.
 
-Who's the consumer — an internal service you also control, a mobile app shipped alongside it, or a public third party you'll never talk to before they integrate? That answer decides how strict versioning and backwards-compatibility need to be. An internal-only API can break fast with a heads-up in Slack; a public one can't break without a version bump, ever.
+### Status codes
+- 200 OK, 201 Created, 204 No Content.
+- 400 malformed request; 422 valid syntax but failed validation.
+- 401 not authenticated; 403 authenticated but not allowed.
+- 404 not found; 410 existed and was permanently removed; 409 conflict (duplicate, version mismatch).
+- 429 rate limited, with a `Retry-After` header.
+- Never 5xx for client errors, and never 200 with an error in the body.
 
-### 2. Naming and shape conventions, held consistent across the whole API
+### Errors
+- One consistent error shape everywhere: stable machine `code`, human message, field-level details.
+- RFC 9457 Problem Details (`application/problem+json`) is a good default for new APIs.
+- No stack traces, raw DB errors or internal IDs in responses.
 
-- Resources are nouns, not verbs: `POST /orders`, not `POST /createOrder`.
-- Plural collection names, consistent casing (pick one of camelCase/snake_case and never mix it within a response body).
-- Dates/times in ISO 8601, always in the same field shape, always with a timezone.
-- Nesting depth capped — if a client needs 4 levels of `include` to render one screen, that's a sign that's the wrong shape.
+### Safety
+- Authorization check in every endpoint, including access to the specific record.
+- Validate input at the boundary. Set request body size limits.
+- `GET` never changes state.
+- Idempotency keys make retries of non-idempotent requests (payments, creation) safe: POSTs that may be retried should accept an `Idempotency-Key` header and return the original result on repeat.
 
-### 3. One error envelope, everywhere
-
-Every endpoint returns errors in the same shape — a stable `code`, a human `message`, and field-level detail where relevant. A client should never need per-endpoint logic just to parse an error.
-
-| Weak | Strong |
-|---|---|
-| `200 OK` with `{ "error": "bad request" }` in the body | Real status code (`400`/`422`) + consistent error envelope |
-| Raw DB error string or stack trace in the response | A stable error `code` the client can branch on, message for humans |
-| A different error shape per endpoint | One envelope shared by the entire API |
-
-### 4. Pagination
-
-Cursor-based by default for anything that can grow unbounded — offset/limit drifts and duplicates/skips rows under concurrent writes. Offset/limit is fine only for small, bounded collections. Always return page info explicitly (`next_cursor`, `has_more`) rather than making the client infer "more exists" from a magic page size.
-
-### 5. Versioning and idempotency
-
-- Pick one versioning strategy (URI or header) and stay consistent — don't mix.
-- Additive changes (new optional field) don't need a version bump; anything that changes or removes existing behavior always does.
-- Mutating endpoints that are safe to retry (payment, resource creation) accept an idempotency key. `GET` never mutates state, full stop.
-
-### 6. Status codes mean something
-
-Use `201` for created, `204` for no content, `400` for malformed input, `422` for valid-but-semantically-wrong input, `401` for missing auth, `403` for present-but-insufficient auth, `404` vs `410` for gone-but-once-existed. A `200` with an error payload inside defeats every client's status-code-based error handling.
-
-### 7. Refuse by default
-
-- Verbs in URLs (`/getUser`, `/updateOrder`).
-- Leaking internal implementation in errors — stack traces, raw DB messages, internal IDs a client shouldn't see.
-- Breaking a shipped response shape without a version bump, even for "just one extra required field."
-- An endpoint shaped so every client must N+1 it (a list endpoint that forces a follow-up call per item to get data that should've been embeddable).
+### Pagination and change
+- Cursor pagination for large or live collections; return `next_cursor`/`has_more` explicitly. Offset is fine for small bounded lists.
+- Additive changes (new optional field) are fine. Removing or changing behavior needs a new version; never break a shipped shape silently.
+- Avoid shapes that force clients into N+1 calls.

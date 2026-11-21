@@ -4,91 +4,40 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { TaskType } from '../routing/modelRouter';
+import type { TaskType } from '../routing/modelRouter';
+import { BASE_SKILL, SKILL_KEYWORDS, skillMatchCounts } from './skillKeywords';
 
-// Every coding-classified message gets this as the base layer — the other
-// skill files' own text says they build on top of it.
-const BASE_SKILL = 'coding-discipline.md';
+// How many specialist skills load with the base skill. Each file is about
+// 1-2 KB; capping keeps the system prompt small enough for small models.
+export const MAX_SPECIALIST_SKILLS = 2;
 
-// More specific than the low/medium/coding split in modelRouter.ts — this
-// decides WHICH coding skill(s) apply, not whether the request is coding-
-// related at all. A message can match more than one.
-const SKILL_KEYWORDS: Record<string, string[]> = {
-  'debugging-discipline.md': [
-    'bug', 'bugs', 'debug', 'debugging', 'crash', 'crashes', 'stack trace',
-    'traceback', 'broken', 'failing', 'root cause', 'reproduce',
-    'regression', 'regressions', 'flaky', 'exception', 'exceptions',
-  ],
-  'git-hygiene.md': [
-    'git', 'commit', 'commits', 'push', 'pull request', 'pull requests',
-    'branch', 'branches', 'merge', 'rebase', 'squash',
-  ],
-  'backend-api-taste.md': [
-    'api', 'apis', 'endpoint', 'endpoints', 'restful', 'route', 'routes',
-    'http status', 'pagination', 'versioning',
-  ],
-  'test-discipline.md': [
-    'test', 'tests', 'testing', 'spec', 'specs', 'unit test', 'unit tests',
-    'mock', 'mocks', 'coverage', 'assert', 'assertion',
-  ],
-  'security-hygiene.md': [
-    'security', 'secure', 'vulnerability', 'vulnerabilities', 'auth',
-    'authentication', 'authorization', 'password', 'passwords',
-    'encryption', 'sql injection', 'xss', 'owasp', 'sanitize',
-    'sanitization', 'jwt', 'oauth',
-  ],
-  'typescript-taste.md': [
-    'typescript', 'generics', 'generic type', 'generic types',
-    'type guard', 'type guards', 'discriminated union',
-    'discriminated unions', 'utility type', 'utility types', 'tsconfig',
-    'type safety', 'branded type', 'branded types',
-  ],
-  'code-review-discipline.md': [
-    'code review', 'code reviews', 'review this pr', 'review my pr',
-    'pr review', 'pr reviews',
-  ],
-  'web-design-taste.md': [
-    'website', 'websites', 'web app', 'web apps', 'webapp', 'webapps',
-    'web page', 'web pages', 'webpage', 'webpages', 'landing page',
-    'landing pages', 'mobile app', 'mobile apps', 'frontend', 'front-end',
-    'next.js', 'nextjs', 'tailwind', 'wireframe', 'wireframes', 'mockup',
-    'mockups', 'redesign', 'redesigns', 'design system', 'design systems',
-    'ui', 'ux',
-  ],
-  'ui-library-picks.md': [
-    'component', 'components', 'toast', 'toasts', 'command menu',
-    'command palette', 'drag and drop', 'virtualization', 'dropdown',
-    'dropdowns', 'modal', 'modals', 'dialog', 'dialogs', 'chart', 'charts',
-    'state management', 'dark mode',
-  ],
-};
+// Short follow-ups ("ok, now add the tests") inherit the previous user
+// message's specialists, at a lower weight than the message's own.
+const FOLLOW_UP_MAX_WORDS = 12;
 
-function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-const SKILL_PATTERNS: Record<string, RegExp> = Object.fromEntries(
-  Object.entries(SKILL_KEYWORDS).map(([file, keywords]) => [
-    file,
-    new RegExp(`\\b(?:${keywords.map(escapeRegExp).join('|')})\\b`, 'i'),
-  ]),
-);
-
-// General/low/medium messages don't need engineering-discipline skills —
-// only coding-tier messages do.
-export function selectSkillFiles(message: string, taskType: TaskType): string[] {
+// The base skill plus up to MAX_SPECIALIST_SKILLS specialists, ranked by
+// how many of their keywords the message contains. Only for coding work.
+export function selectSkillFiles(message: string, taskType: TaskType, previousUserMessage?: string): string[] {
   if (taskType !== 'coding') return [];
-
-  const files = [BASE_SKILL];
-  for (const [file, pattern] of Object.entries(SKILL_PATTERNS)) {
-    if (pattern.test(message)) files.push(file);
+  const scores = skillMatchCounts(message);
+  const wordCount = message.trim().split(/\s+/).filter(Boolean).length;
+  if (previousUserMessage && wordCount <= FOLLOW_UP_MAX_WORDS) {
+    for (const [file, n] of skillMatchCounts(previousUserMessage)) {
+      scores.set(file, (scores.get(file) ?? 0) + n * 0.5);
+    }
   }
-  return files;
+  const order = Object.keys(SKILL_KEYWORDS);
+  const ranked = [...scores.entries()]
+    .sort((a, b) => b[1] - a[1] || order.indexOf(a[0]) - order.indexOf(b[0]))
+    .map(([file]) => file)
+    .slice(0, MAX_SPECIALIST_SKILLS);
+  return [BASE_SKILL, ...ranked];
 }
 
 // Reads the selected skill files fresh on every call (no caching) from the
 // extension's own bundled skills/ directory.
-export function loadSkillsContent(skillsDir: string, message: string, taskType: TaskType): string {
-  const files = selectSkillFiles(message, taskType);
+export function loadSkillsContent(skillsDir: string, message: string, taskType: TaskType, previousUserMessage?: string): string {
+  const files = selectSkillFiles(message, taskType, previousUserMessage);
   return files
     .map((file) => {
       try {

@@ -1,54 +1,28 @@
 # Security Hygiene
 
-Coding Discipline covers writing code carefully in general; this covers the
-specific ways "working" code turns into a vulnerability — trusting input
-that wasn't validated, or handling secrets and credentials casually.
+Purpose: keep code secure and safe, so input, tokens and secrets can't leak or be abused.
 
-### 1. Validate and sanitize every external input
+### Input and output
+- Validate input at the boundary: type, length, format, allowlists. Reject early.
+- Encode output for its context: HTML escaping, SQL via parameterized queries only, shell via argument arrays (never string concatenation).
+- File paths: resolve, then confirm the result stays inside the allowed directory (path traversal).
+- Outbound URLs from users: allowlist hosts and block internal/private IPs (SSRF).
 
-Anything from a request body, query string, header, or file upload is
-untrusted until checked. Validate shape and bounds (a library like
-Zod/Joi/Pydantic beats hand-rolled checks) before it touches a query, a
-shell command, or a template. Reject on failure with a generic error —
-don't echo the raw input back.
+### Auth and permission
+- Check authorization on every request and every object access: can this user access *that* record? (IDOR/BOLA is OWASP API #1.)
+- Passwords: argon2id. bcrypt only in existing systems (it ignores bytes past 72). Never MD5/SHA or custom schemes.
+- JWT: verify the signature with an explicit algorithm allowlist, reject `alg: none`, check `exp`, `aud`, `iss`. Keep tokens short-lived.
+- Cookie auth needs CSRF protection. CORS: strict origin allowlist, never `*` with credentials.
+- Rate limit login, signup and password-reset endpoints.
+- Auth failures get a generic message ("Invalid credentials"), never revealing whether a user exists. Validation errors can be specific. No stack traces in responses.
 
-### 2. Never build queries or commands by string concatenation
+### Secrets
+- Never hardcode, commit, or log an api key, token or password; never paste one into chat.
+- Use env vars or a secret manager. Don't print `.env` contents; keep `.env` in `.gitignore`.
+- A committed secret must be rotated; deleting the commit is not enough.
 
-- SQL: parameterized queries / prepared statements, always — `WHERE id =
-  $1`, never `WHERE id = '${id}'`.
-- Shell: pass arguments as an array to the process, never interpolate user
-  input into a shell string.
-- Templates: rely on the templating engine's auto-escaping for anything
-  rendered as HTML; never mark user content "safe" without a specific
-  reason.
+### Dependencies
+- Don't add packages without asking. Check the exact package name (typosquats).
+- Keep lockfiles committed. Be wary of install scripts. Never run `curl | sh`.
 
-### 3. Secrets live in the environment, not in the diff
-
-API keys, tokens, and passwords go in environment variables or a secrets
-manager — never hardcoded, never committed, never logged. Before
-committing, a `.env`-style file with real credentials should be in
-`.gitignore`, not just intended to be. If a secret was ever committed,
-rotating it is the fix — deleting the commit doesn't remove it from
-history.
-
-### 4. Passwords and tokens: don't roll your own
-
-Hash passwords with bcrypt/argon2 (never MD5/SHA-1/plaintext). For tokens,
-use a maintained library, set an explicit expiration, and allowlist the
-signing algorithm — an attacker who can choose the algorithm can often
-forge a token.
-
-### 5. Errors tell the user nothing an attacker can use
-
-"Invalid credentials" for both wrong-password and no-such-user — never
-confirm which is which. Stack traces, internal IDs, and raw database error
-messages belong in server logs, not the response body.
-
-### 6. Refuse by default
-
-- String-built SQL/shell commands, even "just this once."
-- A secret typed directly into source, config committed to git, or printed
-  to a log.
-- An auth error message that reveals whether an account exists.
-- Rolling a custom hashing/encryption scheme instead of a vetted library.
-
+Match the project's existing security libraries and conventions first.

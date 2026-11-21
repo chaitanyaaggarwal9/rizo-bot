@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
-import { TaskType } from './modelRouter';
+import { TaskType } from '../routing/modelRouter';
 
 // ⚠️ THESE MODEL IDS GO STALE — periodically check
 // https://openrouter.ai/models?max_price=0 and update.

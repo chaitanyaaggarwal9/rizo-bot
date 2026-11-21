@@ -5,8 +5,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { estimateCost } from './pricing';
-import { ContentPart } from './openrouter';
+import { estimateCost } from '../api/pricing';
+import { ContentPart } from '../api/openrouter';
 
 // Only the final exchange per turn is stored, not tool_calls/tool results
 // — replaying full tool history into every future request would bloat

@@ -6,13 +6,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
-import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from './openrouter';
-import { detectTaskType, TaskType } from './modelRouter';
-import { freeChainForTaskType } from './freeModels';
-import { loadSkillsContent } from './skillsLoader';
-import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from './tools';
-import { expandSlashCommand } from './slashCommands';
-import { loadProjectInstructions, projectInstructionsPath } from './projectInstructions';
+import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart, Usage } from '../api/openrouter';
+import { detectTaskType, TaskType } from '../routing/modelRouter';
+import { freeChainForTaskType } from '../models/freeModels';
+import { loadSkillsContent } from '../prompt/skillsLoader';
+import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from '../tools/tools';
+import { expandSlashCommand } from '../prompt/slashCommands';
+import { loadProjectInstructions, projectInstructionsPath } from '../prompt/projectInstructions';
 import {
   PROVIDERS,
   PROVIDER_ORDER,
@@ -25,11 +25,11 @@ import {
   findVariant,
   supportsReasoning,
   effortForTier,
-} from './providers';
-import { estimateStartingTier } from './complexityEstimator';
-import { detectStruggle } from './struggleDetector';
-import { estimateCost } from './pricing';
-import { getUsage, recordUsage } from './usageStore';
+} from '../models/providers';
+import { estimateStartingTier } from '../routing/complexityEstimator';
+import { detectStruggle } from '../routing/struggleDetector';
+import { estimateCost } from '../api/pricing';
+import { getUsage, recordUsage } from '../storage/usageStore';
 import {
   ThreadData,
   StoredMessage,
@@ -48,8 +48,8 @@ import {
   upgradeThreadTaskType,
   sumThreadTokens,
   sumThreadCost,
-} from './threadStore';
-import { frameProjectNotes, isValidThreadId } from './permissions';
+} from '../storage/threadStore';
+import { frameProjectNotes, isValidThreadId } from '../safety/permissions';
 import { approvedProjectNotes, requestFolderGrants } from './trustPrompts';
 
 // Caps a runaway tool loop while leaving room for a normal multi-file

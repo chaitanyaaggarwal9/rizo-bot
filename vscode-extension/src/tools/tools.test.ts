@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { executeTool, findSymbolPosition } from './tools';
-import { createThread, saveThreadMessages } from './threadStore';
+import { createThread, saveThreadMessages } from '../storage/threadStore';
 
 // The find_definition/find_references/call_hierarchy tools themselves
 // need a real language server (vscode.commands.executeCommand) to do

@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
-import { ToolDefinition } from './tools';
+import { ToolDefinition } from '../tools/tools';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Leaving max_tokens unset defaults to the model's max, which OpenRouter

@@ -3,9 +3,9 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 import * as vscode from 'vscode';
-import { ChatPanel } from './chatPanel';
-import { registerTodoCodeLens } from './todoCodeLens';
-import { manageFolderAccess } from './trustPrompts';
+import { ChatPanel } from './ui/chatPanel';
+import { registerTodoCodeLens } from './ui/todoCodeLens';
+import { manageFolderAccess } from './ui/trustPrompts';
 
 export function activate(context: vscode.ExtensionContext) {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {

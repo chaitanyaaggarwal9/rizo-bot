@@ -1,6 +1,6 @@
 # Rizo
 
-![VS Code Extension CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/vscode-extension-ci.yml/badge.svg)
+![CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)
 
 Rizo is a BYOK AI coding assistant for VS Code — chat, file edits, and
 terminal/git commands, with cost-optimized, company-locked model
@@ -237,11 +237,18 @@ npx vsce package --allow-missing-repository
 
 ## Continuous integration
 
-`.github/workflows/` runs on every push/PR to `main`:
+`.github/workflows/`:
 
-- **`vscode-extension-ci.yml`** — installs, type-checks/builds
-  (`npm run compile`), and runs the unit test suite (`npm test`)
-  whenever `vscode-extension/` changes
+- **`ci.yml`** runs on every pull request and every push to `main`. It
+  runs the malware scan, installs with install scripts disabled,
+  verifies npm registry signatures, compiles, runs the unit tests and
+  packages the `.vsix`. Its `CI passed` job is the required check.
+- **`codeql.yml`** runs CodeQL (`security-extended`) on the TypeScript
+  and JavaScript and on the workflows themselves.
+- **`dependency-review.yml`** fails a pull request that adds a
+  dependency with a known vulnerability or a copyleft license.
+- **`malware-scan.yml`** scans every branch for the known IOCs from
+  the `postcss.config` incident and for obfuscation patterns.
 - **`stale-issues.yml`** — labels issues stale after 60 days of no
   activity, closes them after 14 more; runs on a daily schedule
 - **`release.yml`** — publishes to the Marketplace, tag-triggered
@@ -256,7 +263,13 @@ dependency updates.
 
 Bug reports and feature requests: use the issue templates. Pull
 requests: see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and
-open an issue first for anything beyond a small fix.
+open an issue first for anything beyond a small fix. Everyone taking
+part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report vulnerabilities privately, never in a public issue. See
+[SECURITY.md](SECURITY.md).
 
 ## License
 

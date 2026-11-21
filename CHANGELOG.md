@@ -9,7 +9,20 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Added
+- **No more reply limits.** A reply is no longer cut off after 30 tool
+  steps: it runs until the model is done or you press **Stop**. Each
+  model can also write its full maximum reply length (read from
+  OpenRouter's model list) instead of a flat 8,192 tokens. If your
+  OpenRouter credit can't cover a model's maximum, Rizo automatically
+  asks for what it can afford, and tells you plainly when the credit is
+  too low to be useful.
+- Optional caps for anyone who wants them: `rizo.limits.maxStepsPerTurn`
+  and `rizo.limits.maxOutputTokens` (both `0` = no limit, the default).
+
 ### Fixed
+- The **Effort** setting now applies to Free models too (it was silently
+  dropped for them).
 - **Stop** now really stops: nothing from a stopped turn is saved (it used
   to save a fake "I ran out of steps" reply that was replayed to the model
   later), a change or command approved after Stop is not applied, and a

@@ -54,10 +54,7 @@ import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignore
 import { findMentionedPaths } from '../agent/folderMentions';
 import { planSummary, SUMMARY_MODEL } from '../agent/summarizer';
 import { TurnTracker } from '../agent/turnTracker';
-
-// Caps a runaway tool loop while leaving room for a normal multi-file
-// task (read, edit, verify) to actually finish.
-const MAX_TOOL_ITERATIONS = 30;
+import { getMaxOutputTokens } from '../api/modelLimits';
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
 // Holds one thread — the most recently deleted, cleared once restored.
@@ -740,7 +737,13 @@ export class ChatPanel {
       // Kept short and explicit — this string gets persisted and replayed
       // as this turn's reply in every future turn's history, so a vague
       // placeholder would misinform later turns.
-      let finalReply = "I ran out of steps before finishing (hit the tool-call limit for one turn) — say 'continue' and I'll pick back up.";
+      // No step limit by default: a turn runs until the model answers
+      // without calling a tool, or the user presses Stop. Users who want a
+      // cap set rizo.limits.maxStepsPerTurn (0 = no limit).
+      const limits = vscode.workspace.getConfiguration('rizo.limits');
+      const maxSteps = Math.max(0, Math.floor(Number(limits.get<number>('maxStepsPerTurn', 0)) || 0));
+      const maxOutputTokens = Math.max(0, Math.floor(Number(limits.get<number>('maxOutputTokens', 0)) || 0));
+      let finalReply = `I stopped after ${maxSteps} steps (your rizo.limits.maxStepsPerTurn setting) — say 'continue' and I'll pick back up.`;
       const totalUsage = emptyUsage();
 
       // Struggle evidence for auto-escalation below — three cheap,
@@ -763,7 +766,7 @@ export class ChatPanel {
       // never shows a value that turns out wrong.
       this.post({ type: 'turnModel', turnId, model });
 
-      for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      for (let step = 0; maxSteps === 0 || step < maxSteps; step++) {
         if (signal.aborted) break;
 
         const { model: usedModel, message, usage, finishReason } = await this.callModel(apiKey, provider, model, taskType, messages, hasImage, enabledTools, {
@@ -772,6 +775,9 @@ export class ChatPanel {
           // and possibly rejected; callWithFallback never forwards it
           // regardless.
           reasoningEffort: supportsReasoning(provider, model) ? effort : undefined,
+          // Each model's full maximum reply length (or the user's cap).
+          maxTokens: maxOutputTokens || undefined,
+          maxTokensFor: (m) => getMaxOutputTokens(m),
           onDelta: (chunk) => this.post({ type: 'textDelta', turnId, text: chunk }),
           // Clears partial streamed text before the next model's attempt,
           // so the two don't visually run together.

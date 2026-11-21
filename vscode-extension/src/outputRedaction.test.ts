@@ -65,4 +65,80 @@ describe('redactSecrets', () => {
     expect(result).toContain('OPENROUTER_API_KEY=[REDACTED]');
     expect(result).toContain('AWS_KEY=[REDACTED]');
   });
+
+  it('redacts labelled secrets in JSON, YAML and quoted config', () => {
+    expect(redactSecrets('{"api_key": "abcdef123456"}')).toBe('{"api_key": [REDACTED]}');
+    expect(redactSecrets("password: 'p@ssw0rd!xyz'")).toBe('password: [REDACTED]');
+    expect(redactSecrets('client_secret: s3cr3t-value')).toBe('client_secret: [REDACTED]');
+  });
+
+  it('redacts passwords containing symbols in full', () => {
+    expect(redactSecrets('PASSWORD=p@ssw0rd!xyz')).toBe('PASSWORD=[REDACTED]');
+    expect(redactSecrets('DB_PASSWORD=hunter2hunter2!@#')).toBe('DB_PASSWORD=[REDACTED]');
+    expect(redactSecrets('DB_PASS=short1')).toBe('DB_PASS=[REDACTED]');
+  });
+
+  it('redacts more labels', () => {
+    for (const label of ['PRIVATE_KEY', 'ACCESS_KEY', 'CREDENTIALS', 'APIKEY', 'PASSPHRASE']) {
+      expect(redactSecrets(`${label}=zxcvbnm123`)).toBe(`${label}=[REDACTED]`);
+    }
+  });
+
+  it('redacts token formats that need no label', () => {
+    const cases = [
+      'github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ',
+      'sk-proj-abc_DEF-123456789012345678901234',
+      'sk-svcacct-abcdefghijklmnopqrstuvwx',
+      'sk_live_' + 'a'.repeat(24),
+      'rk_test_' + 'b'.repeat(24),
+      'xoxb-1234567890-abcdefghij',
+      'AIza' + 'c'.repeat(35),
+      'ASIAABCDEFGHIJKLMNOP',
+      'hf_' + 'd'.repeat(34),
+      'npm_' + 'e'.repeat(36),
+      'glpat-' + 'f'.repeat(20),
+    ];
+    for (const token of cases) {
+      expect(redactSecrets(`value ${token} end`)).toBe('value [REDACTED] end');
+    }
+  });
+
+  it('redacts all of an Anthropic key, including after underscores', () => {
+    expect(redactSecrets('sk-ant-api03-AAAA_BBBB-CCCC_DDDD-EEEE')).toBe('[REDACTED]');
+  });
+
+  it('redacts credentials inside URLs but keeps the rest of the URL', () => {
+    expect(redactSecrets('DATABASE_URL=postgres://app:hunter2@db.internal:5432/prod')).toBe(
+      'DATABASE_URL=postgres://app:[REDACTED]@db.internal:5432/prod',
+    );
+    expect(redactSecrets('origin\thttps://me:ghtoken123@github.com/me/repo.git (fetch)')).toBe(
+      'origin\thttps://me:[REDACTED]@github.com/me/repo.git (fetch)',
+    );
+    expect(redactSecrets('see https://github.com:443/me/repo')).toBe('see https://github.com:443/me/repo');
+  });
+
+  it('redacts Basic auth headers', () => {
+    expect(redactSecrets('Authorization: Basic dXNlcjpwYXNzd29yZA==')).toBe('Authorization: Basic [REDACTED]');
+  });
+
+  it('redacts a private key block even without its END line, and other key types', () => {
+    expect(redactSecrets('before\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\nAAAA')).toBe('before\n[REDACTED]');
+    expect(redactSecrets('-----BEGIN ENCRYPTED PRIVATE KEY-----\nabc\n-----END ENCRYPTED PRIVATE KEY-----\nok')).toBe('[REDACTED]\nok');
+    expect(redactSecrets('-----BEGIN PGP PRIVATE KEY BLOCK-----\nabc\n-----END PGP PRIVATE KEY BLOCK-----')).toBe('[REDACTED]');
+  });
+
+  it('leaves numbers, booleans and code references visible', () => {
+    for (const text of [
+      '"prompt_tokens": 512',
+      'max_tokens=8192',
+      'TOKEN_EXPIRY=true',
+      'src/auth.ts:12:  const token = getToken();',
+      'src/api.ts:40:  token: req.headers.authorization,',
+      'password=$DB_PASS',
+      'secret: ${SECRET_NAME}',
+    ]) {
+      expect(redactSecrets(text)).toBe(text);
+    }
+  });
 });
+

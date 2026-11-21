@@ -5,6 +5,11 @@
 import { describe, expect, it } from 'vitest';
 import { redactSecrets } from './outputRedaction';
 
+// Fake AWS key IDs are assembled at runtime so the source never contains
+// a key-shaped literal that secret scanners would report as a leak.
+const FAKE_AKIA = 'AKIA' + 'ABCDEFGHIJKLMNOP';
+const FAKE_ASIA = 'ASIA' + 'ABCDEFGHIJKLMNOP';
+
 describe('redactSecrets', () => {
   it('leaves ordinary command output untouched', () => {
     const text = 'total 24\ndrwxr-xr-x  5 user  staff  160 Aug 19 12:00 src';
@@ -26,7 +31,7 @@ describe('redactSecrets', () => {
   });
 
   it('redacts an AWS access key ID by its fixed shape, no label needed', () => {
-    expect(redactSecrets('AKIAABCDEFGHIJKLMNOP')).toBe('[REDACTED]');
+    expect(redactSecrets(FAKE_AKIA)).toBe('[REDACTED]');
   });
 
   it('redacts a labeled AWS secret access key but keeps the label', () => {
@@ -58,7 +63,7 @@ describe('redactSecrets', () => {
   });
 
   it('redacts multiple distinct secrets in the same blob', () => {
-    const text = 'OPENROUTER_API_KEY=sk-or-v1-abcdef0123456789abcdef0123456789\nAWS_KEY=AKIAABCDEFGHIJKLMNOP';
+    const text = 'OPENROUTER_API_KEY=sk-or-v1-abcdef0123456789abcdef0123456789\nAWS_KEY=' + FAKE_AKIA + '';
     const result = redactSecrets(text);
     expect(result).not.toContain('sk-or-v1-');
     expect(result).not.toContain('AKIA');
@@ -93,7 +98,7 @@ describe('redactSecrets', () => {
       'rk_test_' + 'b'.repeat(24),
       'xoxb-1234567890-abcdefghij',
       'AIza' + 'c'.repeat(35),
-      'ASIAABCDEFGHIJKLMNOP',
+      FAKE_ASIA,
       'hf_' + 'd'.repeat(34),
       'npm_' + 'e'.repeat(36),
       'glpat-' + 'f'.repeat(20),

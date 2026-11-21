@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-S37XL7PTJH"></script>
+<script src="ga-init.js"></script>
+
+<title>Rizo Lang: a secure, simple, full-stack web language</title>
+<meta name="description" content="Rizo Lang compiles .rz files to a PostgreSQL schema, TypeScript types and a Node.js server. No raw SQL, passwords hashed and never returned, login and ownership checks in the syntax, and errors that say exactly how to fix them.">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="canonical" href="https://rizobot.com/lang">
+
+<meta property="og:title" content="Rizo Lang: a secure, simple, full-stack web language">
+<meta property="og:description" content="A web language where the common security mistakes can't be written. Compiles to PostgreSQL and TypeScript.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://rizobot.com/lang">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/">
+      <img src="favicon.png" alt="">
+      Rizo
+    </a>
+    <div class="nav-links">
+      <a href="/" data-ga-event="nav_link" data-ga-label="lang_extension">Extension</a>
+      <a href="/lang" class="active" aria-current="page" data-ga-event="nav_link" data-ga-label="lang_lang">Rizo Lang</a>
+      <a href="#security" data-ga-event="nav_link" data-ga-label="lang_security">Security</a>
+      <a href="#start" data-ga-event="nav_link" data-ga-label="lang_start">Get started</a>
+      <a href="https://github.com/chaitanyaaggarwal9/rizolang" data-ga-event="github_click" data-ga-label="lang_nav">GitHub</a>
+    </div>
+    <div class="nav-cta">
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" type="button">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </button>
+      <a class="btn btn-primary btn-sm" href="https://www.npmjs.com/package/rizolang" data-ga-event="lang_npm_click" data-ga-label="nav">npm</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="container">
+    <div class="lang-grid">
+      <div class="hero-copy">
+        <span class="eyebrow">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4l10 8-10 8V4z"/></svg>
+          Rizo Lang · Compiles to PostgreSQL + TypeScript
+        </span>
+        <h1>The common web security mistakes can't be written.</h1>
+        <p class="hero-sub">Rizo Lang is a small, strict language for web backends. You describe your models, login and endpoints in one <code>.rz</code> file, and the compiler generates the database schema, the types and a Node.js server. There's no raw SQL, passwords are hashed and never returned, and every endpoint has to say who may call it.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#start" data-ga-event="lang_cta" data-ga-label="hero_start">Get started</a>
+          <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizolang" data-ga-event="github_click" data-ga-label="lang_hero">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.57.11.78-.25.78-.55v-2.17c-3.2.7-3.88-1.36-3.88-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.64 1.59.24 2.76.12 3.05.74.8 1.18 1.82 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.79.55A10.52 10.52 0 0 0 23.5 12c0-6.27-5.23-11.5-11.5-11.5Z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="install-cmd">
+          <code>npx rizolang build app.rz</code>
+          <button class="copy-btn" type="button" aria-label="Copy build command" data-copy="npx rizolang build app.rz" data-copy-event="lang_copy_build_command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <p class="status-note">Early development (v0.3). Expect the language to change before 1.0.</p>
+      </div>
+
+      <pre class="code-block" aria-label="Example Rizo Lang file: a small blog"><code><span class="file">app.rz</span><span class="cm">// a small blog</span>
+<span class="kw">auth</span> User <span class="kw">by</span> email
+
+<span class="kw">model</span> User {
+  email: <span class="ty">Email</span> <span class="kw">unique private</span>
+  password: <span class="ty">Password</span> <span class="kw">min</span> 12
+  name: <span class="ty">Text</span> <span class="kw">max</span> 100
+}
+
+<span class="kw">model</span> Post {
+  author: <span class="ty">User</span>
+  title: <span class="ty">Text</span> <span class="kw">min</span> 1 <span class="kw">max</span> 200
+  body: <span class="ty">Text</span>
+  published: <span class="ty">Bool</span>
+}
+
+<span class="kw">api</span> GET /posts -&gt; <span class="kw">list</span> Post.public {
+  <span class="kw">public</span>
+  <span class="kw">return</span> db.Post.list(published = true, order title, limit 20)
+}
+
+<span class="kw">api</span> PATCH /posts/:id -&gt; Post.public {
+  <span class="kw">requires login</span>
+  <span class="kw">requires owner</span> author
+  <span class="kw">return</span> db.Post.update(id, body)
+}</code></pre>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Why</span>
+      <h2>Designed so the mistakes don't compile</h2>
+      <p>Most web security bugs are ordinary mistakes: a query built from text, a password returned in a response, an endpoint that forgot to check who is calling, a user editing someone else's data. Rizo Lang doesn't just warn about them. It has no way to write them.</p>
+    </div>
+    <div class="grid-2 reveal">
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <h3>Secure by default</h3>
+        <p>Passwords are hashed and never returned. Input is validated automatically. Login and ownership checks are part of the syntax, not something to remember.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+        <h3>No raw SQL</h3>
+        <p>Every query is generated at compile time and parameterized. The generated routes file shows the full SQL for each endpoint, so you can review exactly what runs.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <h3>Small and strict</h3>
+        <p>Static types everywhere, and the whole language fits in a short spec. Every error gives the file, line and column, and says how to fix it.</p>
+      </div>
+      <div class="feature-card">
+        <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21 8 13.5 2.5 9h7z"/></svg>
+        <h3>Built for AI</h3>
+        <p>The compact spec is under 1,500 words and works as a system prompt, so even small models can write correct Rizo Lang. Each error's <code>fix:</code> line is something a model can apply directly.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="output">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Output</span>
+      <h2>Compiles to technology you already use</h2>
+      <p><code>rizolang build app.rz</code> writes everything to <code>dist/</code>. The only runtime is a small, readable library copied into your project, and the only dependency is the <code>pg</code> driver.</p>
+    </div>
+    <div class="table-wrap reveal">
+      <table class="wrap">
+        <thead>
+          <tr><th>File</th><th>What it is</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>schema.sql</td><td>PostgreSQL tables with NOT NULL, UNIQUE, CHECK and foreign-key constraints, plus the sessions table</td></tr>
+          <tr><td>types.ts</td><td>TypeScript types: <code>User</code> (server-only), <code>UserPublic</code> (safe to return) and <code>UserInput</code> (what clients send)</td></tr>
+          <tr><td>routes.ts</td><td>Every endpoint as plain data, with its SQL written out in full</td></tr>
+          <tr><td>server.ts</td><td>The entry point: <code>node server.ts</code></td></tr>
+          <tr><td>runtime/</td><td>Validation, sessions, password hashing and the HTTP server</td></tr>
+          <tr><td>migrate.ts</td><td>Applies your project's migrations to the database</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="section-kicker">Security model</span>
+      <h2>Every guarantee is tested against a real server</h2>
+      <p>The end-to-end suite attacks a generated server backed by PostgreSQL. Found a hole? <a href="https://github.com/chaitanyaaggarwal9/rizolang/security/advisories/new">Report it privately</a>.</p>
+    </div>
+    <div class="table-wrap reveal">
+      <table class="wrap">
+        <thead>
+          <tr><th>Threat</th><th>How Rizo Lang prevents it</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>SQL injection</td><td>All SQL is written at compile time. Request data only fills <code>$1, $2, …</code> parameters.</td></tr>
+          <tr><td>Leaking passwords</td><td>Password and <code>private</code> fields are never selected for responses.</td></tr>
+          <tr><td>Weak passwords</td><td>scrypt with a random salt, and a minimum length you can only raise.</td></tr>
+          <tr><td>Missing login checks</td><td>Every endpoint must declare <code>public</code> or <code>requires login</code>.</td></tr>
+          <tr><td>Editing others' data</td><td><code>requires owner</code> becomes part of the SQL <code>WHERE</code> clause. Owners are set from the session.</td></tr>
+          <tr><td>Mass assignment</td><td>Unknown body fields are rejected. Ownership links are never accepted from clients.</td></tr>
+          <tr><td>Privilege escalation</td><td>Roles are never accepted from requests, and admins can't assign roles to themselves.</td></tr>
+          <tr><td>CSRF</td><td>SameSite=Lax cookies, JSON-only bodies and an Origin check on every write.</td></tr>
+          <tr><td>Brute force</td><td>Rate limits on login and signup, and identical responses for unknown accounts and wrong passwords.</td></tr>
+          <tr><td>Accidental data loss</td><td>Migrations that would drop data are refused unless you pass <code>--allow-data-loss</code>.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="errors">
+  <div class="container lang-grid">
+    <div class="reveal">
+      <span class="section-kicker">Errors</span>
+      <h2>Errors that tell you the fix</h2>
+      <p class="table-note table-note-lead">Every error has a code, an exact location and a concrete fix. If a build has errors, no files are written.</p>
+    </div>
+    <pre class="code-block reveal" aria-label="Example compiler output with two errors"><code><span class="err">app.rz:14:5 error RZ0318:</span> Endpoint "GET /posts" does not say who may call it.
+  14 | api GET /posts -&gt; list Post.public {
+     |     ^^^
+  <span class="fix">fix:</span> Add `requires login` for logged-in users only,
+       or `public` if anyone may call it.
+
+<span class="err">app.rz:20:18 error RZ0326:</span> "Post.author" links to the auth
+model, so the server must set it.
+  20 |   return db.Post.create(body)
+     |                  ^^^^^^
+  <span class="fix">fix:</span> Write `db.Post.create(body, author = me)`.
+
+Build failed with 2 errors. No files were written.</code></pre>
+  </div>
+</section>
+
+<section id="start">
+  <div class="container byok-grid">
+    <div class="reveal">
+      <span class="section-kicker">Get started</span>
+      <h2>From one file to a running server</h2>
+      <div class="byok-steps mt-24">
+        <div class="byok-step">
+          <span class="num">01</span>
+          <p><strong>Write app.rz</strong>Models, login and endpoints, like the example at the top of this page.</p>
+        </div>
+        <div class="byok-step">
+          <span class="num">02</span>
+          <p><strong>npx rizolang build app.rz</strong>Compiles everything into <code>dist/</code>. Or add it to a project with <code>npm install --save-dev rizolang</code>.</p>
+        </div>
+        <div class="byok-step">
+          <span class="num">03</span>
+          <p><strong>cd dist &amp;&amp; npm install</strong>Installs <code>pg</code>, the only dependency.</p>
+        </div>
+        <div class="byok-step">
+          <span class="num">04</span>
+          <p><strong>node migrate.ts &amp;&amp; node server.ts</strong>With <code>DATABASE_URL</code> pointing at your PostgreSQL database.</p>
+        </div>
+      </div>
+    </div>
+    <div class="byok-promise reveal">
+      <h3>Requirements</h3>
+      <ul>
+        <li>Node.js 22.12+ to run the compiler. The generated server needs 22.18+; Node 24 LTS is recommended.</li>
+        <li>PostgreSQL 13+</li>
+        <li>The <a href="https://github.com/chaitanyaaggarwal9/rizolang/blob/main/docs/SPEC.md">full spec</a> and the <a href="https://github.com/chaitanyaaggarwal9/rizolang/blob/main/docs/SPEC-COMPACT.md">compact spec for AI models</a></li>
+        <li>Open source under the Apache License 2.0</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="cta-final">
+  <div class="container">
+    <div class="cta-band reveal">
+      <h2>Write the backend. Skip the security bugs.</h2>
+      <div class="cta-band-actions">
+        <a class="btn btn-primary" href="https://www.npmjs.com/package/rizolang" data-ga-event="lang_npm_click" data-ga-label="final_cta">Get it on npm</a>
+        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizolang" data-ga-event="github_click" data-ga-label="lang_final_cta">Read the source</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-brand">
+      <img src="assets/logo-word-light.png" alt="Rizo" class="logo-lockup logo-lockup-light">
+      <img src="assets/logo-word-dark.png" alt="Rizo" class="logo-lockup logo-lockup-dark">
+      <span class="footer-tagline">Rizo <em>Lang</em></span>
+    </div>
+    <div class="footer-inner">
+      <span>Apache License 2.0 · Rizo Lang</span>
+      <div class="footer-links">
+        <a href="/" data-ga-event="footer_link" data-ga-label="lang_extension">Rizo extension</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizolang" data-ga-event="github_click" data-ga-label="lang_footer">GitHub</a>
+        <a href="https://www.npmjs.com/package/rizolang" data-ga-event="lang_npm_click" data-ga-label="footer">npm</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizolang/blob/main/docs/SPEC.md" data-ga-event="footer_link" data-ga-label="lang_spec">Spec</a>
+        <a href="https://github.com/chaitanyaaggarwal9/rizolang/blob/main/CHANGELOG.md" data-ga-event="footer_link" data-ga-label="lang_changelog">Changelog</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

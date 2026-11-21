@@ -41,6 +41,7 @@
       <a href="#effort" data-ga-event="nav_link" data-ga-label="effort">Effort</a>
       <a href="#safety" data-ga-event="nav_link" data-ga-label="safety">Safety</a>
       <a href="#byok" data-ga-event="nav_link" data-ga-label="byok">BYOK</a>
+      <a href="/lang" data-ga-event="nav_link" data-ga-label="rizo_lang">Rizo Lang</a>
       <a href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="nav">GitHub</a>
     </div>
     <div class="nav-cta">
@@ -72,7 +73,7 @@
         </div>
         <div class="install-cmd">
           <code>code --install-extension ChaitanyaAggarwal.rizo</code>
-          <button class="copy-btn" id="copy-install" type="button" aria-label="Copy install command">
+          <button class="copy-btn" id="copy-install" type="button" aria-label="Copy install command" data-copy="code --install-extension ChaitanyaAggarwal.rizo" data-copy-event="copy_install_command">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           </button>
         </div>
@@ -308,6 +309,40 @@
   </div>
 </section>
 
+<section id="rizo-lang">
+  <div class="container lang-grid">
+    <div class="reveal">
+      <span class="section-kicker">Also from Rizo</span>
+      <h2>Rizo Lang: a web language with the security built in</h2>
+      <p class="table-note table-note-lead">Describe your models, login and endpoints in one <code>.rz</code> file. The compiler generates a PostgreSQL schema, TypeScript types and a Node.js server.</p>
+      <ul class="lang-points">
+        <li><strong>No raw SQL.</strong> Every query is generated and parameterized.</li>
+        <li><strong>No leaked passwords.</strong> They're hashed and never returned.</li>
+        <li><strong>No forgotten checks.</strong> Every endpoint says who may call it, and ownership is enforced in the query.</li>
+        <li><strong>Made for AI.</strong> The compact spec is a ready-made system prompt, and every error says how to fix it.</li>
+      </ul>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="/lang" data-ga-event="lang_cta" data-ga-label="home_section">Explore Rizo Lang</a>
+        <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizolang" data-ga-event="github_click" data-ga-label="home_lang_section">GitHub</a>
+        <a class="btn btn-ghost" href="https://www.npmjs.com/package/rizolang" data-ga-event="lang_npm_click" data-ga-label="home_section">npm</a>
+      </div>
+    </div>
+    <pre class="code-block reveal" aria-label="Example Rizo Lang endpoint"><code><span class="file">app.rz</span><span class="kw">model</span> Post {
+  author: <span class="ty">User</span>
+  title: <span class="ty">Text</span> <span class="kw">min</span> 1 <span class="kw">max</span> 200
+  body: <span class="ty">Text</span>
+}
+
+<span class="kw">api</span> PATCH /posts/:id -&gt; Post.public {
+  <span class="kw">requires login</span>
+  <span class="kw">requires owner</span> author
+  <span class="kw">return</span> db.Post.update(id, body)
+}
+
+<span class="cm">$ npx rizolang build app.rz</span></code></pre>
+  </div>
+</section>
+
 <section id="cta-final">
   <div class="container">
     <div class="cta-band reveal">
@@ -334,6 +369,7 @@
         <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/LICENSE" data-ga-event="footer_link" data-ga-label="license">License</a>
         <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md" data-ga-event="footer_link" data-ga-label="docs">Docs</a>
         <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues" data-ga-event="footer_link" data-ga-label="issues">Issues</a>
+        <a href="/lang" data-ga-event="footer_link" data-ga-label="rizo_lang">Rizo Lang</a>
         <a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="footer">Marketplace</a>
       </div>
     </div>

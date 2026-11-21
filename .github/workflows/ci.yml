@@ -49,6 +49,13 @@ jobs:
       # @types/vscode does not exceed engines.vscode.
       - name: Package .vsix
         run: npx vsce package --allow-missing-repository --out "$RUNNER_TEMP/rizo.vsix"
+      - name: Check the package contains the chat view
+        run: |
+          missing=0
+          for f in media/chat.html media/chat.css media/chat.js assets/mascot.png out/extension.js; do
+            unzip -l "$RUNNER_TEMP/rizo.vsix" | grep -q "extension/$f\$" || { echo "::error::$f is missing from the .vsix"; missing=1; }
+          done
+          exit $missing
       # The built extension, for installing and clicking through a PR by hand:
       # download it from the run's Artifacts, then
       #   code --install-extension rizo.vsix

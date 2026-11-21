@@ -9,6 +9,18 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Changed
+- The chat view's HTML, CSS and JavaScript moved out of `chatPanel.ts`
+  (where they were one 1,600-line TypeScript template string) into
+  `media/chat.html`, `media/chat.css` and `media/chat.js`. No visible
+  change. The script is now ordinary JavaScript, so the escaping bug
+  class that once broke the whole panel can't recur.
+
+### Security
+- The chat view's script nonce is generated with `crypto.randomBytes`
+  instead of `Math.random`, and the view can only load files from the
+  extension's `media/` and `assets/` folders.
+
 ## [0.5.0] - 2026-11-21
 
 A security release. Upgrading is recommended for everyone.

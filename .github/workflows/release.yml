@@ -75,11 +75,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Publishes the exact .vsix built above. Runs in the "marketplace"
-  # environment, which only v* tags can deploy to and which holds the
-  # Entra ID app's client and tenant IDs. No PAT exists anywhere: GitHub
-  # issues a short-lived OIDC token that Entra ID exchanges for an
-  # Azure DevOps token.
+  # Publishes the exact .vsix built above, with Visual Studio Marketplace
+  # Trusted Publishing: GitHub issues a short-lived OIDC token, the
+  # Marketplace exchanges it for a session token (valid up to 15 minutes)
+  # because a Trusted Publishing policy on the ChaitanyaAggarwal publisher
+  # names this repo, this workflow file and the "marketplace" environment.
+  # No PAT or other long-lived secret exists. The environment only accepts
+  # deployments from v*.*.* tags.
   publish:
     name: Publish to Marketplace
     needs: build
@@ -88,7 +90,7 @@ jobs:
     environment: marketplace
     permissions:
       contents: write # create the GitHub Release
-      id-token: write # request the OIDC token for azure/login
+      id-token: write # request the OIDC token for Trusted Publishing
     defaults:
       run:
         working-directory: vscode-extension
@@ -109,19 +111,12 @@ jobs:
           name: vsix
           path: vscode-extension
 
-      - name: Sign in to Entra ID with OIDC
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-
-      - name: Publish to VS Code Marketplace
+      - name: Publish to VS Code Marketplace (Trusted Publishing)
         env:
           VSIX: ${{ needs.build.outputs.vsix }}
         run: |
           sha256sum "$VSIX"
-          npx vsce publish --packagePath "$VSIX" --azure-credential
+          npx vsce publish --packagePath "$VSIX" --oidc
 
       - name: Attach the .vsix to a GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4

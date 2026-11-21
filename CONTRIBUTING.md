@@ -60,15 +60,20 @@ git push origin v0.2.0
    checks the tag matches `package.json`'s version and isn't already on
    the Marketplace, and packages the `.vsix`.
 2. **Publish to Marketplace** (the `marketplace` environment, which only
-   `v*` tags can deploy to): signs in to Entra ID with GitHub OIDC,
-   publishes that exact `.vsix` with `vsce publish --azure-credential`,
+   `v*` tags can deploy to): publishes that exact `.vsix` with
+   `vsce publish --oidc` (Visual Studio Marketplace Trusted Publishing)
    and attaches it to a GitHub Release.
 
-There is no Personal Access Token. The `marketplace` environment holds
-two variables, `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. They identify an
-Entra ID app that has a federated credential for
-`repo:chaitanyaaggarwal9/rizo-bot:environment:marketplace` and is a
-member of the `ChaitanyaAggarwal` Marketplace publisher.
+There is no Personal Access Token or other stored secret. A Trusted
+Publishing policy on the `ChaitanyaAggarwal` publisher
+(marketplace.visualstudio.com/manage → publisher → Trusted Publishing)
+allows owner `chaitanyaaggarwal9`, repository `rizo-bot`, workflow
+`release.yml` and environment `marketplace`. If you rename the workflow
+file or the environment, update that policy too.
+
+**Testing a pull request by hand:** every CI run uploads the built
+extension as the `rizo-vsix` artifact. Download it from the run's
+Summary page, unzip it, then `code --install-extension rizo.vsix`.
 
 To package a `.vsix` locally without publishing (e.g. to test an install
 before tagging a release):

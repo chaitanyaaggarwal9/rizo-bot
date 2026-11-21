@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import { ChatPanel } from './ui/chatPanel';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
 import { manageFolderAccess } from './ui/trustPrompts';
+import { connectAzure, disconnectAzure } from './ui/azureConnect';
 
 export function activate(context: vscode.ExtensionContext) {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
@@ -57,7 +58,19 @@ export function activate(context: vscode.ExtensionContext) {
     manageFolderAccess(context),
   );
 
+  // Your own Azure AI Foundry deployments, with your own key.
+  const connectAzureCmd = vscode.commands.registerCommand('rizo.connectAzure', async () => {
+    await connectAzure(context);
+    ChatPanel.currentPanel?.refreshProviders();
+  });
+  const disconnectAzureCmd = vscode.commands.registerCommand('rizo.disconnectAzure', async () => {
+    await disconnectAzure(context);
+    ChatPanel.currentPanel?.refreshProviders();
+  });
+
   context.subscriptions.push(
+    connectAzureCmd,
+    disconnectAzureCmd,
     openChat,
     changeApiKey,
     reopenClosedSession,

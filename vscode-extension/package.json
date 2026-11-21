@@ -53,6 +53,14 @@
         "title": "Rizo: Change OpenRouter API Key"
       },
       {
+        "command": "rizo.connectAzure",
+        "title": "Rizo: Connect Azure AI Foundry"
+      },
+      {
+        "command": "rizo.disconnectAzure",
+        "title": "Rizo: Disconnect Azure AI Foundry"
+      },
+      {
         "command": "rizo.reopenClosedSession",
         "title": "Rizo: Reopen Closed Session"
       },

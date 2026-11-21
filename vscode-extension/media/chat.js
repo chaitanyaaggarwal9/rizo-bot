@@ -6,7 +6,8 @@
 // extension only through acquireVsCodeApi().postMessage.
     const vscode = acquireVsCodeApi();
     // Provider catalog (providers.ts, trimmed) is embedded by getHtml() as JSON.
-    const PROVIDER_CATALOG = JSON.parse(document.getElementById('provider-catalog').textContent);
+    // Replaced by 'catalogUpdate' after connecting your own Azure deployments.
+    let PROVIDER_CATALOG = JSON.parse(document.getElementById('provider-catalog').textContent);
     const SAFE_IMAGE_DATA_URL = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+$/i;
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('inputBox');
@@ -575,7 +576,12 @@
         btn.textContent = p.label;
         const tag = document.createElement('span');
         tag.className = 'pTagline';
-        tag.textContent = p.id === 'free' ? 'No cost, best-effort quality' : p.variants[0].label + ' to start';
+        tag.textContent =
+          p.id === 'free'
+            ? 'No cost, best-effort quality'
+            : p.connectable
+              ? (p.variants.length ? 'Your deployments, your key' : 'Connect your Azure resource')
+              : p.variants[0].label + ' to start';
         btn.appendChild(tag);
         btn.addEventListener('click', () => vscode.postMessage({ type: 'selectProvider', provider: p.id }));
         providerGridEl.appendChild(btn);
@@ -976,6 +982,15 @@
         renderEffortSwitch(currentProvider, currentModel, currentEffort);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
+        return;
+      }
+      if (msg.type === 'catalogUpdate') {
+        if (Array.isArray(msg.catalog)) {
+          PROVIDER_CATALOG = msg.catalog.filter((p) => p && typeof p.id === 'string' && typeof p.label === 'string' && Array.isArray(p.variants));
+          renderProviderGrid();
+          renderModelSwitch(currentProvider, currentModel);
+          renderEffortSwitch(currentProvider, currentModel, currentEffort);
+        }
         return;
       }
       if (msg.type === 'moreModels') {

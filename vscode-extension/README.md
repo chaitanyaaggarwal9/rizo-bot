@@ -40,6 +40,10 @@ See [ONBOARDING.md](https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vsc
 
 Short version: install → `Cmd+Shift+P` / `Ctrl+Shift+P` → **"Rizo: Open Chat"** → paste your OpenRouter key when prompted → pick a provider for the chat.
 
+## Use your own Azure AI Foundry deployments
+
+Already pay for models on Azure? Run **Rizo: Connect Azure AI Foundry** from the Command Palette, enter your resource endpoint (for example `https://my-resource.openai.azure.com`) and API key, and pick your deployments. Then choose **Azure AI Foundry** when you start a chat. Requests go straight to your Azure resource with your key (stored in your OS keychain), and Azure bills you directly. Deployments need to support tool calling.
+
 ## License
 
 Apache License 2.0, modified by the [Commons Clause](https://commonsclause.com).

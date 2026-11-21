@@ -44,7 +44,13 @@ Development Host (F5). -->
 -   [ ] `npm test` is clean (no failing unit tests)
 -   [ ] I checked whether this invalidates anything README.md, CHANGELOG.md,
         or CONTRIBUTING.md currently claims, and updated what's now wrong
+-   [ ] No new dependencies, or the new dependency was agreed in an issue,
+        is pinned to an exact version and was published at least 14 days ago
+-   [ ] Anything touching file tools, terminal commands, approvals, the API
+        key or the webview has a test or a written manual check
 -   [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md)
+
+<!-- Security vulnerabilities must not be reported in pull requests. See SECURITY.md. -->
 
 ### Screenshots
 

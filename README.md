@@ -263,7 +263,13 @@ dependency updates.
 
 Bug reports and feature requests: use the issue templates. Pull
 requests: see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and
-open an issue first for anything beyond a small fix.
+open an issue first for anything beyond a small fix. Everyone taking
+part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Please report vulnerabilities privately, never in a public issue. See
+[SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -5,7 +5,7 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 ## Features
 
 **Chat**
-- **Pick a provider, once per chat** — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free. That choice locks in for the chat's whole life; the in-chat switcher only ever offers that same company's own variants (e.g. Claude's Haiku 4.5 / Sonnet 5 / Opus 5), never a different provider — one tool-calling convention and context window for the life of the conversation, want a different company, start a new chat
+- **Pick a provider, once per chat** — Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM, or Free. That choice locks in for the chat's whole life; the in-chat switcher only ever offers that same company's own variants (e.g. Claude's Haiku 4.5 / Sonnet 5 / Opus 5), never a different provider — one tool-calling convention and context window for the life of the conversation, want a different company, start a new chat
 - **Effort dial** — a second pill next to the model switcher (Low / Medium / High, adjustable any time) controls how hard the current model thinks, independent of which model's answering — maps to OpenRouter's unified `reasoning.effort` field
 - **Usage you can see** — a running today's-tokens / this-month's-cost readout at the top of the panel, aggregated across every chat and every provider, resetting itself automatically at midnight and on the 1st; per-chat totals sit under the composer too
 - **Live turn status** — while a turn's running, see which variant is actually answering, what it's doing right now, elapsed time, and a running token count, not just a static "Thinking..." bubble
@@ -19,7 +19,7 @@ An AI coding assistant for VS Code — chat, file edits, and terminal/git comman
 - **Smart Starting Variant** — a chat's first message can start on a stronger variant than the cheapest default when it actually calls for it (a real bug report, a big refactor ask), based on a cheap heuristic, not an extra model call — and never overrides a variant you picked yourself
 - **Effort auto-suggestion** — the same heuristic also picks Effort per turn, backing off permanently the moment you set it yourself
 - **Auto-escalation** — a turn that visibly struggles (hits its step limit, keeps failing the same tool call, or stalls across turns without making progress) offers a one-click "Retry with a stronger variant" — still within the same company, only when a stronger one exists
-- **Free, your way** — Auto by default, or pick one of 5 specific free models yourself (from whichever companies actually publish one — no free Claude/Gemini exists) with its own Effort control where it supports one
+- **Free, your way** — Auto by default, or pick a specific free model yourself (from whichever companies actually publish one — no free Claude/Gemini exists) with its own Effort control where it supports one
 
 **Safety & control**
 - **File edits with approval** — every write shows a native diff view before anything touches disk; nothing happens without your click

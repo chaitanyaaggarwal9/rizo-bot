@@ -3,7 +3,7 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 import { ToolDefinition } from '../tools/tools';
-import { FALLBACK_MAX_OUTPUT_TOKENS, MIN_USEFUL_OUTPUT_TOKENS, parseAffordableTokens } from './modelLimits';
+import { FALLBACK_MAX_OUTPUT_TOKENS, MIN_USEFUL_OUTPUT_TOKENS, parseAffordableTokens } from './modelCatalog';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Replies are no longer capped at a flat size: each request asks for the
@@ -53,6 +53,8 @@ export interface Usage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  // Exact USD cost OpenRouter charged for the request, when reported.
+  cost?: number;
 }
 
 export interface ChatResult {
@@ -72,6 +74,7 @@ function extractUsage(data: any): Usage {
     promptTokens: u.prompt_tokens || 0,
     completionTokens: u.completion_tokens || 0,
     totalTokens: u.total_tokens || 0,
+    ...(typeof u.cost === 'number' && Number.isFinite(u.cost) ? { cost: u.cost } : {}),
   };
 }
 
@@ -149,6 +152,8 @@ async function requestCompletion(
     max_tokens: maxTokens,
     stream: true,
     stream_options: { include_usage: true },
+    // Asks OpenRouter to include the exact cost in the usage it reports.
+    usage: { include: true },
   };
   if (tools && tools.length) body.tools = tools;
   if (options?.reasoningEffort) body.reasoning = { effort: options.reasoningEffort };

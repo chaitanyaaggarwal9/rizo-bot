@@ -105,7 +105,7 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
   z-index: 10;
 }
-#modelDropdown { min-width: 220px; }
+#modelDropdown { min-width: 220px; max-height: 60vh; overflow-y: auto; }
 #modelDropdown.open, #effortDropdown.open { display: block; }
 
 /* Overflow menu — the one "&#8942;" button in threadBar, same
@@ -601,4 +601,15 @@ body.focusMode .transcript { display: none; }
   margin-top: 8px;
   color: var(--vscode-errorForeground, #f14c4c);
   white-space: pre-wrap;
+}
+
+/* "More <Provider> models" section of the model switcher (live catalog). */
+.moreModelsHeading {
+  margin: 6px 8px 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
 }

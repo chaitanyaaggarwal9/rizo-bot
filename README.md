@@ -4,7 +4,7 @@
 
 **A bring-your-own-key AI coding assistant for VS Code.**
 
-Pick Claude, Gemini, OpenAI, DeepSeek, Kimi or a free model for each chat through your own OpenRouter key. Rizo chats, edits files and runs terminal and git commands, with a diff before every write, a warning on every destructive command and the cost of every turn in view.
+Pick Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM or a free model for each chat through your own OpenRouter key. Rizo chats, edits files and runs terminal and git commands, with a diff before every write, a warning on every destructive command and the cost of every turn in view.
 
 [![CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml)
@@ -12,7 +12,7 @@ Pick Claude, Gemini, OpenAI, DeepSeek, Kimi or a free model for each chat throug
 
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo)
 ![BYOK](https://img.shields.io/badge/BYOK-OpenRouter-0ea5e9)
-![Providers](https://img.shields.io/badge/providers-6-8b5cf6)
+![Providers](https://img.shields.io/badge/providers-10-8b5cf6)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Source available](https://img.shields.io/badge/source-available-10b981)
 
@@ -29,8 +29,8 @@ across companies in ways that lose context when the model changes
 mid-task. Rizo's core bet is different: **cost-efficient routing that
 never sacrifices continuity.**
 
-- **Company-locked, not model-locked.** Pick Claude, Gemini, OpenAI,
-  DeepSeek, Kimi, or Free once per chat. Every switch inside that chat
+- **Company-locked, not model-locked.** Pick Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM,
+  or Free once per chat. Every switch inside that chat
   stays within the same company's own variants — same tool-calling
   convention, same context window, same pricing model — never a
   different provider mid-task

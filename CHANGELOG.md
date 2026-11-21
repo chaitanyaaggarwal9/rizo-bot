@@ -10,6 +10,20 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **Current models.** Every provider's tiers are up to date: Claude Haiku
+  5.5 / Sonnet 5.5 / Fable 5.2, OpenAI GPT-6 Luna / GPT-6.2 Sol / GPT-6.2
+  Astra, Gemini 3.5 Flash Lite / 3.8 Flash / Gemini 4 Neon, DeepSeek V4.1
+  Flash / V4 Pro / V4 Pro 0813, Kimi K2.6 / K2.7 Code / K3.1 Pro, and
+  current Free models (several of the old Free picks no longer existed).
+- **Four new providers:** Grok (xAI), Qwen, Mistral and Z.ai GLM.
+- **"More models" in the model switcher:** every other current model from
+  the chat's company that supports tools, with its price, from
+  OpenRouter's live model list. New releases are usable without waiting
+  for a Rizo update, and a chat still never switches company.
+- **Exact costs.** Rizo asks OpenRouter for what each request actually
+  cost and shows that, instead of estimating from a price table that
+  went stale (Haiku was under-reported 4x). Live catalog prices are the
+  fallback.
 - **No more reply limits.** A reply is no longer cut off after 30 tool
   steps: it runs until the model is done or you press **Stop**. Each
   model can also write its full maximum reply length (read from
@@ -21,6 +35,10 @@ an honest gap. Everything before this point lives in git history instead.
   and `rizo.limits.maxOutputTokens` (both `0` = no limit, the default).
 
 ### Fixed
+- A chat whose model has been retired falls back to its provider's
+  default; a chat on an older model that still exists keeps it.
+- Turns whose input was billed but produced no output tokens are now
+  counted in the chat's cost.
 - The **Effort** setting now applies to Free models too (it was silently
   dropped for them).
 - **Stop** now really stops: nothing from a stopped turn is saved (it used

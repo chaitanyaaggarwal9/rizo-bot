@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callOpenRouter, callWithFallback } from './openrouter';
-import { FALLBACK_MAX_OUTPUT_TOKENS } from './modelLimits';
+import { FALLBACK_MAX_OUTPUT_TOKENS } from './modelCatalog';
 
 function okStream(text = 'done'): Response {
   const body = [
@@ -86,3 +86,20 @@ describe('callWithFallback', () => {
     expect(body.max_tokens).toBe(5000);
   });
 });
+
+describe('cost reporting', () => {
+  it('asks OpenRouter for the cost and returns it with the usage', async () => {
+    const body = [
+      'data: ' + JSON.stringify({ model: 'm', choices: [{ delta: { content: 'hi' } }] }),
+      '',
+      'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.00042 } }),
+      '',
+    ].map((l) => l + '\n').join('');
+    const f = vi.fn().mockResolvedValue(new Response(new TextEncoder().encode(body), { status: 200 }));
+    vi.stubGlobal('fetch', f);
+    const r = await callOpenRouter('k', 'a/model', msgs);
+    expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string).usage).toEqual({ include: true });
+    expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15, cost: 0.00042 });
+  });
+});
+

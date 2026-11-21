@@ -20,6 +20,9 @@ export interface StoredMessage {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  // USD this turn cost: OpenRouter's reported cost when available, else an
+  // estimate. Older messages don't have it and are estimated when summed.
+  cost?: number;
   // Set on assistant turns only — whether this turn called any tool, and
   // whether any mutated something (write_file/edit_file) vs just reading.
   // handleSend compares against the previous stored turn to catch
@@ -47,8 +50,9 @@ export function sumThreadTokens(messages: StoredMessage[]): number {
 // messages contribute $0 automatically (see pricing.ts).
 export function sumThreadCost(messages: StoredMessage[]): number {
   return messages.reduce((sum, m) => {
-    if (!m.model || !m.promptTokens || !m.completionTokens) return sum;
-    return sum + estimateCost(m.model, m.promptTokens, m.completionTokens);
+    if (typeof m.cost === 'number') return sum + m.cost;
+    if (!m.model || (!m.promptTokens && !m.completionTokens)) return sum;
+    return sum + estimateCost(m.model, m.promptTokens || 0, m.completionTokens || 0);
   }, 0);
 }
 

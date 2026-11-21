@@ -23,4 +23,18 @@ describe('freeChainForTaskType', () => {
     expect(freeChainForTaskType('coding').length).toBeGreaterThan(0);
     expect(freeChainForTaskType('general').length).toBeGreaterThan(0);
   });
+
+  it('with the live catalog, drops models that are gone or lost tools, and tops up with the newest free ones', () => {
+    const catalog = new Map(
+      [
+        { id: FREE_MODELS.coding[0], tools: true, created: 100 },
+        { id: FREE_MODELS.coding[1], tools: false, created: 100 },
+        { id: 'new/shiny:free', tools: true, created: 300 },
+        { id: 'older/one:free', tools: true, created: 200 },
+        { id: 'paid/model', tools: true, created: 999 },
+      ].map((m) => [m.id, m]),
+    );
+    expect(freeChainForTaskType('coding', catalog)).toEqual([FREE_MODELS.coding[0], 'new/shiny:free', 'older/one:free', 'openrouter/free']);
+  });
 });
+

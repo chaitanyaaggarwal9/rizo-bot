@@ -11,12 +11,7 @@
      install button) so they show up as their own events instead of
      generic outbound clicks. -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-S37XL7PTJH"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-S37XL7PTJH');
-</script>
+<script src="ga-init.js"></script>
 
 <title>Rizo: BYOK AI coding assistant for VS Code</title>
 <meta name="description" content="Rizo lets you pick a provider — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — for each chat, switch cost tier within it any time, and dial reasoning effort up or down per turn, all through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
@@ -191,8 +186,8 @@
     <div class="reveal">
       <span class="section-kicker">Effort</span>
       <h2>Same model, different depth</h2>
-      <p class="table-note" style="margin-top:14px; font-size:0.95rem;">A second pill next to the model switcher, adjustable any time, no restart.</p>
-      <div class="toggle-mock" style="margin-top:24px;">
+      <p class="table-note table-note-lead">A second pill next to the model switcher, adjustable any time, no restart.</p>
+      <div class="toggle-mock mt-24">
         <span>Low</span>
         <span class="active">Medium</span>
         <span>High</span>
@@ -236,15 +231,15 @@
     <ul class="safety-list reveal">
       <li>
         <span class="tag">Diff first</span>
-        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Every write shows a real diff</strong><span style="color:var(--text-dim); font-size:0.95rem;">VS Code's native diff view, before a single byte touches disk.</span></div>
+        <div><strong class="safety-title">Every write shows a real diff</strong><span class="safety-desc">VS Code's native diff view, before a single byte touches disk.</span></div>
       </li>
       <li class="destructive">
         <span class="tag">Always asks</span>
-        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">Destructive commands never get a bypass</strong><span style="color:var(--text-dim); font-size:0.95rem;"><code>git push --force</code>, <code>reset --hard</code>, <code>branch -D</code>, <code>rm -rf</code> and its long-form/colon-refspec equivalents get an elevated warning every single time. "Always Allow" is deliberately not offered for these.</span></div>
+        <div><strong class="safety-title">Destructive commands never get a bypass</strong><span class="safety-desc"><code>git push --force</code>, <code>reset --hard</code>, <code>branch -D</code>, <code>rm -rf</code> and its long-form/colon-refspec equivalents get an elevated warning every single time. "Always Allow" is deliberately not offered for these.</span></div>
       </li>
       <li>
         <span class="tag always">Scoped</span>
-        <div><strong style="font-family:var(--font-mono); display:block; margin-bottom:2px;">"Always Allow" is per-workspace</strong><span style="color:var(--text-dim); font-size:0.95rem;">Trusting one project never carries over into another. VS Code scopes it for us.</span></div>
+        <div><strong class="safety-title">"Always Allow" is per-workspace</strong><span class="safety-desc">Trusting one project never carries over into another. VS Code scopes it for us.</span></div>
       </li>
     </ul>
   </div>
@@ -255,7 +250,7 @@
     <div class="reveal">
       <span class="section-kicker">BYOK</span>
       <h2>Bring your own key</h2>
-      <div class="byok-steps" style="margin-top:24px;">
+      <div class="byok-steps mt-24">
         <div class="byok-step">
           <span class="num">01</span>
           <p><strong>Sign up at openrouter.ai</strong>Free account, add credit or use the free-tier models with none.</p>

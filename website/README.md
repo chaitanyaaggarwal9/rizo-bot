@@ -41,6 +41,18 @@ Then open `http://localhost:8000`.
 3. **Framework Preset**: "Other" (plain static site, no build command needed)
 4. Deploy
 
+## Security headers
+
+`vercel.json` sets a strict Content-Security-Policy plus HSTS, `nosniff`,
+`X-Frame-Options: DENY`, a referrer policy, a permissions policy and
+COOP on every response. The CSP only allows this site's own files,
+Google Analytics 4 and Google Fonts, and has no `'unsafe-inline'`. So:
+
+- don't add inline `<script>` blocks, `on*=` handlers or `style=""`
+  attributes; put code in a `.js` file and styles in `styles.css`;
+- adding any new third-party script, font, image host or API means
+  adding its origin to the CSP in `vercel.json`.
+
 ## Custom domain (rizobot.com)
 
 In the Vercel project → **Settings → Domains** → add `rizobot.com`.

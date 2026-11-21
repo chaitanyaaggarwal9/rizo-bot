@@ -71,4 +71,28 @@ describe('scanDangerousPatterns', () => {
     const content = 'eval(x); el.innerHTML = x;';
     expect(descriptions(content).length).toBe(2);
   });
+
+  it('catches the forms the first version missed', () => {
+    expect(descriptions('el.innerHTML += userInput;').length).toBe(1);
+    expect(descriptions('el.outerHTML += userInput;').length).toBe(1);
+    expect(descriptions("import { exec } from 'child_process'; exec(`rm ${p}`);").length).toBe(1);
+    expect(descriptions('execSync("git log " + branch)').length).toBe(1);
+    expect(descriptions('spawn(cmd, args, { shell: true })').length).toBe(1);
+    expect(descriptions('subprocess.check_output(cmd, shell=True)').length).toBe(1);
+    expect(descriptions('subprocess.getoutput(cmd)').length).toBe(1);
+    expect(descriptions('os.popen(cmd)').length).toBe(1);
+    expect(descriptions('-----BEGIN OPENSSH PRIVATE KEY-----').length).toBe(1);
+    expect(descriptions('ASIAABCDEFGHIJKLMNOP').length).toBe(1);
+    expect(descriptions('password = "p@ss!w0rd#1"').length).toBe(1);
+    expect(descriptions('"api_key": "abcdefgh12345678"').length).toBe(1);
+    expect(descriptions('const t = "github_pat_11ABCDEFG0123456789_abcdefghij";').length).toBe(1);
+  });
+
+  it('does not flag look-alikes', () => {
+    expect(descriptions('if (el.innerHTML == expected) {}').length).toBe(0);
+    expect(descriptions('const m = pattern.exec(line + suffix);').length).toBe(0);
+    expect(descriptions('const m = /x/.exec(`a${b}`);').length).toBe(0);
+    expect(descriptions('spawn("git", ["status"])').length).toBe(0);
+  });
 });
+

@@ -48,6 +48,18 @@ an honest gap. Everything before this point lives in git history instead.
   code piped into an interpreter can't slip past it. Commands whose
   effect can't be seen (`$(…)`, backticks, a command name from a
   variable) get the warning too. The dialog now says why.
+- Command output redaction catches many more secrets before they reach
+  the model: labelled values in JSON/YAML/config (`"api_key": "…"`),
+  passwords with symbols, `github_pat_`, `sk-proj-`/`sk-svcacct-`,
+  full `sk-ant-` keys, Stripe, Slack, Google, Hugging Face, npm and
+  GitLab tokens, AWS `ASIA` keys, Basic auth, credentials inside URLs
+  (`postgres://user:pass@…`), and private key blocks that are cut off
+  or of other kinds (OpenSSH, encrypted, PGP). Numbers, booleans and
+  code (`token = getToken()`) stay visible.
+- The pre-write security scan also catches `innerHTML +=`, destructured
+  `exec`/`execSync`, `spawn(..., { shell: true })`, Python
+  `check_output(shell=True)`/`getoutput`/`os.popen`, OpenSSH keys, AWS
+  `ASIA` keys, secrets with symbols, and common API token formats.
 - Commands Rizo runs no longer inherit environment variables that
   usually hold credentials (tokens, cloud keys, database URLs). Allow
   specific ones with the new user-only setting

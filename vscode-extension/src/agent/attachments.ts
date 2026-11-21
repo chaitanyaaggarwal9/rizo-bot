@@ -37,13 +37,18 @@ export function isIncomingAttachment(a: unknown): a is IncomingAttachment {
 // the first 8 KB, the same cheap tell git uses), with a message to show.
 export function readAttachmentFile(fsPath: string): { attachment: IncomingAttachment } | { warning: string } {
   const name = path.basename(fsPath);
+  const tooBig = { warning: `${name} is over the 5MB attachment limit — pick a smaller file.` };
+  let fd: number | undefined;
   try {
-    const stat = fs.statSync(fsPath);
-    if (stat.size > MAX_ATTACHMENT_BYTES) {
-      return { warning: `${name} is over the 5MB attachment limit — pick a smaller file.` };
-    }
+    // One open file handle for both the size check and the read, so the
+    // file can't be swapped or grown between them.
+    fd = fs.openSync(fsPath, 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return { warning: `${name} is not a regular file.` };
+    if (stat.size > MAX_ATTACHMENT_BYTES) return tooBig;
+    const buf = fs.readFileSync(fd);
+    if (buf.length > MAX_ATTACHMENT_BYTES) return tooBig;
     const ext = path.extname(fsPath).toLowerCase();
-    const buf = fs.readFileSync(fsPath);
     if (IMAGE_EXTENSIONS.has(ext)) {
       const mimeType = ext === '.jpg' ? 'image/jpeg' : `image/${ext.slice(1)}`;
       return { attachment: { name, type: 'image', content: buf.toString('base64'), mimeType } };
@@ -54,6 +59,8 @@ export function readAttachmentFile(fsPath: string): { attachment: IncomingAttach
     return { attachment: { name, type: 'text', content: buf.toString('utf-8') } };
   } catch (err: any) {
     return { warning: `Couldn't attach ${name}: ${err?.message ?? String(err)}` };
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 

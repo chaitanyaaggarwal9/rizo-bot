@@ -37,6 +37,7 @@ describe('readAttachmentFile', () => {
     fs.writeFileSync(big, Buffer.alloc(MAX_ATTACHMENT_BYTES + 1, 97));
     expect(readAttachmentFile(big)).toEqual({ warning: expect.stringMatching(/5MB/) });
     expect(readAttachmentFile(path.join(dir, 'nope.txt'))).toEqual({ warning: expect.stringMatching(/Couldn't attach nope.txt/) });
+    expect(readAttachmentFile(dir)).toEqual({ warning: expect.stringMatching(/not a regular file/) });
   });
 });
 

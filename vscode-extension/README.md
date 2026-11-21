@@ -44,6 +44,10 @@ Short version: install → `Cmd+Shift+P` / `Ctrl+Shift+P` → **"Rizo: Open Chat
 
 Already pay for models on Azure? Run **Rizo: Connect Azure AI Foundry** from the Command Palette, enter your resource endpoint (for example `https://my-resource.openai.azure.com`) and API key, and pick your deployments. Then choose **Azure AI Foundry** when you start a chat. Requests go straight to your Azure resource with your key (stored in your OS keychain), and Azure bills you directly. Deployments need to support tool calling.
 
+## Use your own Amazon Bedrock models
+
+Run **Rizo: Connect Amazon Bedrock**, enter your AWS region and a Bedrock API key (Bedrock console, "API keys"), and pick your models. Newer models such as Claude usually need their cross-region inference profile id (for example `us.anthropic...`). Then choose **Amazon Bedrock** when you start a chat. Requests go straight to Bedrock in your region with your key (stored in your OS keychain), and AWS bills you directly. Models need to support tool use. Replies currently appear all at once rather than word by word.
+
 ## License
 
 Apache License 2.0, modified by the [Commons Clause](https://commonsclause.com).

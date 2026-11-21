@@ -1,30 +1,25 @@
 # UI Library Picks
 
-Companion to Web Design Taste: once the design direction is set, don't
-hand-roll what a maintained library already solves well. Check
-`package.json` first — if the project already has a competitor to what's
-listed here, flag the mismatch but don't churn the dependency unasked.
+Purpose: pick a maintained library instead of hand-rolling common UI pieces.
 
-| Need | Reach for |
-|---|---|
-| Unstyled, accessible primitives (dialog, popover, menu, select) | base-ui, or Radix if the project already uses it |
-| Toasts / notifications | Sonner |
-| Command menu (⌘K palette) | cmdk |
-| General animation (springs, layout, enter/exit) | Motion (`motion/react`) — plain CSS transitions for a simple hover/fade, don't pull in a library for that |
-| Charts | Recharts for static/dashboard charts; a streaming-specific library only if data is genuinely live |
-| Drag and drop | dnd-kit |
-| Long lists / large tables | Virtuoso, before reaching for pagination hacks |
-| State shared across components | Zustand — `useState`/`useReducer` first for anything local |
-| Conditional `className` strings | clsx; cva instead once a component has real typed variants (size, intent, state) |
-| Dark mode / theme switching | next-themes (no flash on load) |
+These picks are for React projects. For Vue, Svelte, Angular etc., use that ecosystem's established equivalent. Always prefer what the project already uses (check `package.json`), and never install anything without asking the user.
 
-### Common mismatches to catch
+### One pick per need
+- Accessible primitives (dialog, popover, menu, select): `@base-ui/react`, or `radix-ui` if the project already uses Radix.
+- Toasts: `sonner`.
+- Command menu (Ctrl/Cmd+K): `cmdk`.
+- Drag and drop: `@dnd-kit/core`.
+- Long lists and large tables: `@tanstack/react-virtual`.
+- Charts: `recharts`.
+- Forms and validation: `react-hook-form` + `zod` (bridge with `@hookform/resolvers`).
+- Data fetching and server cache: `@tanstack/react-query`.
+- Shared client state: `zustand`, only after `useState`/`useReducer`/context stop being enough.
+- Theme switching in Next.js: `next-themes`.
 
-- A toast built by hand or with a modal library — Sonner exists for this.
-- A `<div>`-based dropdown with manual focus handling — an accessible
-  primitive library already solves focus trapping and dismissal.
-- Rendering a 1,000-row list directly instead of virtualizing it.
-- A prop-drilled web of `useState` for state three components actually
-  share.
+### Mismatches to catch
+- A hand-built toast or dropdown with manual focus handling: use the picks above.
+- Rendering thousands of rows directly instead of virtualizing.
+- `useEffect` + `fetch` with manual loading/error state where the project has React Query.
+- Simple hover or fade: plain CSS transitions, no library.
 
-
+If the project already has a competing library, keep it and don't swap unasked.

@@ -1,55 +1,29 @@
 # Code Review Discipline
 
-Git Hygiene covers keeping history clean; this covers the other side of a
-pull request — reading someone else's diff and giving feedback that's
-actually useful.
+Purpose: review changes and report useful, accurate findings in chat.
 
-### 1. Understand intent before judging implementation
+### Get the diff
+- Uncommitted: `git --no-pager diff` and `git --no-pager diff --staged`.
+- A branch: `git --no-pager diff main...HEAD` (use the repo's real base branch).
+- A GitHub PR: `gh pr diff <n>` if `gh` is available.
+- First state in one sentence what the change is trying to do.
 
-State in one sentence what the change is trying to do before commenting on
-how it does it. Feedback aimed at a misunderstood goal wastes everyone's
-time re-explaining instead of improving the code.
+### What to check
+- Read the surrounding code with `read_file`, not just the diff. Use `find_references` to see who calls changed functions.
+- Correctness and edge cases: null/empty, off-by-one, concurrency, error paths.
+- Error handling: swallowed errors, missing cleanup.
+- Security: unvalidated input, missing authorization, secrets, injection.
+- Tests: missing for new behavior, or weakened/deleted to make things pass.
+- Performance in hot paths: N+1 queries, needless loops, large allocations.
+- Naming and consistency with existing patterns in the codebase.
+- Skip formatting nits a configured linter already enforces.
 
-### 2. Read for what the diff doesn't show
+### Report
+- Order findings by severity: bugs and security first, then suggestions, then nits. Label each.
+- Each finding: `path:line`, what's wrong, why it matters, a concrete fix.
+- Don't invent issues. If there are none, say "no blocking issues".
+- Briefly note anything done well, then give a clear verdict.
 
-A correct-looking change can still be wrong in context: does it match
-existing patterns in the codebase, or introduce a second way to do the
-same thing? Does it handle the same edge cases the code around it already
-handles? Local correctness isn't the same as fitting the system it's
-landing in.
-
-### 3. Prioritize, don't dump
-
-Not every observation deserves equal weight. Separate what blocks merge
-(bugs, security holes, data loss) from what's a nice-to-have (naming, a
-slightly cleaner alternative) — and say which is which. A review that
-flags a typo with the same urgency as a SQL injection teaches the author
-to tune out the whole review.
-
-### 4. Concrete beats vague
-
-| Weak | Strong |
-|---|---|
-| "This could be cleaner" | "Extracting the validation into its own function would let X and Y share it" |
-| "Are you sure about this?" | "This drops the `else` case from the original — was that intentional?" |
-| A pile of nitpicks with no priority | Critical issues called out first, style notes clearly marked optional |
-
-### 5. Don't nitpick what a linter already owns
-
-If formatting or style is enforced by a configured linter/formatter, don't
-spend review comments re-litigating it — that's what the tool is for.
-Spend the attention on what a tool can't check: whether the logic is
-right, whether the abstraction fits, whether the tests actually prove the
-behavior.
-
-### 6. Refuse by default
-
-- Blocking a merge over a pure style preference when no linter rule backs
-  it up.
-- Reviewing without stating what the change is trying to accomplish first.
-- Silence on genuinely good patterns — calling out what's done well is
-  part of the review, not just what's wrong.
-- A review with no verdict — approve, request changes, or comment,
-  explicitly.
-
-
+### Boundaries
+- Answer in chat; there is no GitHub review UI.
+- Don't change code during a review unless the user asks.

@@ -5,6 +5,8 @@
 // Which model answers is the user's own choice (providers.ts) — this file
 // only classifies a message as 'coding' or 'general', which gates
 // skillsLoader.ts's skill files and freeModels.ts's fallback ranking.
+import { matchesSpecialistSkill } from '../prompt/skillKeywords';
+
 export type TaskType = 'coding' | 'general';
 
 // Includes git-workflow words so git questions route to the coding tier —
@@ -29,13 +31,29 @@ const CODING_KEYWORDS = [
   'frontend', 'front-end', 'next.js', 'nextjs', 'tailwind', 'component',
   'components', 'wireframe', 'wireframes', 'mockup', 'mockups',
   'redesign', 'redesigns', 'design system', 'design systems', 'ui', 'ux',
+  // Everyday coding asks that used to slip through ("fix the build",
+  // "add an endpoint", "write tests") plus common languages and tools.
+  'fix', 'implement', 'build', 'lint', 'linter', 'ci', 'deploy', 'deployment', 'install', 'package',
+  'pr', 'repo', 'repository', 'codebase', 'docker', 'dockerfile', 'yaml', 'bash', 'shell',
+  'golang', 'rust', 'java', 'kotlin', 'swift', 'ruby', 'php', 'node', 'deno', 'bun', 'django',
+  'flask', 'fastapi', 'express', 'vue', 'svelte', 'angular', 'database', 'query', 'migration',
 ];
+
+// A file name or path with a code-ish extension ("parser.ts",
+// "src/app.py"), or a fenced code block, also means coding work.
+const FILE_REF = /\b[\w./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|cs|cpp|cc|hpp|swift|sql|sh|ps1|yml|yaml|toml|json|html|css|scss|vue|svelte|ipynb|md)\b/i;
+const CODE_FENCE = /```/;
 
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 const CODING_PATTERN = new RegExp(`\\b(?:${CODING_KEYWORDS.map(escapeRegExp).join('|')})\\b`, 'i');
 
+// Coding when it uses coding vocabulary, names a code file, contains a
+// code block, or matches any specialist skill (so a message that would
+// load a skill is never classified as general and left without it).
 export function detectTaskType(message: string): TaskType {
-  return CODING_PATTERN.test(message) ? 'coding' : 'general';
+  return CODING_PATTERN.test(message) || FILE_REF.test(message) || CODE_FENCE.test(message) || matchesSpecialistSkill(message)
+    ? 'coding'
+    : 'general';
 }

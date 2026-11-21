@@ -3,20 +3,19 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 import { ToolDefinition } from '../tools/tools';
+import { FALLBACK_MAX_OUTPUT_TOKENS, MIN_USEFUL_OUTPUT_TOKENS, parseAffordableTokens } from './modelLimits';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-// Leaving max_tokens unset defaults to the model's max, which OpenRouter
-// rejects outright on a low-credit account. Needs an explicit cap either
-// way.
-//
-// Truncation is a strictly worse failure than that rejection: a cut-off
-// write_file call mid-JSON fails to parse, the model regenerates from
-// scratch each retry with no way to self-correct, and a turn can burn
-// hundreds of thousands of tokens without finishing. Raised from 2048 to
-// 8192 — still a bounded, affordable worst case even on the priciest
-// model in the catalog (~$0.49/call, Opus 5) — rather than risk the
-// rejection becoming the common case instead.
-const MAX_TOKENS = 8192;
+// Replies are no longer capped at a flat size: each request asks for the
+// model's full maximum output (modelLimits.ts), or options.maxTokens if
+// the user set rizo.limits.maxOutputTokens. Two errors are handled by one
+// automatic retry:
+//  - 402 "can only afford N tokens" (a low-credit account can't reserve
+//    the full maximum): retried with what the account can afford, or a
+//    clear message if that's too little to be useful.
+//  - 400 complaining about max_tokens (a provider whose real limit is
+//    lower than listed): retried with the old safe 8,192.
+const SAFE_MAX_TOKENS = 8192;
 
 export interface ToolCall {
   id: string;
@@ -92,6 +91,20 @@ export interface CallOptions {
   // don't support reasoning (chatPanel.ts checks ModelVariant.reasoning)
   // so the body never carries a field an unsupporting model might reject.
   reasoningEffort?: ReasoningEffort;
+  // Output cap for this request. When unset, maxTokensFor(model) is asked,
+  // then FALLBACK_MAX_OUTPUT_TOKENS is used.
+  maxTokens?: number;
+  maxTokensFor?: (model: string) => Promise<number | undefined>;
+}
+
+// An HTTP error from OpenRouter, keeping the status for the retry logic.
+class OpenRouterHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 export async function callOpenRouter(
@@ -101,10 +114,39 @@ export async function callOpenRouter(
   tools?: ToolDefinition[],
   options?: CallOptions,
 ): Promise<ChatResult> {
+  const maxTokens = options?.maxTokens ?? (await options?.maxTokensFor?.(model)) ?? FALLBACK_MAX_OUTPUT_TOKENS;
+  try {
+    return await requestCompletion(apiKey, model, messages, tools, options, maxTokens);
+  } catch (err) {
+    if (!(err instanceof OpenRouterHttpError)) throw err;
+    const affordable = parseAffordableTokens(err.message);
+    if (affordable !== undefined && affordable < maxTokens) {
+      if (affordable < MIN_USEFUL_OUTPUT_TOKENS) {
+        throw new Error(
+          `Your OpenRouter credit only covers about ${affordable} more tokens of reply from ${model}. Add credit at https://openrouter.ai/settings/credits, or switch this chat to a cheaper or Free model.`,
+        );
+      }
+      return requestCompletion(apiKey, model, messages, tools, options, Math.floor(affordable * 0.95));
+    }
+    if (err.status === 400 && /max_tokens|max_completion_tokens|maximum (output|completion)/i.test(err.message) && maxTokens > SAFE_MAX_TOKENS) {
+      return requestCompletion(apiKey, model, messages, tools, options, SAFE_MAX_TOKENS);
+    }
+    throw err;
+  }
+}
+
+async function requestCompletion(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  tools: ToolDefinition[] | undefined,
+  options: CallOptions | undefined,
+  maxTokens: number,
+): Promise<ChatResult> {
   const body: Record<string, unknown> = {
     model,
     messages,
-    max_tokens: MAX_TOKENS,
+    max_tokens: maxTokens,
     stream: true,
     stream_options: { include_usage: true },
   };
@@ -125,7 +167,7 @@ export async function callOpenRouter(
     // Error responses aren't streamed — same JSON-body parsing as before.
     const data: any = await response.json().catch(() => ({}));
     const message = data?.error?.message || data?.error || `HTTP ${response.status}`;
-    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
+    throw new OpenRouterHttpError(typeof message === 'string' ? message : JSON.stringify(message), response.status);
   }
   if (!response.body) throw new Error('OpenRouter response had no body to stream.');
 
@@ -254,6 +296,11 @@ export async function callWithFallback(
     try {
       const result = await callOpenRouter(apiKey, model, messages, tools, {
         signal: options?.signal,
+        // Effort and the output cap apply to Free models too (Effort used
+        // to be dropped here, so the pill did nothing on Free).
+        reasoningEffort: options?.reasoningEffort,
+        maxTokens: options?.maxTokens,
+        maxTokensFor: options?.maxTokensFor,
         onDelta: (text) => {
           deltaFired = true;
           options?.onDelta?.(text);

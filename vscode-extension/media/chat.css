@@ -271,7 +271,7 @@ body.focusMode .transcript { display: none; }
 
 /* Two-tier tool card: a single-line header (tag + human-readable intent)
    always visible, with the exact command/args and result folded away
-   behind a click. Collapsed by default: a turn can run up to 30 tool
+   behind a click. Collapsed by default: a turn can run many tool
    calls, and showing every raw command/result inline would read as a
    wall of text. */
 .toolCard {

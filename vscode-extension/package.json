@@ -142,10 +142,10 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^3.2.0",
-    "typescript": "^5.4.0",
-    "vitest": "^4.1.11"
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "3.9.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
   }
 }

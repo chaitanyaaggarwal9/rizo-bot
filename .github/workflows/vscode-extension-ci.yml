@@ -27,7 +27,12 @@ jobs:
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
 
+      # .npmrc sets ignore-scripts=true, so no dependency install script runs.
       - run: npm ci
+
+      # Checks every installed package's registry signature and provenance
+      # attestation against the npm registry's keys.
+      - run: npm audit signatures
 
       # Type-checks and builds via tsc — catches TS errors before they land.
       - run: npm run compile
@@ -37,3 +42,8 @@ jobs:
       # detection, dangerous-pattern scanning, secret redaction, pricing,
       # slash commands, struggle detection) — see vitest.config.mts.
       - run: npm test
+
+      # Proves vsce can still package with install scripts disabled
+      # (@vscode/vsce-sign and keytar ship install scripts), and that
+      # @types/vscode does not exceed engines.vscode.
+      - run: npx vsce package --allow-missing-repository --out "$RUNNER_TEMP/rizo.vsix"

@@ -201,7 +201,7 @@ Discipline, Git Hygiene, Security Hygiene, and the rest listed under
 .
 ├── vscode-extension/        Rizo itself — see below
 ├── website/                 Marketing site (rizobot.com) — see website/README.md
-├── .github/workflows/       CI: extension build + test, tag-triggered release
+├── .github/workflows/       CI, CodeQL, dependency review, malware scan, release
 ├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
 └── .gitignore
 ```
@@ -210,15 +210,21 @@ Inside `vscode-extension/`:
 
 ```
 vscode-extension/
-├── src/                  Extension source — one module per concern
-│   ├── *.test.ts             Unit tests (vitest) — pure-logic modules directly, chatPanel.ts via test/vscodeStub.ts
-│   ├── chatPanel.ts           Webview host: panel lifecycle, the send/tool-call loop
-│   ├── tools.ts                read_file / write_file / edit_file / run_command
-│   ├── threadStore.ts          Thread persistence (VS Code global storage)
-│   ├── providers.ts            The company/model catalog + Smart Starting Variant/effort mapping
-│   ├── openrouter.ts           OpenRouter streaming client
-│   └── ...                     See the diagram above for the rest
-├── skills/                Engineering-discipline instructions, bundled into the extension
+├── src/
+│   ├── extension.ts        Activation: registers commands and the TODO CodeLens
+│   ├── ui/                 Chat panel host (chatPanel.ts), webview HTML (webviewHtml.ts),
+│   │                       trust prompts, TODO CodeLens
+│   ├── agent/              Attachments, folder mentions, history summarizer
+│   ├── api/                OpenRouter streaming client, pricing
+│   ├── models/             Provider/model catalog, free-model fallback chains
+│   ├── routing/            Task classification, starting tier, struggle detection
+│   ├── prompt/             Bundled skills loader, project notes, slash commands
+│   ├── storage/            Threads and usage (VS Code storage)
+│   ├── safety/             Permissions, path policy, command analysis, redaction, pattern scan
+│   └── tools/              read_file / write_file / edit_file / run_command / code navigation
+│   (tests sit next to their modules as *.test.ts; vscode-dependent ones use test/vscodeStub.ts)
+├── media/                  Chat view: chat.html, chat.css, chat.js
+├── skills/                 Engineering-discipline instructions, bundled into the extension
 ├── package.json            Extension manifest — commands, settings, contributes
 └── ONBOARDING.md           End-user install/usage guide
 ```

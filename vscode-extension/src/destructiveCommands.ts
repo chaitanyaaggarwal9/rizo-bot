@@ -2,6 +2,8 @@
 // Licensed under the Apache License, Version 2.0, modified by the
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
+import { analyzeCommand } from './commandPolicy';
+
 // Patterns that are hard to reverse once run — these get an elevated
 // warning instead of a casual approval prompt.
 const DESTRUCTIVE_PATTERNS: RegExp[] = [
@@ -45,7 +47,20 @@ const DESTRUCTIVE_PATTERNS: RegExp[] = [
 // erase the one signal that something's off.
 const INVISIBLE_UNICODE = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/;
 
+// Why a command needs the elevated "hard to reverse" warning; empty when
+// it doesn't. commandPolicy.ts's analyzeCommand does the real work by
+// tokenizing the command like a shell. The regexes above stay as a
+// backstop (run on the text with line continuations joined), so anything
+// either one catches is flagged: false positives cost one extra click.
+export function destructiveReasons(command: string): string[] {
+  const reasons: string[] = [];
+  if (INVISIBLE_UNICODE.test(command)) reasons.push('it contains invisible or text-direction characters that can hide what runs');
+  reasons.push(...analyzeCommand(command));
+  const joined = command.replace(/\\\r?\n/g, '');
+  if (!reasons.length && DESTRUCTIVE_PATTERNS.some((p) => p.test(joined))) reasons.push('it matches a known destructive command pattern');
+  return reasons;
+}
+
 export function isDestructive(command: string): boolean {
-  if (INVISIBLE_UNICODE.test(command)) return true;
-  return DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
+  return destructiveReasons(command).length > 0;
 }

@@ -40,6 +40,18 @@ an honest gap. Everything before this point lives in git history instead.
   reads is sent to the AI provider. Templates like `.env.example` don't.
 - Approval diffs use a private temporary folder instead of shared,
   predictable file names in the system temp directory.
+- The destructive-command warning now reads commands the way the shell
+  does instead of pattern-matching the text, so quoting, line
+  continuations, `git -C`/`-c`, `sudo`/`env`/`xargs` wrappers, split
+  flags (`rm -r -f`), `+refspec` and `-d` pushes, `find -delete`,
+  interpreter one-liners (`bash -c`, `node -e`, `python -c`, …) and
+  code piped into an interpreter can't slip past it. Commands whose
+  effect can't be seen (`$(…)`, backticks, a command name from a
+  variable) get the warning too. The dialog now says why.
+- Commands Rizo runs no longer inherit environment variables that
+  usually hold credentials (tokens, cloud keys, database URLs). Allow
+  specific ones with the new user-only setting
+  `rizo.permissions.passEnvironmentVariables`.
 
 ### Fixed
 - `edit_file` wrote `$$`, `$&` and similar sequences in the new text
@@ -49,6 +61,10 @@ an honest gap. Everything before this point lives in git history instead.
 - Edits to a file that's open in the editor go through the editor and
   are saved, so the editor and the disk no longer disagree. A file that
   changed while the approval dialog was open isn't overwritten.
+- Commands run with stdin closed (no hanging on a prompt), a timeout
+  now ends everything the command started (a dev server or watcher no
+  longer survives it), and very long output is trimmed to its start
+  and end instead of filling the conversation.
 - `read_file` no longer loads a whole file just to check whether it's
   binary, refuses files over 20 MB, reads UTF-16 text files, and returns
   large files in parts (new optional `start_line`/`end_line`).

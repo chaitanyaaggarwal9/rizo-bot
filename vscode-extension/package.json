@@ -124,6 +124,15 @@
           "default": [],
           "description": "Tools listed here are refused outright and not offered to the model at all in this workspace."
         },
+        "rizo.permissions.passEnvironmentVariables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Commands Rizo runs get your editor's environment **minus variables that usually hold credentials** (names containing `TOKEN`, `SECRET`, `PASSWORD`, `API_KEY`, and prefixes like `AWS_`, `AZURE_`, `GH_`, `NPM_TOKEN`). List variable names here to pass them through anyway, for example `AWS_PROFILE`. This is a user setting only: a workspace's own settings can't change it."
+        },
         "rizo.composer.sendKey": {
           "type": "string",
           "enum": [

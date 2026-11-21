@@ -5,8 +5,9 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
-import { isDestructive } from './destructiveCommands';
+import { spawn, type ChildProcess } from 'child_process';
+import { destructiveReasons } from './destructiveCommands';
+import { capOutput, filterEnvironment } from './commandPolicy';
 import { scanDangerousPatterns } from './dangerousPatterns';
 import { redactSecrets } from './outputRedaction';
 import { hasShellControl, isProtectedPath, isSecretFile, matchesAutoApprove } from './permissions';
@@ -457,10 +458,11 @@ async function approveCommand(context: vscode.ExtensionContext, command: string)
   // Destructive commands always ask, every time — checked first and
   // unconditionally, so no setting below (auto-approve patterns, Always
   // Allow) can ever skip this, on purpose.
-  if (isDestructive(command)) {
+  const reasons = destructiveReasons(command);
+  if (reasons.length) {
     const choice = await vscode.window.showWarningMessage(
       `⚠️ This command is hard to reverse once run:\n\n${command}`,
-      { modal: true },
+      { modal: true, detail: `Why: ${reasons.join('; ')}.` },
       'Yes, run this destructive command',
     );
     return choice === 'Yes, run this destructive command';
@@ -491,32 +493,124 @@ async function approveCommand(context: vscode.ExtensionContext, command: string)
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
+// What a command produced, before redaction and capping.
+interface CommandResult {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  timedOut: boolean;
+  spawnError?: string;
+}
+
+// Stop collecting beyond this (the rest is still drained so the process
+// doesn't block); capOutput trims further before the model sees it.
+const COMMAND_CAPTURE_MAX_CHARS = 2_000_000;
+
+// Ends the command and everything it started. On macOS/Linux the shell is
+// spawned as its own process group (detached), so a negative pid signals
+// the whole group: a dev server or watcher it launched doesn't survive
+// the timeout. Windows uses taskkill /T for the same.
+function killProcessTree(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    } catch {
+      /* already gone */
+    }
+    return;
+  }
+  const pid = child.pid;
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    /* already gone */
+  }
+  setTimeout(() => {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  }, 2000).unref();
+}
+
+function runShell(command: string, cwd: string, env: Record<string, string>): Promise<CommandResult> {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    let settled = false;
+    const finish = (r: Omit<CommandResult, 'stdout' | 'stderr' | 'timedOut'>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ stdout, stderr, timedOut, ...r });
+    };
+
+    let child: ChildProcess;
+    try {
+      // stdin is closed: a command that waits for input fails right away
+      // instead of hanging until the timeout.
+      child = spawn(command, {
+        cwd,
+        env,
+        shell: true,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (err: any) {
+      resolve({ stdout: '', stderr: '', code: null, signal: null, timedOut: false, spawnError: err?.message ?? String(err) });
+      return;
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcessTree(child);
+    }, COMMAND_TIMEOUT_MS);
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (d: string) => {
+      if (stdout.length < COMMAND_CAPTURE_MAX_CHARS) stdout += d;
+    });
+    child.stderr?.on('data', (d: string) => {
+      if (stderr.length < COMMAND_CAPTURE_MAX_CHARS) stderr += d;
+    });
+    child.on('error', (err) => finish({ code: null, signal: null, spawnError: err.message }));
+    child.on('close', (code, signal) => finish({ code, signal }));
+  });
+}
+
 async function runCommand(context: vscode.ExtensionContext, command: string): Promise<string> {
+  if (typeof command !== 'string' || !command.trim()) return 'Error: run_command needs a non-empty "command" string.';
   const approved = await approveCommand(context, command);
   if (!approved) return 'User rejected running this command. Do not retry without asking why.';
 
-  const root = getWorkspaceRoot();
-  return new Promise((resolve) => {
-    exec(command, { cwd: root, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
-      // Unlike read_file (which deliberately reads whatever file the
-      // model asked for), a command's output is often an accidental
-      // exposure: `env`, `cat .env`, `git log -p` on a repo with a
-      // committed secret. Redacted here so it never enters the model's
-      // context or thread history — the command's own text is what gets
-      // approved, not its output, so there's no review step for the
-      // output itself.
-      const stdoutSafe = stdout ? redactSecrets(stdout) : stdout;
-      const stderrSafe = stderr ? redactSecrets(stderr) : stderr;
-      const parts: string[] = [];
-      if (stdoutSafe) parts.push(`stdout:\n${stdoutSafe}`);
-      if (stderrSafe) parts.push(`stderr:\n${stderrSafe}`);
-      if (error) {
-        const killed = (error as any).killed ? ' (killed — likely hit the 60s timeout)' : '';
-        parts.push(`exit code: ${(error as any).code ?? 'unknown'}${killed}`);
-      }
-      resolve(parts.join('\n\n') || '(command produced no output, exit code 0)');
-    });
-  });
+  // The editor's environment minus variables that usually hold
+  // credentials (tokens, cloud keys), unless the user allowed them by name
+  // in rizo.permissions.passEnvironmentVariables.
+  const allow = vscode.workspace.getConfiguration('rizo').get<string[]>('permissions.passEnvironmentVariables', []);
+  const { env, removed } = filterEnvironment(process.env, Array.isArray(allow) ? allow : []);
+
+  const r = await runShell(command, getWorkspaceRoot(), env);
+  // A command's output is often an accidental exposure (`env`, `cat
+  // .env`, `git log -p` on a repo with a committed secret). Redacted so it
+  // never enters the model's context or thread history, then capped.
+  const parts: string[] = [];
+  if (r.stdout) parts.push(`stdout:\n${capOutput(redactSecrets(r.stdout))}`);
+  if (r.stderr) parts.push(`stderr:\n${capOutput(redactSecrets(r.stderr))}`);
+  if (r.spawnError) parts.push(`error: could not start the command: ${r.spawnError}`);
+  if (r.timedOut) parts.push(`stopped after ${COMMAND_TIMEOUT_MS / 1000}s (timeout); the command and everything it started were ended`);
+  else if (r.code !== 0 && r.code !== null) parts.push(`exit code: ${r.code}`);
+  else if (r.signal) parts.push(`ended by signal ${r.signal}`);
+  if (removed.length && r.code !== 0) {
+    parts.push(
+      `note: these environment variables were withheld because they usually hold credentials: ${removed.join(', ')}. If the command needs one, the user can allow it in the rizo.permissions.passEnvironmentVariables setting.`,
+    );
+  }
+  return parts.join('\n\n') || '(command produced no output, exit code 0)';
 }
 
 // find_definition/find_references/call_hierarchy need a cursor position,

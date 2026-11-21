@@ -21,7 +21,7 @@ Rizo routes every request through [OpenRouter](https://openrouter.ai), which giv
 1. Open any project folder in VS Code
 2. `Cmd+Shift+P` / `Ctrl+Shift+P` → run **"Rizo: Open Chat"**
 3. Send any message — you'll be prompted once for your API key. Paste it in. It's stored securely in VS Code's own credential storage (your OS keychain), never written to a file or sent anywhere but OpenRouter.
-4. Pick a provider for this chat — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free. It starts you on that company's cheapest variant.
+4. Pick a provider for this chat — Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM, or Free. It starts you on that company's cheapest variant.
 
 ## 4. Using it
 

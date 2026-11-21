@@ -14,6 +14,8 @@ import {
   isValidProviderModel,
   startingModelForProvider,
   supportsReasoning,
+  belongsToProvider,
+  modelSupportsVision,
 } from './providers';
 
 describe('the provider catalog itself', () => {
@@ -38,10 +40,17 @@ describe('the provider catalog itself', () => {
     expect(PROVIDERS.free.variants[0].id).toBe('openrouter/free');
   });
 
-  it('every non-free provider has exactly 3 variants, a real cheap-to-strong ladder', () => {
+  it('every non-free provider has a 2- or 3-step cheap-to-strong ladder', () => {
     for (const id of PROVIDER_ORDER) {
       if (id === 'free') continue;
-      expect(PROVIDERS[id].variants).toHaveLength(3);
+      expect(PROVIDERS[id].variants.length).toBeGreaterThanOrEqual(2);
+      expect(PROVIDERS[id].variants.length).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("every curated variant belongs to its own provider's id family", () => {
+    for (const id of PROVIDER_ORDER) {
+      for (const v of PROVIDERS[id].variants) expect(belongsToProvider(id, v.id)).toBe(true);
     }
   });
 });
@@ -78,11 +87,11 @@ describe('startingModelForProvider (Smart Starting Variant)', () => {
 
 describe('isValidProviderModel', () => {
   it('accepts a real variant of the given provider', () => {
-    expect(isValidProviderModel('claude', 'anthropic/claude-sonnet-5')).toBe(true);
+    expect(isValidProviderModel('claude', 'anthropic/claude-sonnet-5.5')).toBe(true);
   });
 
   it('rejects a real model id under the wrong provider (no cross-company leakage)', () => {
-    expect(isValidProviderModel('gemini', 'anthropic/claude-sonnet-5')).toBe(false);
+    expect(isValidProviderModel('gemini', 'anthropic/claude-sonnet-5.5')).toBe(false);
   });
 
   it('rejects an unknown model id entirely', () => {
@@ -103,11 +112,11 @@ describe('isValidProviderModel', () => {
 
 describe('findVariant / supportsReasoning', () => {
   it('finds a real variant by id', () => {
-    expect(findVariant('claude', 'anthropic/claude-opus-5')?.label).toBe('Opus 5');
+    expect(findVariant('claude', 'anthropic/claude-fable-5.2')?.label).toBe('Fable 5.2');
   });
 
   it('defaults reasoning support to true when unset on the variant', () => {
-    expect(supportsReasoning('claude', 'anthropic/claude-sonnet-5')).toBe(true);
+    expect(supportsReasoning('claude', 'anthropic/claude-sonnet-5.5')).toBe(true);
   });
 
   it("Free's rotating Auto model explicitly does not support reasoning", () => {
@@ -118,19 +127,16 @@ describe('findVariant / supportsReasoning', () => {
     expect(supportsReasoning('claude', 'nonexistent')).toBe(true); // findVariant returns undefined -> treated as "not explicitly false"
   });
 
-  it("Free's 5 named picks (unlike Auto) all support reasoning, since each is one specific real model", () => {
+  it("Free's named picks (unlike Auto) all support reasoning, since each is one specific real model", () => {
     for (const v of PROVIDERS.free.variants) {
       if (v.id === 'openrouter/free') continue;
       expect(supportsReasoning('free', v.id)).toBe(true);
     }
   });
 
-  it('Google Gemma is the one Free pick with real vision support; the rest (including Auto) do not', () => {
-    expect(findVariant('free', 'google/gemma-4-31b-it:free')?.vision).toBe(true);
-    const nonVision = PROVIDERS.free.variants.filter((v) => v.id !== 'google/gemma-4-31b-it:free');
-    for (const v of nonVision) {
-      expect(v.vision).toBe(false);
-    }
+  it("Free's Auto router is marked text-only, so images go to a named vision model", () => {
+    expect(findVariant('free', 'openrouter/free')?.vision).toBe(false);
+    expect(PROVIDERS.free.variants.some((v) => v.vision !== false)).toBe(true);
   });
 });
 
@@ -149,5 +155,49 @@ describe('effortForTier (effort auto-suggestion)', () => {
   it('every EFFORT_LEVELS entry has exactly one tier that maps to it', () => {
     expect(EFFORT_LEVELS).toEqual(['low', 'medium', 'high']);
     expect(DEFAULT_EFFORT).toBe('medium');
+  });
+});
+
+describe('live catalog models ("More models")', () => {
+  const catalog = new Map([
+    ['anthropic/claude-opus-5.5', { tools: true, vision: true, reasoning: true }],
+    ['anthropic/claude-sonnet-5', { tools: true, vision: true, reasoning: true }],
+    ['anthropic/claude-instant-1', { tools: false, vision: false, reasoning: false }],
+    ['openai/gpt-6.2-astra', { tools: true, vision: true, reasoning: true }],
+    ['deepseek/deepseek-v4-flash', { tools: true, vision: false, reasoning: false }],
+    ['baidu/ernie-5.5-flash-preview:free', { tools: true, vision: false, reasoning: true }],
+    ['anthropic/claude-sonnet-5.5:batch', { tools: true, vision: true, reasoning: true }],
+  ]);
+
+  it('accepts other tool-capable models of the same company', () => {
+    expect(isValidProviderModel('claude', 'anthropic/claude-opus-5.5', catalog)).toBe(true);
+    expect(isValidProviderModel('claude', 'anthropic/claude-sonnet-5', catalog)).toBe(true);
+    expect(isValidProviderModel('free', 'baidu/ernie-5.5-flash-preview:free', catalog)).toBe(true);
+  });
+
+  it('rejects other companies, models without tools, batch variants and unknown ids', () => {
+    expect(isValidProviderModel('claude', 'openai/gpt-6.2-astra', catalog)).toBe(false);
+    expect(isValidProviderModel('claude', 'anthropic/claude-instant-1', catalog)).toBe(false);
+    expect(isValidProviderModel('claude', 'anthropic/claude-sonnet-5.5:batch', catalog)).toBe(false);
+    expect(isValidProviderModel('claude', 'anthropic/not-real', catalog)).toBe(false);
+    expect(isValidProviderModel('openai', 'baidu/ernie-5.5-flash-preview:free', catalog)).toBe(false);
+  });
+
+  it('without the catalog only curated variants are valid', () => {
+    expect(isValidProviderModel('claude', 'anthropic/claude-opus-5.5')).toBe(false);
+  });
+
+  it('uses the catalog for vision and reasoning of non-curated models', () => {
+    expect(modelSupportsVision('deepseek', 'deepseek/deepseek-v4-flash', catalog)).toBe(false);
+    expect(supportsReasoning('deepseek', 'deepseek/deepseek-v4-flash', catalog)).toBe(false);
+    expect(modelSupportsVision('claude', 'anthropic/claude-opus-5.5', catalog)).toBe(true);
+    expect(modelSupportsVision('deepseek', 'deepseek/deepseek-v4-pro', catalog)).toBe(false); // curated flag wins
+  });
+
+  it('keeps Gemini to Gemini models and Free to free ones', () => {
+    expect(belongsToProvider('gemini', 'google/gemini-4-carbon')).toBe(true);
+    expect(belongsToProvider('gemini', 'google/gemma-4-26b-a4b-it:free')).toBe(false);
+    expect(belongsToProvider('free', 'google/gemma-4-26b-a4b-it:free')).toBe(true);
+    expect(belongsToProvider('openai', 'openai/gpt-oss-20b:free')).toBe(false);
   });
 });

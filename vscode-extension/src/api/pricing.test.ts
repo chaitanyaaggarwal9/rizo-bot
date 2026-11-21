@@ -16,13 +16,13 @@ describe('estimateCost', () => {
 
   it('computes prompt + completion cost correctly for a known paid model', () => {
     // Haiku 4.5: $0.25/M prompt, $1.25/M completion.
-    const cost = estimateCost('anthropic/claude-haiku-4.5', 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.25 + 1.25, 6);
+    const cost = estimateCost('anthropic/claude-haiku-5.5', 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(0.1 + 0.5, 6);
   });
 
   it('scales linearly with token count, not just a flat per-call rate', () => {
-    const half = estimateCost('anthropic/claude-sonnet-5', 500_000, 0);
-    const full = estimateCost('anthropic/claude-sonnet-5', 1_000_000, 0);
+    const half = estimateCost('anthropic/claude-sonnet-5.5', 500_000, 0);
+    const full = estimateCost('anthropic/claude-sonnet-5.5', 1_000_000, 0);
     expect(full).toBeCloseTo(half * 2, 6);
   });
 
@@ -32,8 +32,15 @@ describe('estimateCost', () => {
 
   it('prompt and completion tokens are priced independently, not averaged', () => {
     // Opus 5: $12/M prompt, $60/M completion — completion is 5x pricier.
-    const promptOnly = estimateCost('anthropic/claude-opus-5', 1_000_000, 0);
-    const completionOnly = estimateCost('anthropic/claude-opus-5', 0, 1_000_000);
+    const promptOnly = estimateCost('anthropic/claude-fable-5.2', 1_000_000, 0);
+    const completionOnly = estimateCost('anthropic/claude-fable-5.2', 0, 1_000_000);
     expect(completionOnly).toBeCloseTo(promptOnly * 5, 6);
   });
+
+  it('prefers the live catalog price when one is given', () => {
+    const catalog = new Map([['anthropic/claude-opus-5.5', { promptPerM: 4, completionPerM: 20 }]]);
+    expect(estimateCost('anthropic/claude-opus-5.5', 1_000_000, 1_000_000, catalog)).toBeCloseTo(24, 6);
+    expect(estimateCost('anthropic/claude-opus-5.5', 1_000_000, 1_000_000)).toBe(0);
+  });
 });
+

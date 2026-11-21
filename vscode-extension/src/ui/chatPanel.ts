@@ -22,6 +22,8 @@ import {
   isValidProviderModel,
   findVariant,
   supportsReasoning,
+  belongsToProvider,
+  modelSupportsVision,
   effortForTier,
 } from '../models/providers';
 import { estimateStartingTier } from '../routing/complexityEstimator';
@@ -54,7 +56,7 @@ import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignore
 import { findMentionedPaths } from '../agent/folderMentions';
 import { planSummary, SUMMARY_MODEL } from '../agent/summarizer';
 import { TurnTracker } from '../agent/turnTracker';
-import { getMaxOutputTokens } from '../api/modelLimits';
+import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
 // Holds one thread — the most recently deleted, cleared once restored.
@@ -227,7 +229,7 @@ export class ChatPanel {
             // enforcement; the webview never renders another company's
             // models into this dropdown in the first place (see getHtml).
             const thread = loadThread(this.context, this.activeThreadId);
-            if (thread?.provider && isValidProviderModel(thread.provider, message.model)) {
+            if (thread?.provider && typeof message.model === 'string' && isValidProviderModel(thread.provider, message.model, getCachedCatalog())) {
               setThreadModel(this.context, this.activeThreadId, thread.provider, message.model);
               this.sendStateUpdate();
             }
@@ -294,6 +296,29 @@ export class ChatPanel {
       dayTokens: usage.dayTokens,
       monthCost: usage.monthCost,
     });
+    void this.sendMoreModels();
+  }
+
+  // The company's other current models from the live catalog, for the
+  // "More models" section of the model switcher.
+  private async sendMoreModels() {
+    const thread = loadThread(this.context, this.activeThreadId);
+    const provider = thread?.provider;
+    if (!provider || !PROVIDERS[provider]) return;
+    const catalog = await getCatalog();
+    if (!catalog) return;
+    const curated = new Set(PROVIDERS[provider].variants.map((v) => v.id));
+    const models = [...catalog.values()]
+      .filter((m) => m.tools && belongsToProvider(provider, m.id) && !curated.has(m.id))
+      .sort((a, b) => b.created - a.created)
+      .slice(0, 30)
+      .map((m) => ({
+        id: m.id,
+        label: shortModelName(m),
+        detail: formatPrice(m) + (m.vision ? '' : ' · text only'),
+        reasoning: m.reasoning,
+      }));
+    this.post({ type: 'moreModels', provider, models });
   }
 
   private sendInit() {
@@ -319,6 +344,7 @@ export class ChatPanel {
       sendKey: vscode.workspace.getConfiguration('rizo').get<string>('composer.sendKey', 'enter'),
       focusMode: vscode.workspace.getConfiguration('rizo').get<boolean>('view.focusMode', false),
     });
+    void this.sendMoreModels();
   }
 
   // Deliberately not sendInit() — that also re-renders the message list
@@ -440,7 +466,7 @@ export class ChatPanel {
     if (provider === 'free') {
       // Vision already checked in handleSend for every provider (Free
       // included, now that Gemma supports vision).
-      const chain = freeChainForTaskType(taskType);
+      const chain = freeChainForTaskType(taskType, getCachedCatalog());
       // Auto is routed purely by taskType. A specific pick goes first,
       // then still falls through the rest of the chain if it's down or
       // rate-limited.
@@ -592,7 +618,12 @@ export class ChatPanel {
     // renames it — falls back to this provider's current default instead
     // of sending a request doomed to fail every time; setThreadModel
     // persists it so this only self-heals once per thread, not every turn.
-    if (!isValidProviderModel(provider, model)) {
+    // With the live catalog: a model that's gone (or lost tool support)
+    // falls back to the provider's default. Offline: a chat keeps its
+    // model as long as it belongs to the right company, rather than being
+    // switched just because the catalog couldn't load.
+    const catalog = await getCatalog();
+    if (!isValidProviderModel(provider, model, catalog) && (catalog || !belongsToProvider(provider, model))) {
       const fallback = defaultModelForProvider(provider);
       setThreadModel(this.context, threadId, provider, fallback);
       model = fallback;
@@ -648,7 +679,7 @@ export class ChatPanel {
       // re-evaluated every turn, never persisted (so it can't fight the
       // next turn's guess). Deferred permanently once the user sets effort
       // manually (thread.effortManuallySet).
-      if (!thread.effortManuallySet && supportsReasoning(provider, model)) {
+      if (!thread.effortManuallySet && supportsReasoning(provider, model, catalog)) {
         effort = effortForTier(messageTier);
       }
 
@@ -716,12 +747,13 @@ export class ChatPanel {
         (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
       );
       if (hasImage) {
-        const variant = findVariant(provider, model);
-        if (variant?.vision === false) {
+        if (!modelSupportsVision(provider, model, catalog)) {
+          const info = catalog?.get(model);
+          const label = findVariant(provider, model)?.label ?? (info ? shortModelName(info) : model);
           this.post({
             type: 'error',
             turnId,
-            error: `${variant.label} isn't vision-capable — switch to a different ${PROVIDERS[provider].label} variant to use an image in this chat.`,
+            error: `${label} isn't vision-capable — switch to a different ${PROVIDERS[provider].label} model to use an image in this chat.`,
           });
           return;
         }
@@ -745,6 +777,7 @@ export class ChatPanel {
       const maxOutputTokens = Math.max(0, Math.floor(Number(limits.get<number>('maxOutputTokens', 0)) || 0));
       let finalReply = `I stopped after ${maxSteps} steps (your rizo.limits.maxStepsPerTurn setting) — say 'continue' and I'll pick back up.`;
       const totalUsage = emptyUsage();
+      let allCostsReported = true;
 
       // Struggle evidence for auto-escalation below — three cheap,
       // deterministic signals, no extra model call:
@@ -774,7 +807,7 @@ export class ChatPanel {
           // Dropped for a variant that doesn't support it rather than sent
           // and possibly rejected; callWithFallback never forwards it
           // regardless.
-          reasoningEffort: supportsReasoning(provider, model) ? effort : undefined,
+          reasoningEffort: supportsReasoning(provider, model, catalog) ? effort : undefined,
           // Each model's full maximum reply length (or the user's cap).
           maxTokens: maxOutputTokens || undefined,
           maxTokensFor: (m) => getMaxOutputTokens(m),
@@ -787,6 +820,9 @@ export class ChatPanel {
         totalUsage.promptTokens += usage.promptTokens;
         totalUsage.completionTokens += usage.completionTokens;
         totalUsage.totalTokens += usage.totalTokens;
+        // The exact cost, but only if every request in the turn reported one.
+        if (usage.cost === undefined) allCostsReported = false;
+        else totalUsage.cost = (totalUsage.cost ?? 0) + usage.cost;
         // Running total — a multi-tool-call turn makes several round-trips.
         this.post({ type: 'turnUsage', turnId, totalTokens: totalUsage.totalTokens });
 
@@ -895,7 +931,10 @@ export class ChatPanel {
 
       // Folds this turn's cost into the running today/this-month totals
       // the header shows.
-      const turnCost = estimateCost(answeredBy, totalUsage.promptTokens, totalUsage.completionTokens);
+      const turnCost =
+        allCostsReported && totalUsage.cost !== undefined
+          ? totalUsage.cost
+          : estimateCost(answeredBy, totalUsage.promptTokens, totalUsage.completionTokens, catalog);
       const globalUsage = recordUsage(this.context, totalUsage.totalTokens, turnCost);
 
       // Persist only the final exchange — not the tool-call sub-steps.
@@ -913,6 +952,7 @@ export class ChatPanel {
           promptTokens: totalUsage.promptTokens,
           completionTokens: totalUsage.completionTokens,
           totalTokens: totalUsage.totalTokens,
+          cost: turnCost,
           madeToolCall: madeToolCallThisTurn,
           madeMutatingCall: madeMutatingCallThisTurn,
           ...(touchedFilesThisTurn.size > 0 ? { touchedFiles: [...touchedFilesThisTurn] } : {}),

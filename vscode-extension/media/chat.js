@@ -529,7 +529,43 @@
       return PROVIDER_CATALOG.find((p) => p.id === id);
     }
 
-    // Built once — the six providers never change at runtime, only which
+    // The current provider's other models from the live catalog, sent by
+    // the extension after init ("More models" in the switcher).
+    let moreModels = { provider: null, models: [] };
+
+    // A curated variant or a "More models" entry, whichever has this id.
+    function findModel(p, id) {
+      const v = p && p.variants.find((x) => x.id === id);
+      if (v) return v;
+      if (p && moreModels.provider === p.id) return moreModels.models.find((m) => m.id === id) || null;
+      return null;
+    }
+
+    function modelOption(id, label, detail, selected, currentModel) {
+      const btn = document.createElement('button');
+      btn.className = 'variantOption';
+      const labelRow = document.createElement('span');
+      labelRow.className = 'vLabel';
+      labelRow.textContent = label;
+      if (selected) {
+        const check = document.createElement('span');
+        check.className = 'vCheck';
+        check.textContent = '✓';
+        labelRow.appendChild(check);
+      }
+      const tagline = document.createElement('span');
+      tagline.className = 'vTagline';
+      tagline.textContent = detail;
+      btn.appendChild(labelRow);
+      btn.appendChild(tagline);
+      btn.addEventListener('click', () => {
+        modelDropdownEl.classList.remove('open');
+        if (id !== currentModel) vscode.postMessage({ type: 'selectModel', model: id });
+      });
+      return btn;
+    }
+
+    // Built once — the providers never change at runtime, only which
     // one this thread has picked does.
     function renderProviderGrid() {
       providerGridEl.innerHTML = '';
@@ -556,33 +592,27 @@
       }
       modelBarEl.style.visibility = 'visible';
       const p = findProvider(provider);
-      const variant = p && p.variants.find((v) => v.id === model);
-      modelPillLabelEl.textContent = p ? p.label + ' · ' + (variant ? variant.label : '') : '';
+      const current = findModel(p, model);
+      const fallbackLabel = model ? model.split('/').pop() : '';
+      // "Claude · Opus 5.5", not "Claude · Claude Opus 5.5" for catalog names.
+      let shown = current ? current.label : fallbackLabel;
+      if (p && shown.toLowerCase().startsWith(p.label.toLowerCase() + ' ')) shown = shown.slice(p.label.length + 1);
+      modelPillLabelEl.textContent = p ? p.label + ' · ' + shown : '';
 
       modelDropdownEl.innerHTML = '';
       if (!p) return;
       for (const v of p.variants) {
-        const btn = document.createElement('button');
-        btn.className = 'variantOption';
-        const labelRow = document.createElement('span');
-        labelRow.className = 'vLabel';
-        labelRow.textContent = v.label;
-        if (v.id === model) {
-          const check = document.createElement('span');
-          check.className = 'vCheck';
-          check.textContent = '✓';
-          labelRow.appendChild(check);
+        modelDropdownEl.appendChild(modelOption(v.id, v.label, v.tagline, v.id === model, model));
+      }
+      const extra = moreModels.provider === p.id ? moreModels.models : [];
+      if (extra.length) {
+        const heading = document.createElement('div');
+        heading.className = 'moreModelsHeading';
+        heading.textContent = 'More ' + p.label + ' models';
+        modelDropdownEl.appendChild(heading);
+        for (const m of extra) {
+          modelDropdownEl.appendChild(modelOption(m.id, m.label, m.detail, m.id === model, model));
         }
-        const tagline = document.createElement('span');
-        tagline.className = 'vTagline';
-        tagline.textContent = v.tagline;
-        btn.appendChild(labelRow);
-        btn.appendChild(tagline);
-        btn.addEventListener('click', () => {
-          modelDropdownEl.classList.remove('open');
-          if (v.id !== model) vscode.postMessage({ type: 'selectModel', model: v.id });
-        });
-        modelDropdownEl.appendChild(btn);
       }
     }
 
@@ -591,8 +621,8 @@
     // control would be worse than not showing it.
     function renderEffortSwitch(provider, model, effort) {
       const p = findProvider(provider);
-      const variant = p && p.variants.find((v) => v.id === model);
-      const supported = !!variant && variant.reasoning;
+      const variant = findModel(p, model);
+      const supported = !!variant && variant.reasoning !== false;
       effortPillEl.parentElement.style.display = supported ? '' : 'none';
       if (!supported) return;
 
@@ -946,6 +976,17 @@
         renderEffortSwitch(currentProvider, currentModel, currentEffort);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
+        return;
+      }
+      if (msg.type === 'moreModels') {
+        moreModels = {
+          provider: typeof msg.provider === 'string' ? msg.provider : null,
+          models: Array.isArray(msg.models)
+            ? msg.models.filter((m) => m && typeof m.id === 'string' && typeof m.label === 'string')
+            : [],
+        };
+        renderModelSwitch(currentProvider, currentModel);
+        renderEffortSwitch(currentProvider, currentModel, currentEffort);
         return;
       }
       if (msg.type === 'attachmentAdded') {

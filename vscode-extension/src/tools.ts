@@ -5,12 +5,20 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { exec } from 'child_process';
 import { isDestructive } from './destructiveCommands';
 import { scanDangerousPatterns } from './dangerousPatterns';
 import { redactSecrets } from './outputRedaction';
-import { hasShellControl, isProtectedPath, matchesAutoApprove } from './permissions';
+import { hasShellControl, isProtectedPath, isSecretFile, matchesAutoApprove } from './permissions';
+import {
+  looksBinary,
+  makePrivateTempDir,
+  readFileHead,
+  replaceExactlyOnce,
+  resolveWithinRoots,
+  safeWriteFile,
+  sliceForReading,
+} from './pathPolicy';
 import { listThreads, loadThread } from './threadStore';
 
 export interface ToolDefinition {
@@ -31,10 +39,15 @@ export const TOOLS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read the contents of a file in the current workspace. Path is relative to the workspace root.',
+      description:
+        'Read a file in the current workspace. Path is relative to the workspace root. Large files come back in parts: use start_line/end_line (1-based, inclusive) to read a specific range or to continue where the previous read stopped.',
       parameters: {
         type: 'object',
-        properties: { path: { type: 'string', description: 'Relative file path' } },
+        properties: {
+          path: { type: 'string', description: 'Relative file path' },
+          start_line: { type: 'integer', description: 'Optional first line to return (1-based)' },
+          end_line: { type: 'integer', description: 'Optional last line to return (inclusive)' },
+        },
         required: ['path'],
       },
     },
@@ -211,7 +224,7 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
       let existing: string | undefined;
       try {
         const resolved = resolveSafePath(path, extraRoots);
-        if (fs.existsSync(resolved)) existing = currentContent(resolved);
+        if (fs.existsSync(resolved) && fs.statSync(resolved).size <= DIFF_MAX_CHARS * 4) existing = currentContent(resolved);
       } catch {
         /* unresolvable path — fall through with no diff */
       }
@@ -289,32 +302,15 @@ function getWorkspaceRoots(): string[] {
 // explicitly allowed for this chat in this workspace (trustPrompts.ts's
 // requestFolderGrants). Never taken from a model's tool-call arguments.
 function resolveSafePath(relativePath: string, extraRoots: string[] = []): string {
-  const roots = [...getWorkspaceRoots(), ...extraRoots.map((r) => fs.realpathSync(r))];
-  // path.resolve treats an already-absolute second argument as an
-  // override of the first — a relative path resolves against the primary
-  // folder, while an absolute path pointing at another open folder
-  // resolves to itself and gets checked against every root below.
-  const resolved = path.resolve(roots[0], relativePath);
-  const matchedRoot = roots.find((root) => resolved === root || resolved.startsWith(root + path.sep));
-  if (!matchedRoot) {
-    // Names the actual fix, not just the refusal — the model relays this to the user.
-    throw new Error(
-      `Path "${relativePath}" resolves outside every open workspace folder — refusing. To work with a different folder, add it to this VS Code workspace first (File > Add Folder to Workspace..., or drag it into the Explorer sidebar) — every folder in a multi-root workspace is usable, not just the first one.`,
-    );
+  const roots = [...getWorkspaceRoots()];
+  for (const r of extraRoots) {
+    try {
+      roots.push(fs.realpathSync(r));
+    } catch {
+      /* a granted folder that no longer exists just isn't usable */
+    }
   }
-
-  let existingAncestor = resolved;
-  while (!fs.existsSync(existingAncestor)) {
-    const parent = path.dirname(existingAncestor);
-    if (parent === existingAncestor) break; // hit the filesystem root — safety net, shouldn't happen
-    existingAncestor = parent;
-  }
-  const realAncestor = fs.realpathSync(existingAncestor);
-  if (realAncestor !== matchedRoot && !realAncestor.startsWith(matchedRoot + path.sep)) {
-    throw new Error(`Path "${relativePath}" escapes the workspace root via a symlink — refusing.`);
-  }
-
-  return resolved;
+  return resolveWithinRoots(relativePath, roots);
 }
 
 // The file's true current content — the live editor buffer if one's open
@@ -367,13 +363,14 @@ async function showApprovalDiff(
     return true;
   }
 
-  const tmpDir = os.tmpdir();
-  const base = path.basename(relativePath);
-  const stamp = Date.now();
-  const oldTmp = path.join(tmpDir, `rizo-before-${stamp}-${base}`);
-  const newTmp = path.join(tmpDir, `rizo-after-${stamp}-${base}`);
-  fs.writeFileSync(oldTmp, oldContent);
-  fs.writeFileSync(newTmp, newContent);
+  // A private, unpredictable folder (0700) for the before/after files, so
+  // other users on the machine can't read them or pre-plant a symlink.
+  const tmpDir = makePrivateTempDir();
+  const base = path.basename(relativePath) || 'file';
+  const oldTmp = path.join(tmpDir, `before-${base}`);
+  const newTmp = path.join(tmpDir, `after-${base}`);
+  fs.writeFileSync(oldTmp, oldContent, { mode: 0o600, flag: 'wx' });
+  fs.writeFileSync(newTmp, newContent, { mode: 0o600, flag: 'wx' });
 
   const title = isNew ? `New file: ${relativePath}` : `Edit: ${relativePath}`;
   try {
@@ -399,10 +396,50 @@ async function showApprovalDiff(
     }
     return choice === 'Approve';
   } finally {
-    try { fs.unlinkSync(oldTmp); } catch { /* best effort cleanup */ }
-    try { fs.unlinkSync(newTmp); } catch { /* best effort cleanup */ }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort cleanup */ }
   }
 }
+
+// Applies an approved change. If the file is open in an editor, the edit
+// goes through the editor and is saved, so the editor and the disk don't
+// end up with different text (the approval diff was built from the
+// editor's text, unsaved changes included). Otherwise it's written
+// directly with safeWriteFile (no symlink following).
+async function applyFileContent(filePath: string, newContent: string): Promise<void> {
+  const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === filePath);
+  if (doc) {
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+    edit.replace(doc.uri, fullRange, newContent);
+    if (!(await vscode.workspace.applyEdit(edit))) throw new Error('VS Code refused the edit.');
+    if (!(await doc.save())) throw new Error('VS Code could not save the file.');
+    return;
+  }
+  safeWriteFile(filePath, newContent);
+}
+
+// Read before the approval dialog and again after it: if the file changed
+// while the user was deciding, applying the old diff would silently throw
+// away whatever changed it.
+function changedSince(filePath: string, before: string | undefined): boolean {
+  const exists = fs.existsSync(filePath);
+  if (before === undefined) return exists;
+  return !exists || currentContent(filePath) !== before;
+}
+
+// Files that usually hold secrets (.env, private keys, credentials) are
+// read only with the user's OK, every time: what Rizo reads is sent to the
+// AI provider.
+async function approveSecretRead(relativePath: string): Promise<boolean> {
+  const choice = await vscode.window.showWarningMessage(
+    `Rizo wants to read ${relativePath}, which usually holds secrets such as API keys or passwords.`,
+    { modal: true, detail: 'Its contents would be sent to the AI provider for this chat. Allow this one read?' },
+    'Allow this read',
+  );
+  return choice === 'Allow this read';
+}
+
+const READ_MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 // rizo.permissions.autoApproveCommandPatterns. The setting is
 // application-scoped (package.json), so a repository's own
@@ -655,40 +692,56 @@ export async function executeTool(
       case 'read_file': {
         const filePath = resolveSafePath(args.path, extraRoots);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
-        // Without this, a binary file (PDF, image, archive) got
-        // force-decoded as UTF-8 and handed to the model as garbled noise
-        // with no error, wasting tokens on nothing useful. Same
-        // null-byte-in-first-8KB heuristic as the attachment flow — the
-        // standard cheap tell git itself uses.
-        const head = fs.readFileSync(filePath).subarray(0, 8000);
-        if (head.includes(0)) {
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) return `Error: ${args.path} is a folder, not a file.`;
+        if (stat.size > READ_MAX_FILE_BYTES) {
+          return `Error: ${args.path} is ${Math.round(stat.size / 1024 / 1024)} MB, too large to read. Ask the user which part matters, or search it with a command.`;
+        }
+        // A binary file (PDF, image, archive) would otherwise be decoded
+        // as UTF-8 and handed to the model as noise. Only the first 8 KB is
+        // read for this check.
+        if (looksBinary(readFileHead(filePath))) {
           return `Error: ${args.path} looks like a binary file — can't read it as text (no PDF/image/archive text extraction here). If you need its contents, ask the user to describe it or attach it as an image if it's a screenshot.`;
         }
-        return currentContent(filePath);
+        if (isSecretFile(filePath) && !(await approveSecretRead(args.path))) {
+          return `The user did not allow reading ${args.path} (it usually holds secrets). Don't retry; ask the user for the specific value or setting you need instead.`;
+        }
+        return sliceForReading(currentContent(filePath), args.start_line, args.end_line);
       }
 
       case 'write_file': {
+        if (typeof args.content !== 'string') return 'Error: write_file needs a "content" string.';
         const filePath = resolveSafePath(args.path, extraRoots);
         const isNew = !fs.existsSync(filePath);
         const oldContent = isNew ? '' : currentContent(filePath);
         const approved = await showApprovalDiff(context, args.path, oldContent, args.content, isNew, args.content);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, args.content);
+        if (changedSince(filePath, isNew ? undefined : oldContent)) {
+          return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the change.`;
+        }
+        await applyFileContent(filePath, args.content);
         return `Wrote ${args.path} (${isNew ? 'created' : 'overwritten'}).`;
       }
 
       case 'edit_file': {
+        if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') {
+          return 'Error: edit_file needs "old_string" and "new_string" strings.';
+        }
         const filePath = resolveSafePath(args.path, extraRoots);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}. Use write_file to create a new file.`;
         const oldContent = currentContent(filePath);
-        const occurrences = oldContent.split(args.old_string).length - 1;
-        if (occurrences === 0) return `Error: old_string not found in ${args.path}. No changes made.`;
-        if (occurrences > 1) return `Error: old_string appears ${occurrences} times in ${args.path} — must be unique. No changes made.`;
-        const newContent = oldContent.replace(args.old_string, args.new_string);
-        const approved = await showApprovalDiff(context, args.path, oldContent, newContent, false, args.new_string);
+        const result = replaceExactlyOnce(oldContent, args.old_string, args.new_string);
+        if (!result.ok) {
+          if (result.reason === 'empty') return 'Error: old_string is empty. Give the exact text to replace, or use write_file. No changes made.';
+          if (result.reason === 'not-found') return `Error: old_string not found in ${args.path}. No changes made.`;
+          return `Error: old_string appears ${result.count} times in ${args.path} — must be unique. No changes made.`;
+        }
+        const approved = await showApprovalDiff(context, args.path, oldContent, result.content, false, args.new_string);
         if (!approved) return 'User rejected this change. Do not retry the same edit without asking why.';
-        fs.writeFileSync(filePath, newContent);
+        if (changedSince(filePath, oldContent)) {
+          return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the edit.`;
+        }
+        await applyFileContent(filePath, result.content);
         return `Edited ${args.path}.`;
       }
 

@@ -4,10 +4,9 @@
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---------- analytics ----------
-  // gtag itself is defined inline in index.html's <head>; guarded here so
-  // this file still works standalone (a local preview with an ad blocker,
-  // a future page that doesn't load the tag) instead of throwing on every
-  // click.
+  // gtag itself is defined in ga-init.js; guarded here so this file
+  // still works when it isn't loaded (a local preview with an ad blocker)
+  // instead of throwing on every click.
   function track(event, label) {
     if (typeof gtag !== 'function') return;
     gtag('event', event, label ? { label } : undefined);
@@ -31,7 +30,7 @@
     root.setAttribute('data-theme', stored);
   }
 
-  themeToggle.addEventListener('click', () => {
+  themeToggle?.addEventListener('click', () => {
     const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const current = root.getAttribute('data-theme') || (systemDark ? 'dark' : 'light');
     const next = current === 'dark' ? 'light' : 'dark';
@@ -40,25 +39,27 @@
     track('theme_toggle', next);
   });
 
-  // ---------- copy install command ----------
-  const copyBtn = document.getElementById('copy-install');
-  const installCmd = 'code --install-extension ChaitanyaAggarwal.rizo';
-
-  copyBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(installCmd);
-      track('copy_install_command');
-      const original = copyBtn.innerHTML;
-      copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
-      copyBtn.setAttribute('aria-label', 'Copied');
-      setTimeout(() => {
-        copyBtn.innerHTML = original;
-        copyBtn.setAttribute('aria-label', 'Copy install command');
-      }, 1600);
-    } catch {
-      // Clipboard API unavailable (e.g. insecure context) — command is
-      // still selectable/copyable by hand, so fail silently.
-    }
+  // ---------- copy-command buttons ----------
+  // Any button with data-copy="<text>" copies that text. data-copy-event
+  // names the analytics event (defaults to copy_command).
+  document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy);
+        track(btn.dataset.copyEvent || 'copy_command');
+        const original = btn.innerHTML;
+        const label = btn.getAttribute('aria-label');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+        btn.setAttribute('aria-label', 'Copied');
+        setTimeout(() => {
+          btn.innerHTML = original;
+          btn.setAttribute('aria-label', label);
+        }, 1600);
+      } catch {
+        // Clipboard API unavailable (e.g. insecure context): the command
+        // is still selectable by hand, so fail silently.
+      }
+    });
   });
 
   // ---------- reveal on scroll ----------

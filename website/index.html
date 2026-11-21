@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Google tag (gtag.js) — page views + scroll/outbound-click enhanced
+<!-- Google tag (gtag.js): page views + scroll/outbound-click enhanced
      measurement come from this alone (toggle in the GA4 property's Data
      Streams settings); script.js adds a few named events on top for the
      CTAs that actually matter (install clicks, GitHub clicks, the copy-
@@ -14,7 +14,7 @@
 <script src="ga-init.js"></script>
 
 <title>Rizo: BYOK AI coding assistant for VS Code</title>
-<meta name="description" content="Rizo lets you pick a provider — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — for each chat, switch cost tier within it any time, and dial reasoning effort up or down per turn, all through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
+<meta name="description" content="Rizo lets you pick a provider (Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free) for each chat, switch cost tier within it any time, and dial reasoning effort up or down per turn, all through your own OpenRouter key. Diff-before-write, non-bypassable destructive-command warnings, and full cost visibility.">
 <link rel="icon" href="favicon.png" type="image/png">
 
 <meta property="og:title" content="Rizo: BYOK AI coding assistant for VS Code">
@@ -63,7 +63,7 @@
           VS Code extension · Bring your own key
         </span>
         <h1>Pick a provider. Stay in it. Dial the cost yourself.</h1>
-        <p class="hero-sub">Each chat locks to one company — Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free — so switching cost tiers mid-task never means a different model losing the thread. Swap variants inside that company any time, and turn reasoning effort up or down per message. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
+        <p class="hero-sub">Each chat locks to one company (Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free), so switching cost tiers mid-task never means a different model losing the thread. Swap variants inside that company any time, and turn reasoning effort up or down per message. No shared account, no markup: OpenRouter bills you directly for exactly what you use.</p>
         <div class="hero-ctas">
           <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-ga-event="cta_install" data-ga-label="hero">Install from Marketplace</a>
           <a class="btn btn-ghost" href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-ga-event="github_click" data-ga-label="hero">
@@ -80,7 +80,7 @@
       </div>
 
       <div class="hero-visual">
-        <img class="hero-mascot" src="assets/mascot.png" alt="Rizo's mascot — a stylized R character with a teal chevron">
+        <img class="hero-mascot" src="assets/mascot.png" alt="Rizo's mascot: a stylized R character with a teal chevron">
       </div>
     </div>
 
@@ -132,7 +132,7 @@
     <div class="section-head reveal">
       <span class="section-kicker">Providers</span>
       <h2>Pick a company, then relax</h2>
-      <p>A new chat opens with a one-time choice: Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free. That company is locked in for the whole chat — the in-chat switcher only ever offers its own variants, never a different one. One tool-calling convention, one system-prompt format, one context window, for the life of the conversation. Want a different company? Start a new chat.</p>
+      <p>A new chat opens with a one-time choice: Claude, Gemini, OpenAI, DeepSeek, Kimi, or Free. That company is locked in for the whole chat. The in-chat switcher only ever offers its own variants, never a different one. One tool-calling convention, one system-prompt format, one context window, for the life of the conversation. Want a different company? Start a new chat.</p>
     </div>
 
     <div class="table-wrap reveal">
@@ -173,12 +173,12 @@
           </tr>
           <tr>
             <td class="model">Free</td>
-            <td class="price" colspan="3">Auto-routed by default, no cost — or pick a specific free model yourself (NVIDIA, OpenAI, Google, Cohere, Z.ai) from the switcher</td>
+            <td class="price" colspan="3">Auto-routed by default, no cost, or pick a specific free model yourself (NVIDIA, OpenAI, Google, Cohere, Z.ai) from the switcher</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <p class="table-note reveal">Every provider starts a new chat on its cheapest variant. Model IDs and pricing are checked against openrouter.ai/models periodically — see the source for exact figures.</p>
+    <p class="table-note reveal">Every provider starts a new chat on its cheapest variant. Model IDs and pricing are checked against openrouter.ai/models periodically. See the source for exact figures.</p>
   </div>
 </section>
 
@@ -197,11 +197,11 @@
     <div class="mode-cards reveal">
       <div class="mode-card">
         <h4><span class="dot dot-a"></span> Which model answers never changes</h4>
-        <p>Effort controls how hard the model you already picked thinks — it maps straight to OpenRouter's unified <code>reasoning.effort</code> field, which each provider translates into its own native reasoning budget. It's not a second router: the company and variant you're on stay exactly the same.</p>
+        <p>Effort controls how hard the model you already picked thinks. It maps straight to OpenRouter's unified <code>reasoning.effort</code> field, which each provider translates into its own native reasoning budget. It's not a second router: the company and variant you're on stay exactly the same.</p>
       </div>
       <div class="mode-card">
         <h4><span class="dot dot-b"></span> Usage you can see, top-left</h4>
-        <p>Today's token count and this month's estimated cost, running totals across every chat and every provider, reset automatically at midnight and on the 1st. Per-chat totals sit under the composer too — nothing buried in a separate dashboard.</p>
+        <p>Today's token count and this month's estimated cost, running totals across every chat and every provider, reset automatically at midnight and on the 1st. Per-chat totals sit under the composer too, so nothing is buried in a separate dashboard.</p>
       </div>
     </div>
   </div>
@@ -288,12 +288,12 @@
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         <h3>Named threads</h3>
-        <p>Separate conversations, each with its own history and its own locked-in provider. Auto-named from the first message, renameable, deletable — with a confirm dialog, since there's no undo.</p>
+        <p>Separate conversations, each with its own history and its own locked-in provider. Auto-named from the first message, renameable, and deletable, with a confirm dialog, since there's no undo.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <h3>Cost you can see</h3>
-        <p>Per-chat token/cost totals under the composer, plus a running today/this-month readout at the top of the panel across every chat and provider — not buried in a dashboard.</p>
+        <p>Per-chat token/cost totals under the composer, plus a running today/this-month readout at the top of the panel across every chat and provider, not buried in a dashboard.</p>
       </div>
       <div class="feature-card">
         <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l6-6-6-6M12 19h8"/></svg>

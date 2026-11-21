@@ -17,17 +17,17 @@ describe('expandSlashCommand', () => {
   it('expands /commit into a canned Git Hygiene prompt', () => {
     const result = expandSlashCommand('/commit');
     expect(result).not.toBeNull();
-    expect(result).toContain('/commit —');
+    expect(result).toContain('/commit:');
     expect(result).toMatch(/git status|git diff/);
   });
 
   it('expands /review and /test similarly', () => {
-    expect(expandSlashCommand('/review')).toContain('/review —');
-    expect(expandSlashCommand('/test')).toContain('/test —');
+    expect(expandSlashCommand('/review')).toContain('/review:');
+    expect(expandSlashCommand('/test')).toContain('/test:');
   });
 
   it('is case-insensitive on the command name', () => {
-    expect(expandSlashCommand('/COMMIT')).toContain('/commit —');
+    expect(expandSlashCommand('/COMMIT')).toContain('/commit:');
   });
 
   it('folds extra text after the command name into the expansion as additional context', () => {
@@ -41,6 +41,6 @@ describe('expandSlashCommand', () => {
   });
 
   it('trims surrounding whitespace before matching', () => {
-    expect(expandSlashCommand('   /review   ')).toContain('/review —');
+    expect(expandSlashCommand('   /review   ')).toContain('/review:');
   });
 });

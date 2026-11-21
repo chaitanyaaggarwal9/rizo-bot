@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-This log starts from today (2026-08-13) — earlier work wasn't logged as it
+This log starts from today (2026-08-13). Earlier work wasn't logged as it
 happened, and inventing entries for it after the fact would be worse than
 an honest gap. Everything before this point lives in git history instead.
 
@@ -169,13 +169,13 @@ A security release. Upgrading is recommended for everyone.
   host. Root cause: `getHtml()` builds the entire webview (including
   its own embedded `<script>`) as one large outer TypeScript template
   literal, and several `.split('\n')`/string-literal calls *inside*
-  that literal were written with a single backslash instead of two —
+  that literal were written with a single backslash instead of two:
   `\n` gets consumed by the *outer* literal's own escape processing
   into a real newline character, silently corrupting the nested
   script's source the moment it's parsed as its own separate program.
   `tsc` can't catch this class of bug (the whole webview script is
   just string content to the outer compile), which is exactly why it
-  shipped — caught this time by extracting the actual rendered script
+  shipped. It was caught this time by extracting the actual rendered script
   from a real HTML dump and running `node --check` against it,
   confirmed via the same escaping mistake reproduced in isolation
   before fixing it. Several occurrences fixed, each applied and
@@ -193,82 +193,82 @@ A security release. Upgrading is recommended for everyone.
 ### Added
 - Tool-call transcript cards for `write_file`/`edit_file` now show a
   real +/- line diff instead of flat IN/OUT text, using the same
-  insert/removed theme tokens the native VS Code diff editor uses —
-  reads correctly regardless of the user's color theme instead of a
+  insert/removed theme tokens the native VS Code diff editor uses,
+  so it reads correctly regardless of the user's color theme instead of a
   fixed guess. Capped at 20,000 chars per side (`DIFF_MAX_CHARS` in
-  `tools.ts`) before falling back to no diff — the modal approval
+  `tools.ts`) before falling back to no diff. The modal approval
   dialog's own native `vscode.diff` view already showed the real
   change once, at approval time; this is about the transcript still
   being legible on scrollback, not re-doing that job at a size where
   the DOM cost isn't worth it.
-- Transcript rows redesigned from chat bubbles to full-width rows — a
+- Transcript rows redesigned from chat bubbles to full-width rows (a
   user turn is a left-accented block, an assistant turn is plain text
-  under a thin top divider — reading as a running log rather than a
+  under a thin top divider), reading as a running log rather than a
   two-column conversation, matching Claude Code's own transcript shape.
-- `chatPanel.test.ts` + `test/vscodeStub.ts` — the crash above shipped
+- `chatPanel.test.ts` + `test/vscodeStub.ts`: the crash above shipped
   because nothing automated ever actually parsed the webview's own
   generated script as JavaScript; `tsc` only ever sees it as a string.
   A real (if minimal) `vscode` module stub, aliased in
   `vitest.config.mts`, lets `ChatPanel.createOrShow()` run outside the
   actual extension host so its real output can be captured and checked
-  with `new Function(script)` — parses the generated script without
+  with `new Function(script)`, which parses the generated script without
   executing it, throwing exactly the SyntaxError a broken build would
   produce. Verified against a deliberately reintroduced instance of
   this exact bug before trusting it (fails correctly, not just "looks
   like it should").
 - Cross-thread memory: `search_past_work`, a new agent tool that
   searches every *other* thread's stored history for prior work on a
-  specific file — which threads touched it, when, and what was being
+  specific file: which threads touched it, when, and what was being
   asked at the time. Useful before a risky change, or when you ask
   "didn't we already fix this?" and the answer is buried in a
   different chat. Deterministic and zero extra LLM cost to populate:
   `StoredMessage` gains a `touchedFiles` field the tool loop was
   already in a position to know (every `read_file`/`write_file`/
   `edit_file` call already passes through it) and simply wasn't
-  keeping — this is the one exception to "persist only the final
+  keeping. This is the one exception to "persist only the final
   exchange, not the tool-call sub-steps," and it's cheap metadata, not
   the tool calls themselves. Excludes the current thread (already in
-  context) and matches file paths loosely — exact, then path-suffix,
-  then basename — since the same file rarely gets referenced
+  context) and matches file paths loosely (exact, then path-suffix,
+  then basename), since the same file rarely gets referenced
   byte-identically across sessions.
 
   First concrete step on the "graph of all my chats, thinks like a
-  brain" idea — scoped down from the full multi-modal
+  brain" idea, scoped down from the full multi-modal
   code+docs+PDF+image+video knowledge-graph vision to what Rizo
   already owns (its own thread history) and can build without a new
   dependency or per-project pre-index cost. Code-relationship queries
-  (call graphs, references) are a separate, still-open piece — VS
+  (call graphs, references) are a separate, still-open piece. VS
   Code's own language servers already compute that; better to expose
   those than reimplement them.
 
   Verified with real end-to-end tests against actual thread files on
   disk (`tools.test.ts`, using `threadStore.ts`'s own
   `createThread`/`saveThreadMessages` to build fixtures rather than
-  hand-writing the on-disk format) — finds a cross-thread touch,
+  hand-writing the on-disk format). It finds a cross-thread touch,
   excludes the current thread, matches by suffix and basename, and
   correctly reports no record when a file was never touched.
 - Code intelligence: `find_definition`, `find_references`, and
-  `call_hierarchy` — the code-relationship piece explicitly deferred
+  `call_hierarchy`: the code-relationship piece explicitly deferred
   above, now built. Each drives the workspace's own language server
   (`vscode.executeDefinitionProvider`/`executeReferenceProvider`/
-  `prepareCallHierarchy`+`provide{Incoming,Outgoing}Calls` — the same
+  `prepareCallHierarchy`+`provide{Incoming,Outgoing}Calls`, the same
   engine behind VS Code's own Go to Definition/Find All References),
   not a text search, so results resolve through imports and
   re-exports correctly and don't match an unrelated same-named symbol
   elsewhere. The model only ever has a symbol name and a file that
-  mentions it, not a line/column — `findSymbolPosition` resolves the
+  mentions it, not a line/column. `findSymbolPosition` resolves the
   first identifier-boundary occurrence in the file's current text
   (live editor buffer if open) and hands the language server that
   position. Custom identifier-boundary lookaround instead of regex's
   own `\b`, deliberately: `\b` is defined by `\w`
-  (`[A-Za-z0-9_]`), which does not include `$` — a real, valid
-  identifier character in JS/TS (jQuery's whole naming convention) —
+  (`[A-Za-z0-9_]`), which does not include `$` (a real, valid
+  identifier character in JS/TS, jQuery's whole naming convention),
   so a plain `\b`-based search would silently never resolve a
   `$`-prefixed symbol at all. `call_hierarchy` falls back to pointing
   at `find_references` when the language server can't build a
   hierarchy for a given symbol/language (not every language supports
   it). Not independently testable outside a real language server and
-  a real project — `findSymbolPosition` (the one piece of pure logic
+  a real project. `findSymbolPosition` (the one piece of pure logic
   in this path, including the `$`-boundary case) has direct unit
   tests; the rest needs manual verification in the Extension
   Development Host. `rizo.permissions.disabledTools`'s setting enum
@@ -277,33 +277,33 @@ A security release. Upgrading is recommended for everyone.
 
 ### Changed
 - Tool-call cards with a real diff (`write_file`/`edit_file`) now start
-  expanded instead of collapsed — first step of a broader push to make
+  expanded instead of collapsed, the first step of a broader push to make
   Rizo feel less like a general-purpose chat product and more like a
   tool built for engineers who want to verify every edit inline. Reads
   and commands with no diff still start collapsed; this is specifically
   about the one thing actually worth seeing without an extra click.
 - Tool-call cards now have a real border (`1px solid
   var(--vscode-widget-border)`, red-tinted on failure) instead of only
-  a background tint — closes the gap against a bordered-card design
+  a background tint. This closes the gap against a bordered-card design
   target checked line-by-line against the actual CSS. Failed cards'
   border, title, and status now all use the same error color, instead
   of just the text.
 - The IN/OUT/DIFF/NEW FILE tag labels inside a tool card now use the
   editor font (`--vscode-editor-font-family`) like every other piece of
-  text in that card already did — only the tag label itself had been
+  text in that card already did. Only the tag label itself had been
   inheriting the general UI font.
 - `test-discipline.md` rule 7 sharpened with an explicit PASS/FAIL exit
   condition: if a test suite exists, run it before declaring the turn
-  done — "the code looks right" and "the tests pass" are different
+  done: "the code looks right" and "the tests pass" are different
   claims, only make the second one after actually seeing it pass.
   Evaluated a 4-part prompting framework (Context Boundary / Execution
   Protocol / Internal Critic / Exit Condition) against what Rizo
   already has: the first two are already the whole point of `skills/`,
   and `code-review-discipline.md` already refuses a review with no
-  explicit verdict — this closes the one real gap, an explicit exit
+  explicit verdict. This closes the one real gap, an explicit exit
   condition for testing specifically. Deliberately NOT adding an
   automatic generate→critique→refine loop (especially a separate
-  Generator+Judge model call) — that's 2-4x the token cost of a turn
+  Generator+Judge model call). That's 2-4x the token cost of a turn
   every time it runs, the wrong default for a product whose whole
   thesis is cost-efficient routing. If that's ever wanted, it belongs
   as something asked for via `/review`, not automatic behavior baked
@@ -314,98 +314,98 @@ A security release. Upgrading is recommended for everyone.
 ### Fixed
 - `MAX_TOKENS` raised from 2048 to 8192. Real incident: a `write_file`
   call for a genuinely large file (a game engine class, several
-  hundred lines) hit the old cap mid-string on every single retry —
+  hundred lines) hit the old cap mid-string on every single retry:
   "Unterminated string in JSON" from `tools.ts`'s own parser, a
   "(unknown path)" tool card, and the model regenerating the whole
   file from scratch each attempt with no way to self-correct. One
   turn alone hit 583K tokens without ever finishing. Silent mid-JSON
   truncation is a strictly worse failure than the low-credit rejection
-  this constant originally guarded against — that one is at least a
+  this constant originally guarded against. That one is at least a
   clear, actionable error; this one just looked like a parser bug.
 - `summarizeToolCall` (`tools.ts`) now recovers the file path from a
   truncated `write_file`/`edit_file` call instead of always showing
-  "(unknown path)" — `path` is declared before the (often huge)
+  "(unknown path)", since `path` is declared before the (often huge)
   content field in the tool schema, so it's usually still intact in
   the raw JSON even when the rest of it got cut off. Falls back to
   "(unknown path)" only when the path itself is genuinely gone.
 - Tool-call IN/OUT blocks now use fixed terminal colors (near-black
   background, light text) instead of `--vscode-textCodeBlock-
   background`, which just tinted toward whatever the ambient editor
-  background already was — a pale, low-contrast box in a light theme,
+  background already was: a pale, low-contrast box in a light theme,
   nothing like an actual terminal.
-- A bigger `MAX_TOKENS` only pushes the same truncation further out —
+- A bigger `MAX_TOKENS` only pushes the same truncation further out:
   a large enough file still hits it. `openrouter.ts` now surfaces
   `finish_reason` from the stream (not tracked at all before), and
   when a `write_file`/`edit_file` call is both the last one in a cut-
   off response (`finish_reason: 'length'`) and fails to parse,
   `chatPanel.ts` skips the generic "could not parse" error and tells
-  the model exactly what happened — the file was too large for one
-  call — with the actual fix (split it: a smaller `write_file`, then
+  the model exactly what happened (the file was too large for one
+  call), with the actual fix (split it: a smaller `write_file`, then
   `edit_file` in follow-up calls), instead of a message that just
   prompted a full regeneration of the same oversized call every retry.
   Deliberately not literal byte-level continuation (splicing a second
-  completion onto the truncated JSON string) — Rizo routes through 5+
+  completion onto the truncated JSON string). Rizo routes through 5+
   model families via OpenRouter, not one provider, and a botched
   splice could produce JSON that parses successfully but silently
   writes corrupted content to a real file, which is worse than a
   clean failure. Added real test coverage for `finish_reason`
   extraction, tool-call reassembly across streamed chunks, and the
-  multi-line SSE framing fix (`openrouter.test.ts` — this file had
+  multi-line SSE framing fix (`openrouter.test.ts`: this file had
   none before despite being the site of two real, previously-shipped
   bugs this session).
 - `read_file`/`write_file`/`edit_file` can now reach a location outside
   the open workspace folder in two new, deliberately narrow ways:
   - **Multi-root workspaces.** `resolveSafePath` used to only ever
-    check the *first* workspace folder (`workspaceFolders[0]`) — adding
+    check the *first* workspace folder (`workspaceFolders[0]`). Adding
     a second folder via VS Code's own File > Add Folder to Workspace...
     was silently ignored for file tools even though it's a real,
     explicit trust decision the same way opening the single folder
     always was. Now every open folder is usable.
   - **A path the human's own message names.** "read the code in
     /some/other/folder" now works without adding it to the workspace
-    first — the message text is scanned for real, existing absolute
+    first. The message text is scanned for real, existing absolute
     paths (quoted ones can contain spaces) and, once found, that
     location is usable for the rest of the thread (`threadStore.ts`'s
     new `Thread.extraRoots`, persisted). Deliberately scoped to the
-    *human's own words only* — a model's tool-call arguments never
+    *human's own words only*: a model's tool-call arguments never
     grant themselves new access this way, only ever the same
     already-open-or-named locations. That distinction is exactly why
     this is safe to add and a general "let the model read anywhere it
     asks" wouldn't be: the workspace boundary exists specifically to
     stop a model reaching outside it *on its own* (e.g. steered there
     by a prompt injection buried in some file it already read), and
-    a human naming a folder in their own chat message isn't that risk
-    — same reasoning "Attach file..." already relies on to bypass the
+    a human naming a folder in their own chat message isn't that risk,
+    the same reasoning "Attach file..." already relies on to bypass the
     same boundary for a human-driven file pick. Verified end-to-end
     (not just read the code and assumed): the exact same path is
     correctly refused with no `extraRoots` grant, succeeds once
     granted, and an unrelated third path stays refused even when
-    other `extraRoots` exist — confirming this is additive access to
+    other `extraRoots` exist, confirming this is additive access to
     named locations, not a blanket bypass.
 
 ### Added
 - Free provider: pick a specific free model yourself instead of only
-  the auto-routed default — NVIDIA Nemotron Ultra, OpenAI GPT-OSS 20B,
+  the auto-routed default: NVIDIA Nemotron Ultra, OpenAI GPT-OSS 20B,
   Google Gemma 4, Cohere North Mini, or Z.ai GLM 5.2, alongside the
   existing Auto option (still the default, unchanged behavior).
-  Deliberately NOT grouped by company the way the paid providers are —
+  Deliberately NOT grouped by company the way the paid providers are:
   free-tier availability on OpenRouter comes from a different, shifting
   set of companies with no free Claude or Gemini at all, and coverage
   per company is too uneven (NVIDIA alone has 7 free models today, most
   others have 1-2) for an honest "top N per company" structure. A
-  specific pick still gets Auto's fallback resilience — it's tried
+  specific pick still gets Auto's fallback resilience (it's tried
   first, then the same taskType-ranked chain if it's down or rate-
-  limited — and Smart Starting Variant is explicitly excluded from Free
+  limited), and Smart Starting Variant is explicitly excluded from Free
   now that it has more than one real option, since a 0/1/2 tier has
   nothing coherent to map onto 5 unrelated model picks. Google Gemma 4
-  is also the first vision-capable Free option — the old blanket "Free
+  is also the first vision-capable Free option, and the old blanket "Free
   can't do images" block is now the same per-variant check every other
   provider already used.
 
 ## [0.4.5] - 2026-08-20
 
 ### Fixed
-- `moonshotai/kimi-k2-turbo` was pulled from OpenRouter entirely —
+- `moonshotai/kimi-k2-turbo` was pulled from OpenRouter entirely:
   a real user's existing Kimi thread started hard-failing every send
   with "not a valid model ID." Replaced Kimi's whole lineup with what's
   actually live now (K2.5, K2 Thinking, K3) rather than patch just the
@@ -414,12 +414,12 @@ A security release. Upgrading is recommended for everyone.
   tiers anymore, and K3 (a new flagship, 4x the context window, ~5x the
   price of K2 Thinking) restores a real cheap-to-strong spread.
   Cross-checked every other provider's model ids against OpenRouter's
-  live catalog at the same time — nothing else was stale.
+  live catalog at the same time. Nothing else was stale.
 - `chatPanel.ts`'s `handleSend` now self-heals a thread stuck on a
   since-invalidated model id: falls back to that provider's current
   default and persists it, instead of sending a request that's doomed
   to fail the same way on every future turn. This is what actually
-  needed to happen — the catalog fix alone doesn't rescue an existing
+  needed to happen: the catalog fix alone doesn't rescue an existing
   thread already holding a dead id in storage. This will happen again
   to some provider eventually (an upstream provider can rename/pull a
   model with no warning); now a thread just quietly recovers instead of
@@ -432,29 +432,29 @@ A security release. Upgrading is recommended for everyone.
   (doesn't need to exist → already in this codebase → stdlib → native
   platform feature → already-installed dependency → one line → only
   then the minimum that works), in place of the old vaguer "build only
-  what was asked for" bullets — same intent, now a checkable sequence.
+  what was asked for" bullets, with the same intent, now a checkable sequence.
   A deliberate corner cut with a known ceiling now ships with a
   comment naming that ceiling, instead of either silently cutting it
   or not cutting it at all.
 - New rule 5 in the same file, "Let the code speak, don't pad the
-  reply" — nothing previously said anything about reply length, only
+  reply": nothing previously said anything about reply length, only
   code structure. Completion tokens price 3-5x prompt tokens across
   every provider in `pricing.ts`, so unsolicited prose in the final
   answer is the more expensive place to be verbose. Doesn't touch
   explanation the user actually asked for.
 - `debugging-discipline.md` rule 3 gains a "grep every caller before
-  fixing" tactic — a concrete way to verify a fix lands at the shared
+  fixing" tactic, a concrete way to verify a fix lands at the shared
   root rather than one call site; the root-cause fix is usually also
   the smaller diff, not a tradeoff against it.
 - Rewrote 9 already-pushed commit messages to drop a leftover
   `Co-Authored-By: Claude` trailer predating this repo's own
-  attribution-off setting — tree content byte-identical before and
+  attribution-off setting: tree content byte-identical before and
   after, only the messages changed. Ahead of making this repo public.
 
 ## [0.4.3] - 2026-08-19
 
 ### Added
-- Smart starting variant (`src/complexityEstimator.ts`) — a thread's
+- Smart starting variant (`src/complexityEstimator.ts`): a thread's
   first message now picks which variant *within its already-locked
   provider* to start on, instead of always defaulting to that
   company's cheapest model. A cheap keyword/shape heuristic (no model
@@ -462,9 +462,9 @@ A security release. Upgrading is recommended for everyone.
   traces, attachments, length, and "big ask" phrasing
   (refactor/redesign/migrate/rewrite/etc.); runs once, only before a
   thread's first send, and only when the model is still sitting at
-  the picker's own default — an explicit manual pick always wins over
+  the picker's own default. An explicit manual pick always wins over
   a guess.
-- Auto-escalation retry — when a turn hits the tool-call iteration cap
+- Auto-escalation retry: when a turn hits the tool-call iteration cap
   without finishing, keeps re-hitting the same failing tool call three
   times in a row before giving up, or (new) shows two turns in a row
   that both poked around with read-only tools without ever writing
@@ -472,35 +472,35 @@ A security release. Upgrading is recommended for everyone.
   variant}" button (only shown when there's actually a stronger
   variant left in that provider to offer). Clicking it reuses the
   existing model-switcher's own code path to re-lock the thread to
-  that variant, then resends — same company-lock rule as everywhere
-  else, no cross-provider escalation. The cross-turn signal
+  that variant, then resends (same company-lock rule as everywhere
+  else, no cross-provider escalation). The cross-turn signal
   (`src/struggleDetector.ts`) closes a real gap the first two missed:
   a cheap model that writes a broken multi-file page (e.g. an HTML
   file linking a stylesheet/script it never created) and then spends
   several turns re-checking the same missing file instead of writing
-  it — zero tool errors, nowhere near the iteration cap, invisible to
+  it: zero tool errors, nowhere near the iteration cap, invisible to
   either single-turn signal.
-- Effort auto-suggestion (`providers.ts`'s `effortForTier`) — reuses
+- Effort auto-suggestion (`providers.ts`'s `effortForTier`) reuses
   Smart Starting Variant's same message-complexity tier to also pick
   the Effort level (low/medium/high) for a turn's `reasoning.effort`.
   Unlike the model pick, this isn't a thread-level identity trait, so
   it re-evaluates on *every* turn rather than only the first, and
-  never writes the guess back to thread storage — only used for that
+  never writes the guess back to thread storage. It's only used for that
   turn's own call and reflected live on the Effort pill. Permanently
   deferred the moment you ever pick an effort level yourself from the
   switcher (same "an explicit choice always wins over a guess" rule as
   everywhere else), and skipped outright for a variant that ignores
   effort entirely (the Free provider's one Auto model).
-- Live turn status line — while a turn is running, its bubble now shows
+- Live turn status line: while a turn is running, its bubble now shows
   which model/variant is actually answering, what it's doing right now
   ("Thinking…", the current tool call's title, "Writing reply…"), a
   ticking elapsed timer, and a running token count that grows across a
-  turn's tool round-trips — all previously invisible until the whole
-  turn finished. Cleaned up on every path that can end a turn — normal
-  finish, Stop, an error, switching threads — so nothing keeps ticking
+  turn's tool round-trips, all previously invisible until the whole
+  turn finished. Cleaned up on every path that can end a turn (normal
+  finish, Stop, an error, switching threads), so nothing keeps ticking
   against a turn nobody's looking at anymore.
 - A real unit test suite (`vitest`, `src/*.test.ts`) covering every
-  module with no `vscode` import at module level — task classification,
+  module with no `vscode` import at module level: task classification,
   Smart Starting Variant/effort selection, destructive-command
   detection, dangerous-pattern scanning, secret redaction, pricing,
   slash commands, and struggle detection. Wired into CI
@@ -513,7 +513,7 @@ A security release. Upgrading is recommended for everyone.
   consecutive `data:` lines, meant to be joined with `\n` and parsed
   once a blank line ends the event. The old parser treated every single
   `data:` line as a complete, independently-parseable JSON chunk on its
-  own — which happened to work for the common one-line-per-event case,
+  own, which happened to work for the common one-line-per-event case,
   but silently dropped a chunk of a streamed tool call's arguments the
   moment a payload was ever legitimately spread across multiple lines
   this way. Root cause of a real, reproducible "could not parse tool
@@ -522,21 +522,21 @@ A security release. Upgrading is recommended for everyone.
   silently regenerated from scratch on every retry, burning full
   generation tokens each time. `tools.ts`'s error message for a
   genuine (non-framing) JSON failure also no longer dumps the entire
-  raw argument blob back into the tool result — a short excerpt plus
+  raw argument blob back into the tool result: a short excerpt plus
   JSON.parse's own error and a concrete "try smaller calls" suggestion
   instead, so a real failure doesn't also inflate the next turn's input
   tokens for nothing.
 - `coding-discipline.md` (the base skill loaded on every coding-
   classified message) now explicitly says a page whose stylesheet or
   script was never written isn't done, and to create every file
-  referenced in the same turn rather than waiting to be asked — the
+  referenced in the same turn rather than waiting to be asked, the
   direct fix for the transcript that motivated the cross-turn
   stagnation signal above.
 
 ### Changed
 - Removed the separate root-level Express/CLI backend (`server.js`,
   `cli.js`, `models.config.js`, `skills.config.js`, `public/`, root
-  `skills/`) — an older personal prototype that predated the VS Code
+  `skills/`), an older personal prototype that predated the VS Code
   extension and had gone unmaintained since. Rizo (`vscode-extension/`)
   is now the only product in this repo; `README.md`/`CONTRIBUTING.md`/
   `.github/` updated throughout to match, and the backend-only
@@ -545,19 +545,19 @@ A security release. Upgrading is recommended for everyone.
 ## [0.4.2] - 2026-08-19
 
 ### Added
-- Command-output redaction (`src/outputRedaction.ts`) — `run_command`'s
+- Command-output redaction (`src/outputRedaction.ts`): `run_command`'s
   stdout/stderr is scanned for API keys, tokens, JWTs, and private keys
   and redacted in place (e.g. `API_KEY=[REDACTED]`) before the result
   ever reaches the model or gets written into thread history. Covers
   this extension's own kind of key (`sk-or-v1-...`) along with GitHub,
-  AWS, and generic labeled secrets — the gap this closes: unlike a
+  AWS, and generic labeled secrets. The gap this closes: unlike a
   command's own text, which gets an approval prompt before it runs, its
   *output* had no review step at all, so `cat .env`, `env`, or
   `aws configure list` flowed straight into the conversation with zero
   scrubbing
 - `destructiveCommands.ts` now also flags shell indirection as
-  destructive — piping a remote download into `sh`/`bash`/`zsh`,
-  `bash -c "..."`, `base64 -d | sh`, `eval` — none of which the existing
+  destructive (piping a remote download into `sh`/`bash`/`zsh`,
+  `bash -c "..."`, `base64 -d | sh`, `eval`), none of which the existing
   force-push/rm-rf/hard-reset patterns could see into, so a destructive
   command run this way previously fell through to the casual,
   Always-Allow-bypassable approval tier instead of the elevated,
@@ -566,7 +566,7 @@ A security release. Upgrading is recommended for everyone.
 Both came out of a security-review pass looking specifically at what
 Codex's and Claude Code's own shipped security layers cover that
 Rizo's didn't yet (checked their actual settings schema and, for
-Codex, its real open-source `execpolicy` policy engine) — scoped down
+Codex, its real open-source `execpolicy` policy engine), scoped down
 to what's proportionate for this project's size rather than attempting
 their full OS-level command sandboxing, which neither extension's
 approach would be a reasonable solo-maintainer undertaking to replicate.
@@ -574,7 +574,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 ## [0.4.1] - 2026-08-19
 
 ### Added
-- Message queueing — the composer no longer disables while a turn is
+- Message queueing: the composer no longer disables while a turn is
   running; typing a follow-up and hitting Enter queues it instead of
   doing nothing, auto-dispatching once the current reply finishes. Stop
   clears the queue instead of draining it. A small note above the
@@ -584,11 +584,11 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   (`rizo.composer.sendKey`), a Focus view toggle that hides the tool-call
   transcript (`rizo.view.focusMode`), and a link into VS Code's native
   settings for the rest
-- Reopen Closed Session — deleting a thread now shows an Undo toast, plus
+- Reopen Closed Session: deleting a thread now shows an Undo toast, plus
   a standing `Rizo: Reopen Closed Session` command
-- "Add File to Rizo Thread" — right-click a file in the Explorer or an
+- "Add File to Rizo Thread": right-click a file in the Explorer or an
   editor tab to attach it, instead of only the composer's `+` menu
-- TODO CodeLens — "Implement with Rizo" above `TODO`/`FIXME` comments in
+- TODO CodeLens: "Implement with Rizo" above `TODO`/`FIXME` comments in
   any file, prefills the composer (deliberately doesn't auto-send)
 
 ### Changed
@@ -620,61 +620,61 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 
 ### Changed
 - Model selection is now an explicit, per-chat, company-locked choice
-  instead of automatic per-message routing — the keyword/word-count
+  instead of automatic per-message routing. The keyword/word-count
   classifier that used to pick a model turn-by-turn (`modelForMessage` in
   `modelRouter.ts`) was reclassifying every message in isolation, with no
   memory of an in-progress task; a short follow-up like "do it" could fall
   to the cheapest tier mid-edit, and the next turn's model had no ground
   truth for what a *different* model had already changed on disk.
-  - `src/providers.ts` (new) — the company/variant catalog (Claude,
+  - `src/providers.ts` (new): the company/variant catalog (Claude,
     Gemini, OpenAI, DeepSeek, Kimi, Free), ordered cheapest → most capable
     per company
   - A new chat now opens a provider picker instead of going straight to
     the composer; picking a company locks the thread to it
     (`ThreadData.provider`/`.model` in `threadStore.ts`) and starts on
     that company's cheapest variant. The in-chat model pill/dropdown only
-    ever offers that same company's other variants — there is no code
+    ever offers that same company's other variants: there is no code
     path that renders a different provider into it, and no way to cross
     providers mid-thread; a different company means a new chat
-  - `src/modelRouter.ts` simplified accordingly — `TaskType` is now just
+  - `src/modelRouter.ts` simplified accordingly: `TaskType` is now just
     `'coding' | 'general'` (the old `low`/`medium` reasoning-effort split
     only ever fed model selection, which is gone), and it's used solely to
     decide which skill files load (`skillsLoader.ts`) and, for the Free
-    provider only, which fallback chain to try — never which model
+    provider only, which fallback chain to try, never which model
     answers
   - `src/pricing.ts` extended with per-million-token pricing for every
     variant across all five companies
   - Header now shows a running "today's tokens / this month's cost"
     readout, top-right, aggregated across every thread and provider
-    (`src/usageStore.ts`, new) — resets itself lazily (no cron/startup
+    (`src/usageStore.ts`, new). It resets itself lazily (no cron/startup
     hook) whenever the stored day/month no longer matches the current one
   - The tool-call-iteration-limit placeholder reply is no longer a vague
-    "(no final response...)" string — since it gets persisted and replayed
+    "(no final response...)" string. Since it gets persisted and replayed
     as real history to whichever model answers the next turn, it now
     explicitly says the turn was cut short and invites "continue"
 
 ### Added
-- Effort switcher — a second pill next to the model pill (Low/Medium/High,
+- Effort switcher: a second pill next to the model pill (Low/Medium/High,
   defaulting to Medium) that maps straight to OpenRouter's unified
   `reasoning.effort` field (`ReasoningEffort` in `openrouter.ts`), which
   OpenRouter itself translates into whatever the underlying provider
   actually expects (a literal effort enum for OpenAI-style models, a
   thinking-token budget for Anthropic/Gemini). This is the token-cost dial
   for *how hard the current model thinks*, independent of *which* model is
-  answering (the provider/variant switcher from above) — so a thread can
+  answering (the provider/variant switcher from above), so a thread can
   stay on one model the whole time and still cost less on trivial
   follow-ups. `ModelVariant.reasoning` in `providers.ts` marks the rare
   variant that doesn't support it (currently only the Free provider's
-  rotating Auto model) — the pill hides entirely rather than offering a
+  rotating Auto model). The pill hides entirely rather than offering a
   control that would silently do nothing. Stored per-thread
   (`ThreadData.effort` in `threadStore.ts`), adjustable anytime
-- **Delete** button next to Rename in the thread bar — modal confirm first
+- **Delete** button next to Rename in the thread bar: modal confirm first
   (`vscode.window.showWarningMessage`, no "Always" bypass), since there's
   no undo. Deleting the active thread falls back to the next
   most-recently-updated one, or a brand-new thread if that was the last
   one left (`deleteThread` in `threadStore.ts`)
 - Usage readout ("Today: N tok · Month: $X") moved from the top-right
-  corner into its own row, top-left, directly above the thread dropdown —
+  corner into its own row, top-left, directly above the thread dropdown:
   same data (`usageStore.ts`), just relocated so it reads as "here's what
   this app is costing you" rather than competing for attention with the
   thread controls next to it
@@ -682,7 +682,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 ### Changed
 - `vscode-extension/README.md`, `ONBOARDING.md`, and the root `README.md`
   updated to describe the provider picker / effort switcher / usage
-  tracking above — replaces every mention of the old automatic
+  tracking above. This replaces every mention of the old automatic
   trivial/general/coding classifier and the Free/Paid toggle, which no
   longer exist
 - `website/` refreshed to match: hero, the former three-tier routing
@@ -691,7 +691,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   section reusing the old toggle-mock's visual pattern relabeled Low/
   Medium/High (`#effort`), and a new `#interface` section with two
   honestly-labeled screenshot placeholders (no real image-generation tool
-  available — see `website/README.md` for which two files fill them in).
+  available; see `website/README.md` for which two files fill them in).
   Dead CSS for the removed tier pills and the old two-state toggle
   (`.pill-coding`/`.pill-general`/`.pill-trivial`, `.toggle-mock
   .active-paid`/`.active-free`, `.dot-paid`/`.dot-free`) removed or
@@ -699,7 +699,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   in with real screenshots of the running extension
 - `website/` hero diagram extended to four sequential stages (New chat →
   Pick a provider → Claude, locked in → which variant answers) instead
-  of jumping straight to the locked-in state — it was skipping the two
+  of jumping straight to the locked-in state. It was skipping the two
   steps that are actually the point. Hero also gained a real two-column
   layout at ≥860px (text + the extension's own mascot image, same teal
   drop-shadow treatment as its empty-state), replacing a large area of
@@ -710,7 +710,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 
 ### Changed
 - Marketplace Overview (`vscode-extension/README.md`) updated for
-  everything shipped in 0.3.0 — it had gone out with the 0.2.0 feature
+  everything shipped in 0.3.0. It had gone out with the 0.2.0 feature
   list still in place. `v0.3.0`'s tag was already pushed and protected
   (can't be moved/deleted on this repo) by the time this was caught, so
   it ships as its own patch release rather than retroactively changing
@@ -720,26 +720,26 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 
 ### Added
 - Live tool-call transcript, streaming replies, markdown rendering, and
-  a Stop button for the chat — replaces the old opaque "Thinking..."
+  a Stop button for the chat. This replaces the old opaque "Thinking..."
   bubble with one that evolves in place through a turn (transcript lines
-  as tool calls happen, streamed text, then the rendered final content —
+  as tool calls happen, streamed text, then the rendered final content;
   designed as one client-side `activeTurn` state object rather than
   three competing update paths):
-  - `src/openrouter.ts` — `callOpenRouter` rewritten for SSE streaming
+  - `src/openrouter.ts`: `callOpenRouter` rewritten for SSE streaming
     (`response.body` read loop, `stream: true` +
     `stream_options: { include_usage: true }`), with concrete
     index-keyed reassembly of streamed tool-call argument fragments into
-    complete JSON strings before they ever leave the file — `tools.ts`
+    complete JSON strings before they ever leave the file. `tools.ts`
     needed zero changes as a result. `callWithFallback` now discards a
     partial reply and restarts cleanly with the next model if a failure
     happens *after* some text already streamed, instead of letting a
     second model's answer visually run together with the first's
     orphaned fragment. New optional `signal`/`onDelta`/`onRestart` on
     `CallOptions`
-  - `src/tools.ts` — `summarizeToolCall`/`summarizeToolResult` helpers
+  - `src/tools.ts`: `summarizeToolCall`/`summarizeToolResult` helpers
     for the transcript's one-line-per-call previews (never the full
-    result — `read_file` can return an entire file)
-  - `src/chatPanel.ts` — the tool-call loop now posts `toolStart`/
+    result, since `read_file` can return an entire file)
+  - `src/chatPanel.ts`: the tool-call loop now posts `toolStart`/
     `toolEnd` around each call instead of running fully hidden;
     `AbortController` wired through `handleSend` → `callModel` for Stop,
     gated by a `turnId` every extension→webview message during a turn
@@ -748,7 +748,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
     dependency-free markdown renderer (escape-first, fenced code blocks
     and inline code protected from later emphasis regexes via a
     placeholder-token swap, no link/image syntax, headers flattened to
-    bold rather than real heading tags) — applies to assistant replies
+    bold rather than real heading tags). It applies to assistant replies
     only, never per-streamed-chunk (once, at the final swap, to avoid
     flickering on an unclosed code fence mid-stream)
   - Send button doubles as Stop while a turn is in flight; the input box
@@ -756,27 +756,27 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
     button was, so Enter could still fire a second send mid-request)
 
 - Four features adapted from patterns in the official `claude-code`
-  repo's examples/plugins (docs only — the CLI itself is closed-source),
+  repo's examples/plugins (docs only; the CLI itself is closed-source),
   scoped to the VS Code extension only (`server.js`/`cli.js` have no
   tool-calling and nothing for these to gate):
-  - `src/dangerousPatterns.ts` — deterministic scan for ~18 high-signal
+  - `src/dangerousPatterns.ts`: deterministic scan for ~18 high-signal
     dangerous code patterns, folded into the write_file/edit_file
     approval dialog as a warning banner (modeled on claude-code's
     `security-guidance` plugin's regex layer, without its LLM-review
     layers). Still fires as a non-modal toast under "Always Allow"
   - `rizo.permissions.autoApproveCommandPatterns` and
-    `rizo.permissions.disabledTools` VS Code settings — the extension's
+    `rizo.permissions.disabledTools` VS Code settings, the extension's
     first `contributes.configuration` entry at all. Destructive commands
     stay non-overridable by either setting, on purpose
-  - `src/projectInstructions.ts` — optional `.rizo/instructions.md` in
+  - `src/projectInstructions.ts`: optional `.rizo/instructions.md` in
     the user's own workspace, appended after bundled skills, 8KB budget
-  - `src/slashCommands.ts` — `/commit`, `/review`, `/test` expand to a
+  - `src/slashCommands.ts`: `/commit`, `/review`, `/test` expand to a
     canned prompt tied to the matching skill and force the coding tier
 
-- A visible `// Rizo — Copyright (c) 2026 Chaitanya Aggarwal` header on
-  every first-party source file (root + extension) — a plain-sight
+- A visible Rizo copyright header (`Copyright (c) 2026 Chaitanya Aggarwal`) on
+  every first-party source file (root + extension), a plain-sight
   provenance marker, follow-up to the Commons Clause license change below
-- `.github/workflows/release.yml` — tag-triggered (`v*.*.*`) Marketplace
+- `.github/workflows/release.yml`: tag-triggered (`v*.*.*`) Marketplace
   publish: compiles, checks the tag matches `package.json`'s version,
   packages, publishes, attaches the `.vsix` to a GitHub Release. Needs a
   `VSCE_PAT` repo secret. See CONTRIBUTING.md for the release steps
@@ -804,18 +804,18 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   only shrinks what gets sent to the model
 
 ### Changed
-- Free/Paid switch dropped the 🆓/💰 emoji — text-only now, active state
+- Free/Paid switch dropped the 🆓/💰 emoji: text-only now, active state
   colored with the brand teal/amber instead of an icon standing in for
   what the label already says
 
-- `website/` — the marketing site (deploys to rizobot.com via Vercel,
+- `website/`: the marketing site (deploys to rizobot.com via Vercel,
   see `website/README.md`). Static HTML/CSS/JS, no framework. Hero
   features a live diagram of the actual task-routing mechanism rather
   than generic marketing art; content (routing table, pricing, safety
   list) is pulled directly from `vscode-extension/src/*.ts`, not
   aspirational copy. Palette and wordmark built from the real Rizo logo
   (teal `#009C96` sampled directly from the source file, not guessed)
-- `vscode-extension/README.md` — the actual Marketplace listing page
+- `vscode-extension/README.md`: the actual Marketplace listing page
   (features, getting-started link, license); didn't exist before, so
   `vsce package`/`publish` had nothing to show on the extension's page
 - `repository`, `bugs`, `homepage`, `keywords` fields in
@@ -833,13 +833,13 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   it already switched to below: still free to use, read, modify, and
   redistribute, but the Commons Clause specifically withholds the right
   to sell the software (or a product/service whose value comes
-  substantially from it) — makes the project source-available rather than
+  substantially from it). This makes the project source-available rather than
   OSI-certified "open source," which by definition can't restrict
   commercial use. `package.json` license fields (root + `vscode-extension`)
   changed to `SEE LICENSE IN LICENSE`, since Commons Clause has no
   registered SPDX identifier
 - **License switched from proprietary "all rights reserved" back to
-  Apache License 2.0**, and the repo/extension are going public — BYOK
+  Apache License 2.0**, and the repo/extension are going public. BYOK
   (bring your own OpenRouter key) means there's no shared account or
   billing surface to protect, and public source code is part of the
   trust a BYOK tool needs to earn. `package.json` license fields
@@ -850,14 +850,14 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 - Security audit ahead of public release: fixed a symlink-based
   path-traversal gap in `resolveSafePath()` (a symlink inside the
   workspace pointing outside it could lead `read_file`/`write_file`/
-  `edit_file` off the workspace root — now resolved via
+  `edit_file` off the workspace root; now resolved via
   `fs.realpathSync`) and closed two gaps in destructive-command
   detection (colon-refspec branch delete, long-form `rm --recursive
   --force`)
 
 ### Fixed
 - The chat panel was completely unusable on load right after the
-  markdown/streaming work above landed — no button worked, Enter
+  markdown/streaming work above landed: no button worked, Enter
   inserted a newline instead of sending. Root cause: `getHtml()`'s
   returned page is itself the body of an outer TypeScript template
   literal, which processes its own backslash escapes in one pass before
@@ -865,7 +865,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
   `\w`/`\*` written directly into `renderMarkdown` got silently
   corrupted by that outer pass (four placeholder tokens even ended up as
   literal NUL bytes, which HTML5 parsing replaces during tokenization).
-  `node --check`/`require()` never caught it — reading a `.js` file
+  `node --check`/`require()` never caught it, because reading a `.js` file
   bypasses HTML tokenization entirely. Rewrote `renderMarkdown` with
   zero backslash-escape sequences (character classes, `String.fromCharCode`
   for the newline) and reproduced the exact failure with `jsdom` to
@@ -875,11 +875,11 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 
 ### Added
 - Rizo (the VS Code extension, `vscode-extension/`) renamed from "Chai Agent"
-- Free/Paid model switcher — segmented toggle above the chat; free mode
+- Free/Paid model switcher: segmented toggle above the chat; free mode
   routes through the free-tier fallback chain and never touches a paid
   model, even for coding
 - "Always Allow (this project)" option on non-destructive file-edit and
-  command approvals, persisted per-workspace — destructive commands
+  command approvals, persisted per-workspace; destructive commands
   (force-push, hard reset, `branch -D`, `rm -rf`) are exempt and always
   ask, every time, with no bypass
 - Per-reply token usage and elapsed time; running token count and
@@ -895,7 +895,7 @@ approach would be a reasonable solo-maintainer undertaking to replicate.
 - Chat composer redesigned: single-line input → auto-growing textarea,
   icon-styled send button, refreshed message bubble styling
 - Tool activity while the agent works is now fully hidden behind a plain
-  "Thinking..." indicator instead of showing raw tool-call text — the
+  "Thinking..." indicator instead of showing raw tool-call text; the
   approval prompts themselves are unchanged and still show full detail
 - License switched from MIT to proprietary all-rights-reserved
 - Repository renamed from `chai.agent` to `rizo-bot`

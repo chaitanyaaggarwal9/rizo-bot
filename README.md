@@ -31,22 +31,22 @@ never sacrifices continuity.**
 
 - **Company-locked, not model-locked.** Pick Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM,
   or Free once per chat. Every switch inside that chat
-  stays within the same company's own variants — same tool-calling
-  convention, same context window, same pricing model — never a
+  stays within the same company's own variants (same tool-calling
+  convention, same context window, same pricing model), never a
   different provider mid-task
 - **Cheap by default, strong when it matters.** A new chat starts on
   its provider's cheapest variant; a lightweight heuristic can start it
   stronger when the first message actually calls for it, and offer a
-  one-click escalation if a turn visibly struggles — see
+  one-click escalation if a turn visibly struggles. See
   [Smart routing](#smart-routing) below
 - **You own the key, you see the cost.** No vendor lock-in, no hidden
-  markup — a running tokens/cost readout is always visible
+  markup: a running tokens/cost readout is always visible
 
 ## What it can do
 
 ### Core chat
 
-- **Provider picker** (`src/models/providers.ts`) — a new chat opens with a
+- **Provider picker** (`src/models/providers.ts`): a new chat opens with a
   one-time choice of company. That choice locks in for the thread's
   whole life (`ThreadData.provider`/`.model` in `src/storage/threadStore.ts`)
   and the in-chat switcher only ever offers that same company's other
@@ -55,36 +55,36 @@ never sacrifices continuity.**
   OpenRouter, so it offers Auto (the default) plus 5 specific free
   models from whichever companies actually publish one, picked
   individually rather than grouped
-- **Work outside the open folder, deliberately** — every folder in a
+- **Work outside the open folder, deliberately**: every folder in a
   multi-root VS Code workspace is usable, not just the first one, and
   naming a real absolute path in your own message (not the model's own
   tool-call arguments) grants access to it for the rest of that thread
-  (`Thread.extraRoots` in `src/storage/threadStore.ts`) — same trust boundary
+  (`Thread.extraRoots` in `src/storage/threadStore.ts`), the same trust boundary
   "Attach file..." already relies on for a human-driven pick
-- **Effort switcher** — a second pill (Low/Medium/High) maps to
-  OpenRouter's unified `reasoning.effort` field — *how hard* the
+- **Effort switcher**: a second pill (Low/Medium/High) maps to
+  OpenRouter's unified `reasoning.effort` field: *how hard* the
   already-picked model thinks, never *which* model answers. Hidden
   entirely for a variant that doesn't support it
-- **Agentic tools** (`src/tools/tools.ts`) — `read_file` (auto-approved,
+- **Agentic tools** (`src/tools/tools.ts`): `read_file` (auto-approved,
   read-only, reads the live editor buffer directly when a file's open
   with unsaved changes), `write_file`/`edit_file` (native diff preview +
   modal approval before anything touches disk), `run_command`
   (approval-gated, with an elevated, non-bypassable warning for
   destructive-looking commands and for shell indirection that hides what's
   actually running), `search_past_work` (searches every *other* thread's
-  stored history for prior work on a file — when it was touched, in
-  which thread, what was being asked — deterministic, built entirely
+  stored history for prior work on a file (when it was touched, in
+  which thread, what was being asked), deterministic, built entirely
   from what earlier turns already touched, no separate index and no
   extra LLM call to populate it), and `find_definition`/
-  `find_references`/`call_hierarchy` — the workspace's own language
+  `find_references`/`call_hierarchy`, which use the workspace's own language
   server (same engine behind VS Code's Go to Definition/Find All
   References), not a text search, so results resolve through imports
   and re-exports correctly instead of matching an unrelated
   same-named symbol elsewhere. A live tool-call transcript shows each
-  call as it happens, collapsible for the full input/output — a
+  call as it happens, collapsible for the full input/output. A
   write/edit's card keeps its own +/- line diff on scrollback too, not
   just at approval time
-- **Attachments** — any file via the OS picker, a workspace quick pick,
+- **Attachments**: any file via the OS picker, a workspace quick pick,
   or paste an image directly into the composer. Checked against the
   current variant's own vision support before sending
 - **Streaming replies**, markdown rendering, a Stop button, message
@@ -93,62 +93,62 @@ never sacrifices continuity.**
 
 ### Smart routing
 
-- **Smart Starting Variant** (`src/routing/complexityEstimator.ts`) — a
+- **Smart Starting Variant** (`src/routing/complexityEstimator.ts`): a
   thread's first message picks which variant *within its already-locked
   provider* to start on, instead of always defaulting to the cheapest.
   A cheap keyword/shape heuristic (no extra model call) scores the
   message for coding-flavor, code blocks, stack traces, attachments,
-  length, and "big ask" phrasing — runs once, only on the first
+  length, and "big ask" phrasing. It runs once, only on the first
   message, and only when you haven't already picked a variant yourself
-- **Effort auto-suggestion** (`effortForTier` in `src/models/providers.ts`) —
+- **Effort auto-suggestion** (`effortForTier` in `src/models/providers.ts`):
   reuses that same heuristic to also pick the Effort level, every turn
   rather than only the first (effort is a per-request parameter, not a
   thread-level trait). Backs off permanently the moment you pick an
   effort level yourself
-- **Auto-escalation** (`src/routing/struggleDetector.ts`) — when a turn shows
+- **Auto-escalation** (`src/routing/struggleDetector.ts`): when a turn shows
   real evidence of struggling (hits the tool-call iteration cap, keeps
   re-hitting the same failing tool call, or shows two turns in a row
   that both poked around with tools but never wrote anything), the
-  reply carries a one-click "↑ Retry with {strongest variant}" button —
+  reply carries a one-click "↑ Retry with {strongest variant}" button,
   never crossing companies, only offered when a stronger variant
   actually exists to switch to
-- **Live turn status** — while a turn runs, its bubble shows which
+- **Live turn status**: while a turn runs, its bubble shows which
   variant is actually answering, what it's doing right now, elapsed
-  time, and a running token count — not just a static "thinking"
+  time, and a running token count, not just a static "thinking"
   placeholder
 
 ### Safety and cost visibility
 
-- **Command-output redaction** (`src/safety/outputRedaction.ts`) —
+- **Command-output redaction** (`src/safety/outputRedaction.ts`):
   `run_command`'s stdout/stderr is scanned for API keys, tokens, and
   private keys and redacted in place before the result ever reaches the
   model or gets written into thread history
-- **Security pattern-scan on diffs** (`src/safety/dangerousPatterns.ts`) —
+- **Security pattern-scan on diffs** (`src/safety/dangerousPatterns.ts`):
   before a write/edit approval dialog, the proposed change is scanned
   for high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
   unsafe deserialization, hardcoded-looking secrets, disabled TLS
   verification, etc.) and folded into the dialog as a warning banner
-- **Configurable permissions** — `rizo.permissions
+- **Configurable permissions**: `rizo.permissions
   .autoApproveCommandPatterns` (has no effect on destructive commands)
   and `rizo.permissions.disabledTools`
-- **Cost visibility** (`src/api/pricing.ts`) — every reply shows tokens
+- **Cost visibility** (`src/api/pricing.ts`): every reply shows tokens
   used and elapsed time; the chat as a whole and the extension overall
   both show running token/cost totals
-- **Truncated writes fail informatively, not silently** — a large
+- **Truncated writes fail informatively, not silently**: a large
   `write_file`/`edit_file` call cut off by the response size limit gets
   told exactly that (split it into smaller calls) instead of a generic
   parse error that just prompts a full, identical, costly retry
 
 ### Personalization
 
-- **Skills** (`src/prompt/skillsLoader.ts`, `vscode-extension/skills/`) —
+- **Skills** (`src/prompt/skillsLoader.ts`, `vscode-extension/skills/`):
   per-topic engineering-discipline instructions, selectively loaded by
   keyword match so a one-line question doesn't pay for the full
   instruction set
-- **Project-specific instructions** (`src/prompt/projectInstructions.ts`) —
+- **Project-specific instructions** (`src/prompt/projectInstructions.ts`):
   an optional `.rizo/instructions.md` in your own workspace, read fresh
   every message and appended after the bundled skills
-- **Slash commands** (`src/prompt/slashCommands.ts`) — `/commit`, `/review`,
+- **Slash commands** (`src/prompt/slashCommands.ts`): `/commit`, `/review`,
   `/test` expand to a full canned prompt tied to the matching skill
 
 ## Architecture
@@ -191,7 +191,7 @@ graph TD
 ```
 
 `skills/` (bundled Markdown, not code) holds the engineering-discipline
-text `skillsLoader.ts` selects from — Coding Discipline, Debugging
+text `skillsLoader.ts` selects from: Coding Discipline, Debugging
 Discipline, Git Hygiene, Security Hygiene, and the rest listed under
 [Personalization](#personalization) above.
 
@@ -199,8 +199,8 @@ Discipline, Git Hygiene, Security Hygiene, and the rest listed under
 
 ```
 .
-├── vscode-extension/        Rizo itself — see below
-├── website/                 Marketing site (rizobot.com) — see website/README.md
+├── vscode-extension/        Rizo itself; see below
+├── website/                 Marketing site (rizobot.com); see website/README.md
 ├── .github/workflows/       CI, CodeQL, dependency review, malware scan, release
 ├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
 └── .gitignore
@@ -225,13 +225,13 @@ vscode-extension/
 │   (tests sit next to their modules as *.test.ts; vscode-dependent ones use test/vscodeStub.ts)
 ├── media/                  Chat view: chat.html, chat.css, chat.js
 ├── skills/                 Engineering-discipline instructions, bundled into the extension
-├── package.json            Extension manifest — commands, settings, contributes
+├── package.json            Extension manifest: commands, settings, contributes
 └── ONBOARDING.md           End-user install/usage guide
 ```
 
 ## Using it
 
-See [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md) —
+See [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md):
 install from the Marketplace, add your API key, go. Marketing site:
 [`website/`](website/) (deploys to rizobot.com).
 
@@ -269,9 +269,9 @@ npx vsce package --allow-missing-repository
   dependency with a known vulnerability or a copyleft license.
 - **`malware-scan.yml`** scans every branch for the known IOCs from
   the `postcss.config` incident and for obfuscation patterns.
-- **`stale-issues.yml`** — labels issues stale after 60 days of no
+- **`stale-issues.yml`**: labels issues stale after 60 days of no
   activity, closes them after 14 more; runs on a daily schedule
-- **`release.yml`** — publishes to the Marketplace, tag-triggered
+- **`release.yml`**: publishes to the Marketplace, tag-triggered
   (`v*.*.*`). Compiles, tests, refuses to run if the tag doesn't match
   `package.json`'s version. See [CONTRIBUTING.md](CONTRIBUTING.md) for
   the release steps
@@ -294,15 +294,15 @@ Please report vulnerabilities privately, never in a public issue. See
 ## License
 
 Apache License 2.0, modified by the [Commons
-Clause](https://commonsclause.com) — see [LICENSE](LICENSE). Free to use,
+Clause](https://commonsclause.com); see [LICENSE](LICENSE). Free to use,
 read, modify, and redistribute for any non-commercial purpose; the one
-thing the Commons Clause withholds is the right to **sell** it — the
+thing the Commons Clause withholds is the right to **sell** it: the
 software itself, or a product/service whose value comes substantially
 from it. Also don't use the "Rizo" name to imply endorsement of a fork.
 
 This makes the project source-available rather than OSI-certified "open
 source" (the official Open Source Definition doesn't permit restricting
-commercial use) — full source stays public and forkable, resale just
+commercial use). Full source stays public and forkable, resale just
 isn't licensed. `vscode-extension/package.json`'s `license` field reads
 `SEE LICENSE IN LICENSE` since Commons Clause has no registered SPDX
 identifier.

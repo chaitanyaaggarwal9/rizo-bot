@@ -29,7 +29,7 @@ export function loadProjectInstructions(workspaceRoot: string | undefined): stri
     // budget; a split multi-byte character at the end decodes as U+FFFD.
     return (
       bytes.subarray(0, MAX_INSTRUCTIONS_BYTES).toString('utf-8') +
-      '\n\n...(truncated — .rizo/instructions.md exceeds the 8KB budget)'
+      '\n\n...(truncated: .rizo/instructions.md exceeds the 8KB budget)'
     );
   } catch {
     return ''; // most common case: the file doesn't exist — not an error

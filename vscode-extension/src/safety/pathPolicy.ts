@@ -37,14 +37,14 @@ export function resolveWithinRoots(requestedPath: unknown, roots: readonly strin
   if (typeof requestedPath !== 'string' || !requestedPath.trim()) {
     throw new Error('A non-empty "path" string is required.');
   }
-  if (requestedPath.includes('\0')) throw new Error('Path contains a NUL byte — refusing.');
-  if (!roots.length) throw new Error('No workspace folder is open — open a folder to let Rizo read or edit files.');
+  if (requestedPath.includes('\0')) throw new Error('Path contains a NUL byte, so Rizo refused it.');
+  if (!roots.length) throw new Error('No workspace folder is open. Open a folder to let Rizo read or edit files.');
 
   const resolved = path.resolve(roots[0], requestedPath);
   const matchedRoot = roots.find((root) => isSameOrInside(resolved, root));
   if (!matchedRoot) {
     throw new Error(
-      `Path "${requestedPath}" resolves outside every open workspace folder — refusing. To work with a different folder, add it to this VS Code workspace (File > Add Folder to Workspace...).`,
+      `Path "${requestedPath}" resolves outside every open workspace folder, so Rizo refused it. To work with a different folder, add it to this VS Code workspace (File > Add Folder to Workspace...).`,
     );
   }
 
@@ -61,10 +61,10 @@ export function resolveWithinRoots(requestedPath: unknown, roots: readonly strin
   try {
     real = fs.realpathSync(existing);
   } catch {
-    throw new Error(`Path "${requestedPath}" goes through a symlink whose target doesn't exist — refusing.`);
+    throw new Error(`Path "${requestedPath}" goes through a symlink whose target doesn't exist, so Rizo refused it.`);
   }
   if (!isSameOrInside(real, matchedRoot)) {
-    throw new Error(`Path "${requestedPath}" escapes the workspace folder through a symlink — refusing.`);
+    throw new Error(`Path "${requestedPath}" escapes the workspace folder through a symlink, so Rizo refused it.`);
   }
   return resolved;
 }

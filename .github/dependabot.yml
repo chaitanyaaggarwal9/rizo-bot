@@ -6,6 +6,10 @@ updates:
       directory: "/vscode-extension"
       schedule:
           interval: "weekly"
+      # Only propose versions that have been public for 14+ days, so a
+      # hijacked release is usually caught and pulled before we see it.
+      cooldown:
+          default-days: 14
       groups:
           all-dependencies:
               patterns:
@@ -24,3 +28,5 @@ updates:
       directory: "/"
       schedule:
           interval: "weekly"
+      cooldown:
+          default-days: 14

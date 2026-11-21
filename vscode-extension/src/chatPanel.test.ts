@@ -8,27 +8,15 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChatPanel } from './chatPanel';
 
-// getHtml() builds the entire webview — including the whole chat UI's
-// own JavaScript — as one large outer TypeScript template literal. tsc
-// only ever validates that as a single string; it cannot see that the
-// nested JS it produces is itself a real, separately-parsed program.
-//
-// A real bug shipped from exactly that gap: several `.split('\n')`
-// calls inside the outer literal were written with a single backslash,
-// so `\n` got consumed by the OUTER literal's own escape processing
-// into a real newline character, corrupting the nested script's source
-// the moment the browser parsed it — "Uncaught SyntaxError: Failed to
-// execute 'write' on 'Document'" the whole panel failed to load with,
-// caught only by extracting the real rendered script and running
-// `node --check` against it by hand. This test automates exactly that
-// check so the same mistake can't silently ship again.
-function extractWebviewScript(html: string): string {
-  const match = /<script nonce="[^"]*">([\s\S]*?)<\/script>\s*<\/body>/.exec(html);
-  if (!match) throw new Error('Could not find the webview\'s <script> block in the generated HTML.');
-  return match[1];
-}
+// The chat view used to be one large TypeScript template literal, and a
+// real bug shipped from that: `\n` written inside it was consumed by the
+// outer literal, corrupting the nested script so the whole panel failed
+// to load. The view now lives in media/chat.html, chat.css and chat.js,
+// and these tests check the pieces still fit together.
 
-describe('ChatPanel.getHtml()', () => {
+const extensionRoot = path.resolve(__dirname, '..');
+
+describe('chat view', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -42,7 +30,7 @@ describe('ChatPanel.getHtml()', () => {
 
   function createFakeContext() {
     return {
-      extensionPath: path.resolve(__dirname, '..'),
+      extensionPath: extensionRoot,
       secrets: { get: async () => undefined, store: async () => {}, delete: async () => {} },
       globalState: { get: (_key: string, def: unknown) => def, update: async () => {} },
       workspaceState: { get: (_key: string, def: unknown) => def, update: async () => {} },
@@ -50,28 +38,54 @@ describe('ChatPanel.getHtml()', () => {
     } as any;
   }
 
-  it('produces a webview script that is syntactically valid JavaScript', () => {
-    const context = createFakeContext();
-    ChatPanel.createOrShow(context);
-    const html = (ChatPanel as unknown as { currentPanel: { panel: { webview: { html: string } } } }).currentPanel.panel.webview.html;
-    const script = extractWebviewScript(html);
+  function renderHtml(): string {
+    ChatPanel.createOrShow(createFakeContext());
+    return (ChatPanel as unknown as { currentPanel: { panel: { webview: { html: string } } } }).currentPanel.panel.webview.html;
+  }
 
-    // Parses the function body without executing it (the script has
-    // top-level side effects like acquireVsCodeApi() that only make
-    // sense inside a real webview) — a SyntaxError here means the
-    // generated script is genuinely broken, exactly the class of bug
-    // this test exists to catch.
+  it('ships a chat script that is syntactically valid JavaScript', () => {
+    const script = fs.readFileSync(path.join(extensionRoot, 'media', 'chat.js'), 'utf-8');
+    // Parses without executing (the script calls acquireVsCodeApi(), which
+    // only exists inside a real webview).
     expect(() => new Function(script)).not.toThrow();
   });
 
+  it('fills in every placeholder', () => {
+    const html = renderHtml();
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it('loads the stylesheet and script from the extension, with a matching nonce', () => {
+    const html = renderHtml();
+    const nonce = /script-src 'nonce-([0-9a-f]{32})'/.exec(html)?.[1];
+    expect(nonce).toBeDefined();
+    expect(html).toContain(`<script nonce="${nonce}" src="vscode-webview://fake/`);
+    expect(html).toMatch(/<link rel="stylesheet" href="vscode-webview:\/\/fake\/file:\/\/[^"]*media[\\/]chat\.css">/);
+    // The only inline <script> is the JSON data block, which never runs.
+    const inlineScripts = html.match(/<script(?![^>]*\bsrc=)[^>]*>/g) || [];
+    expect(inlineScripts).toEqual(['<script type="application/json" id="provider-catalog">']);
+  });
+
+  it('embeds the provider catalog as JSON that parses and cannot close its element', () => {
+    const html = renderHtml();
+    const json = /<script type="application\/json" id="provider-catalog">([\s\S]*?)<\/script>/.exec(html)?.[1];
+    expect(json).toBeDefined();
+    expect(json).not.toContain('<');
+    const catalog = JSON.parse(json as string);
+    expect(Array.isArray(catalog)).toBe(true);
+    expect(catalog.length).toBeGreaterThan(0);
+    expect(catalog[0]).toHaveProperty('variants');
+  });
+
+  it('uses a different random nonce on each render', () => {
+    const first = /nonce-([0-9a-f]+)/.exec(renderHtml())?.[1];
+    (ChatPanel as unknown as { currentPanel: unknown }).currentPanel = undefined;
+    const second = /nonce-([0-9a-f]+)/.exec(renderHtml())?.[1];
+    expect(first).not.toBe(second);
+  });
+
   it('includes the mascot image as a webview-served URI, not an inlined base64 data: URI', () => {
-    // Regression guard for the ~590KB-of-text-per-render mascot inlining
-    // this was fixed alongside (see CHANGELOG) — not the crash itself,
-    // but the same "avoid what the webview guide already warns against"
-    // category, found while investigating it.
-    const context = createFakeContext();
-    ChatPanel.createOrShow(context);
-    const html = (ChatPanel as unknown as { currentPanel: { panel: { webview: { html: string } } } }).currentPanel.panel.webview.html;
+    const html = renderHtml();
     expect(html).not.toContain('data:image/png;base64,');
     expect(html).toContain('vscode-webview://');
   });

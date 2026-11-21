@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<!-- Rizo chat view. Placeholders {{...}} are filled in by ChatPanel.getHtml(). -->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; img-src {{cspSource}} data:; script-src 'nonce-{{nonce}}';">
+<link rel="stylesheet" href="{{chatCssUri}}">
+</head>
+<body>
+  <div id="usageBar"><span id="usageStats"></span></div>
+  <div id="threadBar">
+    <div id="threadSelectWrap"><select id="threadSelect"></select></div>
+    <button class="iconBtn" id="newThreadBtn">New</button>
+    <div id="menuWrap">
+      <button class="iconBtn" id="menuBtn" title="Rename, delete, settings">&#8942;</button>
+      <div id="menuPanel">
+        <button class="settingsBtn" id="renameThreadBtn">Rename this chat</button>
+        <button class="settingsBtn dangerBtn" id="deleteThreadBtn">Delete this chat</button>
+        <div class="settingsDivider"></div>
+        <button class="settingsBtn" id="changeApiKeyBtn">Change OpenRouter API Key&hellip;</button>
+        <div class="settingsDivider"></div>
+        <div class="settingsRow">
+          <div class="settingsLabel">Send message with</div>
+          <div class="segmented" id="sendKeySegmented">
+            <button class="segmentedOption" data-value="enter">Enter</button>
+            <button class="segmentedOption" data-value="ctrlEnter">Ctrl/Cmd+Enter</button>
+          </div>
+        </div>
+        <div class="settingsRow">
+          <div class="settingsLabel" title="Hides the tool-call transcript, showing only your prompts and the final answers">Focus view</div>
+          <div class="segmented" id="focusModeSegmented">
+            <button class="segmentedOption" data-value="off">Off</button>
+            <button class="segmentedOption" data-value="on">On</button>
+          </div>
+        </div>
+        <div class="settingsDivider"></div>
+        <button class="settingsBtn" id="openSettingsBtn">More settings&hellip;</button>
+      </div>
+    </div>
+  </div>
+  <div id="modelBar" style="visibility:hidden">
+    <div id="modelPillWrap">
+      <button id="modelPill"><span id="modelPillLabel"></span><span class="chev">&#9662;</span></button>
+      <div id="modelDropdown"></div>
+    </div>
+    <div id="effortPillWrap">
+      <button id="effortPill"><span id="effortPillLabel"></span><span class="chev">&#9662;</span></button>
+      <div id="effortDropdown"></div>
+    </div>
+  </div>
+  <div id="providerPicker">
+    <div class="pickerTitle">Choose a provider for this chat</div>
+    <div class="pickerHint">Locked in for this chat once picked — you can switch variants within it anytime, but not to a different provider. Start a new chat for that.</div>
+    <div id="providerGrid"></div>
+  </div>
+  <div id="emptyState">
+    <img src="{{mascotUri}}" alt="">
+    <div class="hint">Ask a question, or point Rizo at a file or a task.<br>Every reply in this chat comes from the provider you picked above.</div>
+  </div>
+  <div id="messages"></div>
+  <div id="composerWrap">
+    <div id="attachmentChips"></div>
+    <div id="attachMenu">
+      <button id="attachFileOption">Attach file&hellip;</button>
+      <button id="attachWorkspaceOption">Mention file from this project&hellip;</button>
+    </div>
+    <div id="composer">
+      <button id="attachBtn" title="Attach">+</button>
+      <textarea id="inputBox" placeholder="Message... (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
+      <button id="sendBtn" title="Send">➤</button>
+    </div>
+    <div id="statsBar"><span id="queueNote"></span><span id="tokenStats"></span></div>
+  </div>
+  <script type="application/json" id="provider-catalog">{{providerCatalogJson}}</script>
+  <script nonce="{{nonce}}" src="{{chatJsUri}}"></script>
+</body>
+</html>

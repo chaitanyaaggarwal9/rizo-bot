@@ -7,6 +7,7 @@
     const vscode = acquireVsCodeApi();
     // Provider catalog (providers.ts, trimmed) is embedded by getHtml() as JSON.
     const PROVIDER_CATALOG = JSON.parse(document.getElementById('provider-catalog').textContent);
+    const SAFE_IMAGE_DATA_URL = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+\/=]+$/i;
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('inputBox');
     const sendBtn = document.getElementById('sendBtn');
@@ -457,9 +458,14 @@
       if (Array.isArray(content)) {
         for (const part of content) {
           if (part.type === 'image_url') {
+            // Only inline image data (what attachments produce). Anything
+            // else in a stored thread, like an http: or javascript: URL,
+            // is not loaded.
+            const url = part.image_url && typeof part.image_url.url === 'string' ? part.image_url.url : '';
+            if (!SAFE_IMAGE_DATA_URL.test(url)) continue;
             const img = document.createElement('img');
             img.className = 'attachedImg';
-            img.src = part.image_url.url;
+            img.src = url;
             div.appendChild(img);
           } else if (part.type === 'text' && part.text) {
             // Array content only happens for a user message carrying
@@ -898,7 +904,11 @@
     });
 
     window.addEventListener('message', (event) => {
+      // Messages come from the extension through VS Code's webview host.
+      // Ignore anything from another origin and anything without a type.
+      if (typeof event.origin === 'string' && event.origin !== '' && !event.origin.startsWith('vscode-webview://')) return;
       const msg = event.data;
+      if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') return;
       if (msg.type === 'init') {
         renderThreadList(msg.threads, msg.activeThreadId);
         renderMessages(msg.messages);

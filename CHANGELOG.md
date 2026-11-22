@@ -9,6 +9,12 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-22
+
+A big feature release: plan mode, undo, MCP tools, inline edit,
+autocomplete, Azure AI Foundry and Amazon Bedrock, four new providers,
+current models everywhere, and no reply limits.
+
 ### Added
 - **Inline edit.** Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`) or
   pick **Rizo: Edit Selection**, and describe the change. Rizo rewrites
@@ -57,6 +63,18 @@ an honest gap. Everything before this point lives in git history instead.
   through OpenRouter), the key is kept in your OS keychain, and only
   `bedrock-runtime.<region>.amazonaws.com` is ever contacted with it.
   Tool use and images work; replies arrive all at once for now.
+- **Azure AI Foundry.** Use your own Azure deployments with your own key:
+  run **Rizo: Connect Azure AI Foundry**, enter your endpoint and key,
+  pick your deployments, and choose Azure AI Foundry when you start a
+  chat. Requests go straight to your Azure resource (never through
+  OpenRouter), the key is kept in your OS keychain, and only real Azure
+  endpoints are accepted, so your key can't be sent anywhere else.
+  Summaries of long Azure chats are made by the same deployment.
+- **Four new providers:** Grok (xAI), Qwen, Mistral and Z.ai GLM.
+- **"More models" in the model switcher:** every other current model from
+  the chat's company that supports tools, with its price, from
+  OpenRouter's live model list. New releases are usable without waiting
+  for a Rizo update, and a chat still never switches company.
 
 ### Changed
 - **Documentation rewritten:** a new README, Marketplace page and user
@@ -79,23 +97,11 @@ an honest gap. Everything before this point lives in git history instead.
   - New skill for exploring an unfamiliar codebase.
   - At most two specialist skills load at once, and all skills together
     are about 40% smaller, which helps small and free models.
-- **Azure AI Foundry.** Use your own Azure deployments with your own key:
-  run **Rizo: Connect Azure AI Foundry**, enter your endpoint and key,
-  pick your deployments, and choose Azure AI Foundry when you start a
-  chat. Requests go straight to your Azure resource (never through
-  OpenRouter), the key is kept in your OS keychain, and only real Azure
-  endpoints are accepted, so your key can't be sent anywhere else.
-  Summaries of long Azure chats are made by the same deployment.
 - **Current models.** Every provider's tiers are up to date: Claude Haiku
   5.5 / Sonnet 5.5 / Fable 5.2, OpenAI GPT-6 Luna / GPT-6.2 Sol / GPT-6.2
   Astra, Gemini 3.5 Flash Lite / 3.8 Flash / Gemini 4 Neon, DeepSeek V4.1
   Flash / V4 Pro / V4 Pro 0813, Kimi K2.6 / K2.7 Code / K3.1 Pro, and
   current Free models (several of the old Free picks no longer existed).
-- **Four new providers:** Grok (xAI), Qwen, Mistral and Z.ai GLM.
-- **"More models" in the model switcher:** every other current model from
-  the chat's company that supports tools, with its price, from
-  OpenRouter's live model list. New releases are usable without waiting
-  for a Rizo update, and a chat still never switches company.
 - **Exact costs.** Rizo asks OpenRouter for what each request actually
   cost and shows that, instead of estimating from a price table that
   went stale (Haiku was under-reported 4x). Live catalog prices are the
@@ -109,6 +115,16 @@ an honest gap. Everything before this point lives in git history instead.
   too low to be useful.
 - Optional caps for anyone who wants them: `rizo.limits.maxStepsPerTurn`
   and `rizo.limits.maxOutputTokens` (both `0` = no limit, the default).
+- The chat view's HTML, CSS and JavaScript moved out of `chatPanel.ts`
+  (where they were one 1,600-line TypeScript template string) into
+  `media/chat.html`, `media/chat.css` and `media/chat.js`. No visible
+  change. The script is now ordinary JavaScript, so the escaping bug
+  class that once broke the whole panel can't recur.
+- `src/` is organized into folders (`ui/`, `agent/`, `api/`, `models/`,
+  `routing/`, `prompt/`, `storage/`, `safety/`, `tools/`), and the
+  attachment reading, folder-mention detection, history-summary prompt
+  and webview HTML building moved out of `chatPanel.ts` into their own
+  tested modules. No visible change.
 
 ### Fixed
 - History summaries of long chats used a paid OpenAI model whatever
@@ -144,18 +160,6 @@ an honest gap. Everything before this point lives in git history instead.
 - A chat renamed while a reply was running keeps its new name.
 - Errors while handling chat-view actions are shown instead of failing
   silently.
-
-### Changed
-- The chat view's HTML, CSS and JavaScript moved out of `chatPanel.ts`
-  (where they were one 1,600-line TypeScript template string) into
-  `media/chat.html`, `media/chat.css` and `media/chat.js`. No visible
-  change. The script is now ordinary JavaScript, so the escaping bug
-  class that once broke the whole panel can't recur.
-- `src/` is organized into folders (`ui/`, `agent/`, `api/`, `models/`,
-  `routing/`, `prompt/`, `storage/`, `safety/`, `tools/`), and the
-  attachment reading, folder-mention detection, history-summary prompt
-  and webview HTML building moved out of `chatPanel.ts` into their own
-  tested modules. No visible change.
 
 ### Security
 - The chat view's script nonce is generated with `crypto.randomBytes`

@@ -298,6 +298,21 @@ export class ChatPanel {
         }
   }
 
+  // Whether the workspace has any .rz files, so the Rizo Lang spec loads
+  // for coding chats there. One quick file search, remembered for a minute.
+  private rizoLangCheck: { at: number; value: boolean } | undefined;
+  private async hasRizoLangFiles(): Promise<boolean> {
+    if (this.rizoLangCheck && Date.now() - this.rizoLangCheck.at < 60_000) return this.rizoLangCheck.value;
+    let value = false;
+    try {
+      value = (await vscode.workspace.findFiles('**/*.rz', '{**/node_modules/**,**/dist/**,**/.git/**}', 1)).length > 0;
+    } catch {
+      /* no workspace or search unavailable */
+    }
+    this.rizoLangCheck = { at: Date.now(), value };
+    return value;
+  }
+
   // Posts to the chat view unless the panel is gone. postMessage on a
   // disposed webview throws or rejects; a turn still unwinding after the
   // panel closed must not turn that into an unhandled rejection.
@@ -780,7 +795,9 @@ export class ChatPanel {
       // tests") keep that request's specialist skills.
       const previousUser = [...thread.messages].reverse().find((m) => m.role === 'user');
       const previousUserText = previousUser ? contentToPlainText(previousUser.content) : undefined;
-      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType, previousUserText);
+      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType, previousUserText, {
+        rizoLangProject: await this.hasRizoLangFiles(),
+      });
 
       // Without any system prompt, some models (DeepSeek in particular)
       // default to Chinese on short/ambiguous input — this instruction

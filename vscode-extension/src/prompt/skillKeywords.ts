@@ -13,6 +13,16 @@ export const BASE_SKILL = 'coding-discipline.md';
 // words alone ("explain", "where is") don't make a message coding work.
 export const EXPLORATION_SKILL = 'codebase-exploration.md';
 
+// The Rizo Lang spec (skills/rizo-lang.md). Loaded on top of the
+// specialist skills whenever a chat involves Rizo Lang, not ranked
+// against them: a model can't write the language without it.
+export const RIZOLANG_SKILL = 'rizo-lang.md';
+const RIZOLANG_PATTERN = /\brizo[ -]?lang\b|\brizolang\b|\.rz\b|\brz files?\b/i;
+
+export function mentionsRizoLang(message: string): boolean {
+  return RIZOLANG_PATTERN.test(message);
+}
+
 export const SKILL_KEYWORDS: Record<string, string[]> = {
   'debugging-discipline.md': [
     'bug', 'bugs', 'debug', 'debugging', 'crash', 'crashes', 'crashing', 'stack trace', 'traceback',
@@ -90,6 +100,7 @@ export function skillMatchCounts(message: string): Map<string, number> {
 
 // Whether a specialist skill (not just the exploration one) matches.
 export function matchesSpecialistSkill(message: string): boolean {
+  if (mentionsRizoLang(message)) return true;
   for (const file of skillMatchCounts(message).keys()) {
     if (file !== EXPLORATION_SKILL) return true;
   }

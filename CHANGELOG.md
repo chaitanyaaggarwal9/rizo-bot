@@ -10,6 +10,15 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **Undo a reply's changes.** A reply that changed files gets an
+  **Undo changes** button. It puts those files back the way they were
+  before that reply (and removes files it created), after asking you, and
+  warns if you've edited them since. It also works for stopped or failed
+  replies. The last 20 replies per chat can be undone; commands a reply
+  ran (installs, git) can't be.
+- **Plan mode.** Switch the composer from **Act** to **Plan** and Rizo
+  only reads and investigates, then replies with a step-by-step plan.
+  **Run this plan** switches back to Act and carries it out.
 - **Search tools that need no approval:** `search_files` (search text
   across the workspace, like grep), `find_files` (find files by glob) and
   `list_directory`. They only read, stay inside the workspace, skip

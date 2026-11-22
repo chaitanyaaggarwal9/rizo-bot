@@ -50,16 +50,33 @@ import {
   sumThreadCost,
 } from '../storage/threadStore';
 import { frameProjectNotes, isValidThreadId } from '../safety/permissions';
-import { approvedProjectNotes, requestFolderGrants } from './trustPrompts';
+import { approvedProjectNotes, getFolderGrants, requestFolderGrants } from './trustPrompts';
 import { connectedProviderCatalog, getConnectedProvider } from './connectedProviders';
 import { buildChatHtml, openRouterProviderCatalog } from './webviewHtml';
 import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignoreExcludeGlobs } from '../agent/attachments';
 import { findMentionedPaths } from '../agent/folderMentions';
 import { contentToPlainText, planSummary, SUMMARY_MODEL } from '../agent/summarizer';
 import { TurnTracker } from '../agent/turnTracker';
+import {
+  changedSince,
+  deleteCheckpoint,
+  deleteThreadCheckpoints,
+  loadCheckpoint,
+  rewind,
+  saveCheckpoint,
+  TurnCheckpoint,
+} from '../agent/checkpoints';
+import { resolveWithinRoots, safeWriteFile } from '../safety/pathPolicy';
 import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
+
+type TurnMode = 'act' | 'plan';
+// Tools that only read: the only ones offered in plan mode.
+const READ_ONLY_TOOLS = new Set([
+  'read_file', 'search_files', 'find_files', 'list_directory', 'find_definition', 'find_references',
+  'call_hierarchy', 'search_past_work', 'update_plan',
+]);
 // Holds one thread — the most recently deleted, cleared once restored.
 // Not a stack: only the last deletion is recoverable.
 const LAST_DELETED_THREAD_KEY = 'rizo.lastDeletedThread';
@@ -187,9 +204,12 @@ export class ChatPanel {
             const attachments: IncomingAttachment[] = Array.isArray(message.attachments)
               ? message.attachments.filter(isIncomingAttachment)
               : [];
-            await this.handleSend(message.text, message.turnId, attachments);
+            await this.handleSend(message.text, message.turnId, attachments, message.mode === 'plan' ? 'plan' : 'act');
             break;
           }
+          case 'rewind':
+            await this.handleRewind(message.turnId);
+            break;
           case 'cancel':
             if (typeof message.turnId === 'string') this.turns.cancel(message.turnId);
             break;
@@ -418,6 +438,7 @@ export class ChatPanel {
     if (confirm !== 'Delete') return;
 
     if (thread) await this.context.globalState.update(LAST_DELETED_THREAD_KEY, thread);
+    deleteThreadCheckpoints(this.context.globalStorageUri.fsPath, this.activeThreadId);
     deleteThread(this.context, this.activeThreadId);
     const remaining = listThreads(this.context);
     this.activeThreadId = remaining.length > 0 ? remaining[0].id : createThread(this.context).id;
@@ -614,7 +635,7 @@ export class ChatPanel {
     }
   }
 
-  private async handleSend(text: string, turnId: string, attachments: IncomingAttachment[] = []) {
+  private async handleSend(text: string, turnId: string, attachments: IncomingAttachment[] = [], mode: TurnMode = 'act') {
     // Captured once, used for every read/write this turn does — never
     // this.activeThreadId again. A turn can outlive the panel's active
     // thread (switched or deleted mid-reply); without this, the turn's
@@ -630,7 +651,7 @@ export class ChatPanel {
         this.post({ type: 'cancelled', turnId });
         return;
       }
-      await this.runTurn(text, turnId, attachments, threadId, turn.signal);
+      await this.runTurn(text, turnId, attachments, threadId, turn.signal, mode);
     } finally {
       turn.finish();
     }
@@ -642,7 +663,11 @@ export class ChatPanel {
     attachments: IncomingAttachment[],
     threadId: string,
     signal: AbortSignal,
+    mode: TurnMode = 'act',
   ) {
+    const planMode = mode === 'plan';
+    // Snapshots of files before this reply changes them, for "Undo changes".
+    const checkpoint = new TurnCheckpoint(threadId, turnId);
 
     // Chats on a connected provider (Azure, Bedrock) use that provider's
     // key and models; everything else the OpenRouter key.
@@ -763,6 +788,11 @@ export class ChatPanel {
         'Always respond in English, even if the user writes in another language or the request is ambiguous.',
       ];
       if (skillsContent) systemParts.push(skillsContent);
+      if (planMode) {
+        systemParts.push(
+          'PLAN MODE is on. Investigate with the read-only tools, then reply with a clear, numbered plan: the files to change, what changes in each, how you will verify it, and any risks or open questions. Do not write files or run commands; the user will approve the plan and then ask you to carry it out.',
+        );
+      }
 
       // The repository's .rizo/instructions.md, if present and the user
       // agreed to use this version of it (asked once per version). Not
@@ -831,7 +861,11 @@ export class ChatPanel {
       // never even offered a disabled tool (no wasted round-trip);
       // executeTool has its own check as a backstop.
       const disabledTools = vscode.workspace.getConfiguration('rizo').get<string[]>('permissions.disabledTools', []);
-      const enabledTools = TOOLS.filter((t) => !disabledTools.includes(t.function.name));
+      // Plan mode offers only tools that read; the model proposes a plan
+      // and the user runs it with "Run this plan".
+      const enabledTools = TOOLS.filter(
+        (t) => !disabledTools.includes(t.function.name) && (!planMode || READ_ONLY_TOOLS.has(t.function.name)),
+      );
 
       let answeredBy = '';
       // Kept short and explicit — this string gets persisted and replayed
@@ -946,7 +980,11 @@ export class ChatPanel {
             !isParseableJson(toolCall.function.arguments);
           const result = looksTruncated
             ? `Error: this ${toolCall.function.name} call was cut off before finishing: it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
-            : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal);
+            : planMode && !READ_ONLY_TOOLS.has(toolCall.function.name)
+              ? `Error: plan mode is on, so ${toolCall.function.name} isn't available. Finish the plan; the user will run it.`
+              : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal, (p) =>
+                  checkpoint.record(p),
+                );
           const toolOk = !result.startsWith('Error:');
           this.post({
             type: 'toolEnd',
@@ -966,9 +1004,11 @@ export class ChatPanel {
       // were a real answer.
       if (signal.aborted) {
         this.post({ type: 'cancelled', turnId });
+        this.saveTurnCheckpoint(checkpoint, turnId, true);
         return;
       }
 
+      const checkpointFiles = this.saveTurnCheckpoint(checkpoint, turnId, false);
       const elapsedMs = Date.now() - startedAt;
 
       // previousAssistantMsg reads thread.messages before this turn's own
@@ -1021,6 +1061,8 @@ export class ChatPanel {
           completionTokens: totalUsage.completionTokens,
           totalTokens: totalUsage.totalTokens,
           cost: turnCost,
+          turnId,
+          ...(checkpointFiles.length ? { checkpointFiles } : {}),
           madeToolCall: madeToolCallThisTurn,
           madeMutatingCall: madeMutatingCallThisTurn,
           ...(touchedFilesThisTurn.size > 0 ? { touchedFiles: [...touchedFilesThisTurn] } : {}),
@@ -1042,6 +1084,8 @@ export class ChatPanel {
       this.post({
         type: 'reply',
         turnId,
+        checkpointFiles,
+        planMode,
         model: answeredBy,
         // Distinct from answeredBy (this turn's own tag) — the thread's
         // current model, possibly upgraded by Smart Starting Variant above.
@@ -1071,6 +1115,7 @@ export class ChatPanel {
       // history record of.
       if (err.name === 'AbortError') {
         this.post({ type: 'cancelled', turnId });
+        this.saveTurnCheckpoint(checkpoint, turnId, true);
       } else if (connected && connected.authError.test(err.message)) {
         const error = `${err.message}. ${connected.label} rejected the key: run "${connected.connectCommandTitle}" again to update it.`;
         this.post({ type: 'error', turnId, error });
@@ -1089,6 +1134,7 @@ export class ChatPanel {
           ? `\n\n(Before the error, this turn had already read or changed: ${[...touchedFilesThisTurn].join(', ')}.)`
           : '';
         this.persistFailedTurn(threadId, userContent, `Error: ${err.message}${touched}`);
+        this.saveTurnCheckpoint(checkpoint, turnId, true);
       }
     }
   }
@@ -1096,6 +1142,90 @@ export class ChatPanel {
   // Persists a failed turn so the next turn's context isn't missing "you
   // asked X, it failed". No-ops if userContent is undefined (error
   // happened before the message was built).
+  // Saves the reply's snapshots (if it changed any files) and returns the
+  // changed files' workspace-relative paths. For a stopped or failed reply
+  // the chat view is told separately, since its reply message never comes.
+  private saveTurnCheckpoint(checkpoint: TurnCheckpoint, turnId: string, announce: boolean): string[] {
+    if (checkpoint.isEmpty) return [];
+    try {
+      const data = checkpoint.finish();
+      saveCheckpoint(this.context.globalStorageUri.fsPath, data);
+      const files = data.files.map((f) => vscode.workspace.asRelativePath(f.absPath, false));
+      if (announce) this.post({ type: 'turnCheckpoint', turnId, checkpointFiles: files });
+      return files;
+    } catch {
+      return []; // an undo is a convenience; never fail the turn over it
+    }
+  }
+
+  // "Undo changes" on a reply: puts the files it changed back the way they
+  // were before it, after the user confirms.
+  private async handleRewind(turnId: unknown) {
+    if (typeof turnId !== 'string') return;
+    const threadId = this.activeThreadId;
+    const root = this.context.globalStorageUri.fsPath;
+    const data = loadCheckpoint(root, threadId, turnId);
+    if (!data || data.threadId !== threadId) {
+      void vscode.window.showInformationMessage('Nothing to undo for that reply (its snapshot is no longer kept).');
+      return;
+    }
+    const rel = (p: string) => vscode.workspace.asRelativePath(p, false);
+    const changed = changedSince(data);
+    const detail = [
+      `Files: ${data.files.map((f) => rel(f.absPath)).join(', ')}.`,
+      changed.length ? `Changed again since this reply (those later edits will be lost too): ${changed.map(rel).join(', ')}.` : '',
+      'Commands this reply ran (installs, git, etc.) are not undone.',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    const choice = await vscode.window.showWarningMessage(
+      `Undo this reply's changes to ${data.files.length} file${data.files.length === 1 ? '' : 's'}?`,
+      { modal: true, detail },
+      'Undo changes',
+    );
+    if (choice !== 'Undo changes') return;
+
+    // Re-check every path against the workspace and this chat's allowed
+    // folders now, so a stored path can never write anywhere else.
+    const roots = [
+      ...(vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+      ...getFolderGrants(this.context, threadId),
+    ].map((r) => {
+      try {
+        return fs.realpathSync(r);
+      } catch {
+        return r;
+      }
+    });
+    const allowPath = (abs: string) => {
+      try {
+        resolveWithinRoots(abs, roots);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const result = rewind(data, allowPath, (abs, content) => safeWriteFile(abs, content), (abs) => fs.rmSync(abs, { force: true }));
+    deleteCheckpoint(root, threadId, turnId);
+    const thread = loadThread(this.context, threadId);
+    if (thread) {
+      saveThreadMessages(
+        this.context,
+        threadId,
+        thread.messages.map((m) => (m.turnId === turnId ? { ...m, rewound: true } : m)),
+      );
+    }
+    this.post({ type: 'rewound', turnId });
+    const parts = [
+      result.restored.length ? `restored ${result.restored.length}` : '',
+      result.deleted.length ? `removed ${result.deleted.length} new file${result.deleted.length === 1 ? '' : 's'}` : '',
+    ].filter(Boolean);
+    const skipped = result.skipped.map((s) => `${rel(s.absPath)} (${s.reason})`).join(', ');
+    void vscode.window.showInformationMessage(
+      `Undid the reply's changes: ${parts.join(', ') || 'nothing to change'}.` + (skipped ? ` Skipped: ${skipped}.` : ''),
+    );
+  }
+
   private persistFailedTurn(threadId: string, userContent: string | ContentPart[] | undefined, errorText: string) {
     if (userContent === undefined) return;
     const thread = loadThread(this.context, threadId);

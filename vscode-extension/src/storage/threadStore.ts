@@ -23,6 +23,11 @@ export interface StoredMessage {
   // USD this turn cost: OpenRouter's reported cost when available, else an
   // estimate. Older messages don't have it and are estimated when summed.
   cost?: number;
+  // The chat view's id for this reply, and the files it changed (for
+  // "Undo changes"); rewound once the user undid them.
+  turnId?: string;
+  checkpointFiles?: string[];
+  rewound?: boolean;
   // Set on assistant turns only — whether this turn called any tool, and
   // whether any mutated something (write_file/edit_file) vs just reading.
   // handleSend compares against the previous stored turn to catch

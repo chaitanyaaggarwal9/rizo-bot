@@ -204,6 +204,14 @@ test('protected folders still ask even with Always Allow on', async () => {
   await api.context.workspaceState.update('rizo.alwaysAllowFileEdits', undefined);
 });
 
+test('.rz files open as Rizo Lang', async () => {
+  const file = path.join(ws, 'app.rz');
+  fs.writeFileSync(file, 'auth User by email\n\nmodel User {\n  email: Email unique private\n  password: Password min 12\n}\n');
+  const doc = await vscode.workspace.openTextDocument(file);
+  assert.strictEqual(doc.languageId, 'rizolang');
+  assert.ok((await vscode.languages.getLanguages()).includes('rizolang'));
+});
+
 // Runs last: the approval dialog it opens stays open.
 
 // ---------- runner ----------

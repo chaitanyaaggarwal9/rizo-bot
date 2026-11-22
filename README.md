@@ -54,6 +54,7 @@ Chat with Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM 
 | **Inline edit** | Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`), describe the change, then keep or undo it. |
 | **Autocomplete** | Optional ghost-text suggestions as you type. Off by default because each one is a paid request. |
 | **Skills and project notes** | Bundled engineering guidance loaded only when relevant, plus your own `.rizo/instructions.md`. |
+| **Rizo Lang** | `.rz` files are highlighted, with comment toggling, bracket matching and folding. |
 | **Slash commands** | `/commit`, `/review` and `/test` expand into full guided prompts. |
 | **Attachments** | Attach files, mention workspace files, or paste images for vision models. |
 | **Threads** | Named chats with history, automatic summarizing of long chats, and undo for deleted chats. |

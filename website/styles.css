@@ -155,8 +155,8 @@ section.first { border-top: 0; padding-top: 72px; }
 .product h2 { font-size: 34px; letter-spacing: -0.03em; }
 .product p { color: var(--ink-2); margin: 0; }
 .facts { list-style: none; margin: 4px 0 0; padding: 0; border-top: 1px solid var(--line); }
-.facts li { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15px; color: var(--ink-2); }
-.facts li::before { content: ''; width: 5px; height: 5px; margin-top: 10px; border-radius: 50%; background: var(--teal); flex-shrink: 0; }
+.facts li { position: relative; padding: 12px 0 12px 17px; border-bottom: 1px solid var(--line); font-size: 15px; color: var(--ink-2); }
+.facts li::before { content: ''; position: absolute; left: 0; top: 22px; width: 5px; height: 5px; border-radius: 50%; background: var(--teal); }
 .product .actions { margin-top: auto; padding-top: 12px; }
 .product-visual { border-top: 1px solid var(--line); background: var(--paper-2); padding: 28px 28px 0; height: 300px; overflow: hidden; }
 .product-visual .shot { border-radius: 10px 10px 0 0; box-shadow: 0 0 0 1px var(--line-strong); }
@@ -342,3 +342,5 @@ kbd { font: 500 0.82em var(--mono); border: 1px solid var(--line-strong); border
 .u-m0 { margin: 0; }
 .u-sub { margin: 28px 0 12px; }
 section.u-flush { padding-top: 0; border-top: 0; }
+.row.u-flush-row { border-top: 0; padding-top: 0; }
+.grid-2 .row { grid-template-columns: 150px 1fr; }

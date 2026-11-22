@@ -8,3 +8,5 @@ vitest.config.mts
 **/*.map
 **/.DS_Store
 .npmrc
+out-e2e/**
+tsconfig.e2e.json

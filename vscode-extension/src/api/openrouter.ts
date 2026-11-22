@@ -6,6 +6,15 @@ import { ToolDefinition } from '../tools/tools';
 import { FALLBACK_MAX_OUTPUT_TOKENS, MIN_USEFUL_OUTPUT_TOKENS, parseAffordableTokens } from './modelCatalog';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// End-to-end tests point Rizo at a fake provider on this machine. Only
+// reachable through the test API extension.ts returns in test mode, and
+// only ever to a loopback address.
+let testUrlOverride: string | undefined;
+export function overrideOpenRouterUrlForTests(url: string | undefined): void {
+  if (url !== undefined && !/^http:\/\/127\.0\.0\.1:\d{2,5}\//.test(url)) throw new Error('Test URL must be http://127.0.0.1:<port>/');
+  testUrlOverride = url;
+}
 // Replies are no longer capped at a flat size: each request asks for the
 // model's full maximum output (modelLimits.ts), or options.maxTokens if
 // the user set rizo.limits.maxOutputTokens. Two errors are handled by one
@@ -147,7 +156,7 @@ export function withCacheBreakpoints(messages: ChatMessage[], model: string): Ch
 
 function openRouterTarget(apiKey: string): CompletionTarget {
   return {
-    url: OPENROUTER_URL,
+    url: testUrlOverride ?? OPENROUTER_URL,
     headers: { Authorization: `Bearer ${apiKey}` },
     label: 'OpenRouter',
     shapeBody: (body, options) => ({

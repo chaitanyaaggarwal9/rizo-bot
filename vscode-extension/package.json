@@ -69,6 +69,14 @@
         "title": "Rizo: Disconnect Amazon Bedrock"
       },
       {
+        "command": "rizo.addMcpServer",
+        "title": "Rizo: Add MCP Server"
+      },
+      {
+        "command": "rizo.showMcpServers",
+        "title": "Rizo: Show MCP Servers"
+      },
+      {
         "command": "rizo.reopenClosedSession",
         "title": "Rizo: Reopen Closed Session"
       },
@@ -143,6 +151,24 @@
           },
           "default": [],
           "description": "Tools listed here are refused outright and not offered to the model at all in this workspace."
+        },
+        "rizo.mcp.servers": {
+          "type": "object",
+          "default": {},
+          "scope": "application",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "command": { "type": "string", "description": "Program that starts a local server (no shell)." },
+              "args": { "type": "array", "items": { "type": "string" } },
+              "env": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Extra environment variables for this server, for example its API token." },
+              "cwd": { "type": "string" },
+              "url": { "type": "string", "description": "Streamable HTTP endpoint of a remote server (https, or http://localhost)." },
+              "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+              "disabled": { "type": "boolean" }
+            }
+          },
+          "markdownDescription": "MCP servers whose tools Rizo can use (not in Plan mode). A local server: `{ \"github\": { \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"], \"env\": { \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"...\" } } }`. A remote one: `{ \"docs\": { \"url\": \"https://example.com/mcp\" } }`. Rizo asks before every tool call. This is a user setting only: a workspace can't add servers."
         },
         "rizo.permissions.passEnvironmentVariables": {
           "type": "array",

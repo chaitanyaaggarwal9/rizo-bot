@@ -23,6 +23,7 @@ import {
 import { listThreads, loadThread } from '../storage/threadStore';
 import { gitignoreExcludeGlobs } from '../agent/attachments';
 import { compileSearch, formatPlan, formatSearchOutcome, parsePlan, planProgress, searchFiles } from './fileSearch';
+import { describeArguments, splitQualifiedName } from '../mcp/mcpProtocol';
 
 export interface ToolDefinition {
   type: 'function';
@@ -337,8 +338,13 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
       return args.description
         ? { label: 'Bash', title: args.description, detail: args.command ?? '(unknown command)' }
         : { label: 'Bash', title: args.command ?? '(unknown command)' };
-    default:
-      return { label: name, title: name };
+    default: {
+      // Tools from the user's MCP servers: mcp__<server>__<tool>.
+      const mcp = splitQualifiedName(name);
+      return mcp
+        ? { label: 'MCP', title: `${mcp.server}: ${mcp.tool}`, detail: describeArguments(argsJson) }
+        : { label: name, title: name };
+    }
   }
 }
 

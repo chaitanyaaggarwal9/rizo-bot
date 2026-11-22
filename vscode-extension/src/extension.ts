@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { ChatPanel } from './ui/chatPanel';
+import { getMcpManager } from './mcp/mcpManager';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
 import { manageFolderAccess } from './ui/trustPrompts';
 import { CONNECTED_PROVIDERS } from './ui/connectedProviders';
@@ -75,8 +76,15 @@ export function activate(context: vscode.ExtensionContext) {
     ];
   });
 
+  // MCP servers from the user's settings (mcp/mcpManager.ts).
+  const mcpCommands = [
+    vscode.commands.registerCommand('rizo.addMcpServer', () => getMcpManager(context).addServer()),
+    vscode.commands.registerCommand('rizo.showMcpServers', () => getMcpManager(context).showServers()),
+  ];
+
   context.subscriptions.push(
     ...connectCommands,
+    ...mcpCommands,
     openChat,
     changeApiKey,
     reopenClosedSession,

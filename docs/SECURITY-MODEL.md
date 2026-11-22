@@ -87,6 +87,19 @@ A change approved after you pressed Stop is not applied.
 - MCP tools are never offered in Plan mode, and a server's claim that a
   tool is read-only is ignored.
 
+## Rizo Lang compiler
+
+- Rizo runs only the project's own compiler (`node_modules/rizolang`,
+  found from the file's folder up to the workspace root, never above),
+  and only after you allow it for the project. Allowing is remembered per
+  compiler path and version, so an update asks again.
+- The package must be named `rizolang` and its bin script must stay
+  inside the package, even through symlinks.
+- Only `rizolang audit <file> --json` runs. It compiles and reviews a copy
+  of the file in a private temporary folder and writes nothing to your
+  project. Credential variables are withheld, and it has a 15-second limit.
+- Rizo never installs the compiler; it only suggests the command.
+
 ## The chat view
 
 The webview has a strict Content Security Policy (no remote content, only

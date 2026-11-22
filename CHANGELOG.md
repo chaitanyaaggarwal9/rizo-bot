@@ -20,6 +20,14 @@ an honest gap. Everything before this point lives in git history instead.
   Lang. The model is also told to check its changes with
   `rizolang audit` and not to run `build` (which writes files) unless
   asked. It loads in addition to the usual skills, not instead of them.
+- **Rizo Lang checks.** `.rz` files show compile errors and audit
+  warnings as you type, each with its fix, and **Fix with Rizo** on any of
+  them opens the chat with the problem filled in. The model gets a
+  `rizolang_check` tool (read-only, also in Plan mode) so it can check
+  its own changes and fix them. Uses the project's own compiler
+  (`npm install --save-dev rizolang`), only after you allow it once per
+  project, and only runs `rizolang audit`, on a private copy of the file,
+  which writes nothing. Turn off with `rizo.rizolang.checks`.
 
 ### Fixed
 - Replies no longer show extra blank lines around and inside lists and

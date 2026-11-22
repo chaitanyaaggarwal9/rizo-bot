@@ -171,7 +171,8 @@
               "search_files",
               "find_files",
               "list_directory",
-              "update_plan"
+              "update_plan",
+              "rizolang_check"
             ]
           },
           "default": [],
@@ -270,6 +271,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show an \"Implement with Rizo\" CodeLens above TODO/FIXME comments."
+        },
+        "rizo.rizolang.checks": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show Rizo Lang errors and audit warnings in `.rz` files as you type. Uses the project's own compiler (`node_modules/rizolang`, install with `npm install --save-dev rizolang`), after you allow it once per project. Runs only `rizolang audit`, which writes nothing."
         },
         "rizo.limits.maxStepsPerTurn": {
           "type": "integer",

@@ -24,6 +24,7 @@ import { listThreads, loadThread } from '../storage/threadStore';
 import { gitignoreExcludeGlobs } from '../agent/attachments';
 import { compileSearch, formatPlan, formatSearchOutcome, parsePlan, planProgress, searchFiles } from './fileSearch';
 import { describeArguments, splitQualifiedName } from '../mcp/mcpProtocol';
+import { getRizoLangChecks } from '../rizolang/rizolangChecks';
 
 export interface ToolDefinition {
   type: 'function';
@@ -209,6 +210,21 @@ export const TOOLS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'rizolang_check',
+      description:
+        "Check a Rizo Lang (.rz) file with the project's own compiler: compile errors and audit warnings, each with its line, column and an exact fix. Writes nothing. Run it after every change to a .rz file and fix everything it reports, then run it again.",
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path of the .rz file, relative to the workspace root' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_directory',
       description: 'List the files and folders in one workspace folder (not recursive). Folders end with "/". No approval needed.',
       parameters: {
@@ -323,6 +339,8 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
       return { label: 'Search', title: typeof args.pattern === 'string' ? args.pattern : '(no pattern)', detail: args.include ? `in ${args.include}` : undefined };
     case 'find_files':
       return { label: 'Find', title: typeof args.pattern === 'string' ? args.pattern : '(no pattern)' };
+    case 'rizolang_check':
+      return { label: 'Check', title: typeof args.path === 'string' && args.path ? args.path : '(unknown path)' };
     case 'list_directory':
       return { label: 'List', title: typeof args.path === 'string' && args.path ? args.path : '.' };
     case 'update_plan': {
@@ -1059,6 +1077,12 @@ export async function executeTool(
 
       case 'list_directory':
         return listDirectoryTool(args.path, extraRoots);
+
+      case 'rizolang_check': {
+        if (typeof args.path !== 'string' || !args.path.endsWith('.rz')) return 'Error: rizolang_check needs the "path" of a .rz file.';
+        const filePath = resolveSafePath(args.path, extraRoots);
+        return await getRizoLangChecks(context).checkForTool(filePath, signal);
+      }
 
       case 'update_plan': {
         const plan = parsePlan(args.steps);

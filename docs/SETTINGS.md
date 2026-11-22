@@ -27,6 +27,7 @@ open can't change them.
 | `rizo.autocomplete.enabled` (user only) | `false` | Show suggestions as you type (`Tab` accepts). Each suggestion is a small paid request. |
 | `rizo.autocomplete.model` (user only) | `google/gemini-3.5-flash-lite` | OpenRouter model for autocomplete. A fast, cheap model works best. |
 | `rizo.todoCodeLens.enabled` | `true` | Show "Implement with Rizo" above TODO and FIXME comments. |
+| `rizo.rizolang.checks` | `true` | Show Rizo Lang errors and audit warnings in `.rz` files as you type, using the project's own compiler (`npm install --save-dev rizolang`) after you allow it once per project. Runs only `rizolang audit`, which writes nothing. |
 
 ## MCP servers
 

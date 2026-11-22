@@ -54,7 +54,7 @@ Chat with Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM 
 | **Inline edit** | Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`), describe the change, then keep or undo it. |
 | **Autocomplete** | Optional ghost-text suggestions as you type. Off by default because each one is a paid request. |
 | **Skills and project notes** | Bundled engineering guidance loaded only when relevant, plus your own `.rizo/instructions.md`. |
-| **Rizo Lang** | `.rz` files are highlighted, and chats about Rizo Lang load its official spec automatically, so any model writes it correctly. |
+| **Rizo Lang** | `.rz` files are highlighted and checked as you type with the project's own compiler, with a Fix with Rizo quick fix. Chats about Rizo Lang load its official spec, and the model checks its own `.rz` changes with `rizolang_check`. |
 | **Slash commands** | `/commit`, `/review` and `/test` expand into full guided prompts. |
 | **Attachments** | Attach files, mention workspace files, or paste images for vision models. |
 | **Threads** | Named chats with history, automatic summarizing of long chats, and undo for deleted chats. |
@@ -97,8 +97,8 @@ Details are in [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md). To report a vul
 Rizo is in active development. Released versions are on the Marketplace, and unreleased changes are in [CHANGELOG.md](CHANGELOG.md).
 
 - **Done:** BYOK chat across 10 providers plus Azure and Bedrock, agent tools, plan mode, undo, MCP, inline edit, autocomplete, and repository hardening.
-- **Next:** release 0.6.0 with everything above.
-- **Then:** [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) support: syntax highlighting for `.rz` files, the language spec as a built-in skill, compiler diagnostics in the editor, and a build-and-fix loop (trusted workspaces only, with a pinned compiler).
+- **Released:** 0.6.0 with everything above, on the Marketplace.
+- **In progress:** [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) support: syntax highlighting, the spec as a built-in skill, and compiler checks in the editor and for the model are done; next is release 0.7.0.
 
 ## Project structure
 

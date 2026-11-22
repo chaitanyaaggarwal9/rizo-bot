@@ -212,6 +212,38 @@ test('.rz files open as Rizo Lang', async () => {
   assert.ok((await vscode.languages.getLanguages()).includes('rizolang'));
 });
 
+test('Rizo Lang errors show in the editor, with a quick fix', async () => {
+  // A stand-in for the project's own compiler (node_modules/rizolang).
+  fs.cpSync(path.join(api.context.extensionPath, 'src', 'rizolang', 'testdata', 'fake-rizolang'), path.join(ws, 'node_modules', 'rizolang'), { recursive: true });
+  const bin = path.join(fs.realpathSync(ws), 'node_modules', 'rizolang', 'build', 'bin.js');
+  // As if the user chose "Allow for this project".
+  await api.context.workspaceState.update('rizo.rizolang.allowedCompilers', [`${bin}@0.6.0`]);
+  const file = path.join(ws, 'blog.rz');
+  fs.writeFileSync(file, 'auth User by email\n\napi GET /posts {\n  return db.Post.list()\n}\n');
+  const doc = await vscode.workspace.openTextDocument(file);
+  await vscode.window.showTextDocument(doc);
+  const ours = () => vscode.languages.getDiagnostics(doc.uri).filter((d) => d.source === 'rizolang');
+  await waitFor(() => ours().length > 0, 30_000, 'Rizo Lang diagnostics');
+  const [d] = ours();
+  assert.strictEqual(d.severity, vscode.DiagnosticSeverity.Error);
+  assert.strictEqual(typeof d.code === 'object' ? d.code.value : d.code, 'RZ0318');
+  assert.strictEqual(d.range.start.line, 2);
+  assert.match(d.message, /Fix: Add `requires login`/);
+  const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>('vscode.executeCodeActionProvider', doc.uri, d.range);
+  assert.ok(actions.some((a) => a.title === 'Fix with Rizo: RZ0318'), 'quick fix offered');
+});
+
+test('the model can check a .rz file with rizolang_check', async () => {
+  fake.reset((_body, i) => (i === 0 ? { tool: 'rizolang_check', args: { path: 'blog.rz' } } : { text: 'It needs an access rule.' }));
+  await send('What is wrong with blog.rz?');
+  assert.ok(toolNames(fake.requests[0]).includes('rizolang_check'), 'offered in a Rizo Lang chat');
+  const result = toolResults(fake.requests[1]).at(-1) ?? '';
+  assert.match(result, /blog\.rz does not build: 1 error/);
+  assert.match(result, /blog\.rz:3:3 error RZ0318/);
+  assert.match(result, /fix: Add `requires login`/);
+
+});
+
 // Runs last: the approval dialog it opens stays open.
 
 // ---------- runner ----------

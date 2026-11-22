@@ -1,0 +1,6 @@
+{
+  "name": "rizolang",
+  "version": "0.6.0",
+  "description": "A stand-in for the Rizo Lang compiler, used only by Rizo's tests.",
+  "bin": { "rizolang": "build/bin.js" }
+}

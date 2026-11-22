@@ -5,6 +5,7 @@
 import * as vscode from 'vscode';
 import { ChatPanel } from './ui/chatPanel';
 import { getMcpManager } from './mcp/mcpManager';
+import { getRizoLangChecks } from './rizolang/rizolangChecks';
 import { inlineEdit } from './editor/inlineEdit';
 import { registerAutocomplete } from './editor/autocomplete';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
@@ -109,6 +110,8 @@ export function activate(context: vscode.ExtensionContext): RizoTestApi | undefi
     }),
     registerAutocomplete(context),
   ];
+  // Rizo Lang errors and audit warnings in .rz files (rizolang/).
+  getRizoLangChecks(context);
 
   context.subscriptions.push(
     ...editorFeatures,

@@ -9,6 +9,7 @@ import { callOpenRouter, callWithFallback, CallOptions, ChatMessage, ContentPart
 import { detectTaskType, TaskType } from '../routing/modelRouter';
 import { freeChainForTaskType } from '../models/freeModels';
 import { loadSkillsContent } from '../prompt/skillsLoader';
+import { mentionsRizoLang } from '../prompt/skillKeywords';
 import { ToolDefinition, TOOLS, executeTool, summarizeToolCall, summarizeToolResult } from '../tools/tools';
 import { expandSlashCommand } from '../prompt/slashCommands';
 import { loadProjectInstructions, projectInstructionsPath } from '../prompt/projectInstructions';
@@ -76,7 +77,7 @@ type TurnMode = 'act' | 'plan';
 // Tools that only read: the only ones offered in plan mode.
 const READ_ONLY_TOOLS = new Set([
   'read_file', 'search_files', 'find_files', 'list_directory', 'find_definition', 'find_references',
-  'call_hierarchy', 'search_past_work', 'update_plan',
+  'call_hierarchy', 'search_past_work', 'update_plan', 'rizolang_check',
 ]);
 // Holds one thread — the most recently deleted, cleared once restored.
 // Not a stack: only the last deletion is recoverable.
@@ -795,9 +796,10 @@ export class ChatPanel {
       // tests") keep that request's specialist skills.
       const previousUser = [...thread.messages].reverse().find((m) => m.role === 'user');
       const previousUserText = previousUser ? contentToPlainText(previousUser.content) : undefined;
-      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType, previousUserText, {
-        rizoLangProject: await this.hasRizoLangFiles(),
-      });
+      const rizoLangProject = await this.hasRizoLangFiles();
+      const skillsContent = loadSkillsContent(skillsDir, effectiveText, taskType, previousUserText, { rizoLangProject });
+      // rizolang_check is only offered when the chat involves Rizo Lang.
+      const rizoLangChat = rizoLangProject || mentionsRizoLang(effectiveText) || mentionsRizoLang(previousUserText ?? '');
 
       // Without any system prompt, some models (DeepSeek in particular)
       // default to Chinese on short/ambiguous input — this instruction
@@ -882,7 +884,10 @@ export class ChatPanel {
       // Plan mode offers only tools that read; the model proposes a plan
       // and the user runs it with "Run this plan".
       const enabledTools = TOOLS.filter(
-        (t) => !disabledTools.includes(t.function.name) && (!planMode || READ_ONLY_TOOLS.has(t.function.name)),
+        (t) =>
+          !disabledTools.includes(t.function.name) &&
+          (!planMode || READ_ONLY_TOOLS.has(t.function.name)) &&
+          (t.function.name !== 'rizolang_check' || rizoLangChat),
       );
       // Tools from the user's MCP servers (mcp/mcpManager.ts). Never in
       // plan mode: Rizo can't know what they change. Each call is approved.

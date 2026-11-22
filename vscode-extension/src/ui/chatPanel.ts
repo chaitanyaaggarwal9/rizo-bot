@@ -67,6 +67,7 @@ import {
   TurnCheckpoint,
 } from '../agent/checkpoints';
 import { resolveWithinRoots, safeWriteFile } from '../safety/pathPolicy';
+import { getMcpManager } from '../mcp/mcpManager';
 import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
@@ -866,6 +867,10 @@ export class ChatPanel {
       const enabledTools = TOOLS.filter(
         (t) => !disabledTools.includes(t.function.name) && (!planMode || READ_ONLY_TOOLS.has(t.function.name)),
       );
+      // Tools from the user's MCP servers (mcp/mcpManager.ts). Never in
+      // plan mode: Rizo can't know what they change. Each call is approved.
+      const mcp = getMcpManager(this.context);
+      if (!planMode && mcp.hasServers()) enabledTools.push(...(await mcp.toolDefinitions()));
 
       let answeredBy = '';
       // Kept short and explicit — this string gets persisted and replayed
@@ -982,9 +987,11 @@ export class ChatPanel {
             ? `Error: this ${toolCall.function.name} call was cut off before finishing: it hit the response size limit partway through the content, not a formatting mistake. The file is too large for one call. Split it: call ${toolCall.function.name} now with a smaller amount of content (e.g. a skeleton, or just the first section), then use edit_file in a follow-up call to add the rest in pieces.`
             : planMode && !READ_ONLY_TOOLS.has(toolCall.function.name)
               ? `Error: plan mode is on, so ${toolCall.function.name} isn't available. Finish the plan; the user will run it.`
-              : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal, (p) =>
-                  checkpoint.record(p),
-                );
+              : mcp.isMcpTool(toolCall.function.name)
+                ? await mcp.callTool(toolCall.function.name, toolCall.function.arguments, signal)
+                : await executeTool(this.context, toolCall.function.name, toolCall.function.arguments, extraRoots, threadId, signal, (p) =>
+                    checkpoint.record(p),
+                  );
           const toolOk = !result.startsWith('Error:');
           this.post({
             type: 'toolEnd',

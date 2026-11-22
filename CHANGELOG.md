@@ -10,6 +10,15 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **MCP servers.** Rizo can use tools from Model Context Protocol
+  servers you set up: local ones (a command) or remote ones (an https
+  URL). Add one with **Rizo: Add MCP Server** or in the `rizo.mcp.servers`
+  user setting, and check them with **Rizo: Show MCP Servers**. Rizo asks
+  before every MCP tool call (once, or always for that tool in this
+  workspace), treats results as untrusted, redacts secrets in them, and
+  never offers MCP tools in Plan mode. Servers can only come from your own
+  settings, so opening a repo can't start one. Local servers don't get
+  your credential environment variables unless you list them.
 - **Undo a reply's changes.** A reply that changed files gets an
   **Undo changes** button. It puts those files back the way they were
   before that reply (and removes files it created), after asking you, and

@@ -48,6 +48,23 @@ Already pay for models on Azure? Run **Rizo: Connect Azure AI Foundry** from the
 
 Run **Rizo: Connect Amazon Bedrock**, enter your AWS region and a Bedrock API key (Bedrock console, "API keys"), and pick your models. Newer models such as Claude usually need their cross-region inference profile id (for example `us.anthropic...`). Then choose **Amazon Bedrock** when you start a chat. Requests go straight to Bedrock in your region with your key (stored in your OS keychain), and AWS bills you directly. Models need to support tool use. Replies currently appear all at once rather than word by word.
 
+## Use tools from MCP servers
+
+Rizo can use tools from [Model Context Protocol](https://modelcontextprotocol.io) servers, for example GitHub, a database, or your docs. Run **Rizo: Add MCP Server**, give it a name, and enter either the command that starts a local server (`npx -y @modelcontextprotocol/server-github`) or the https URL of a remote one. Tokens a server needs go under `env` (local) or `headers` (remote) in the `rizo.mcp.servers` user setting:
+
+```json
+"rizo.mcp.servers": {
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "..." }
+  },
+  "docs": { "url": "https://example.com/mcp" }
+}
+```
+
+Rizo asks before every MCP tool call (once, or always for that tool in this workspace) and shows the arguments. Results are treated as untrusted and secrets in them are redacted. MCP tools are never used in Plan mode. Servers can only be added in your user settings, never by a workspace, so opening a repo can't start one. **Rizo: Show MCP Servers** shows each server's status and tools, restarts them, and resets your "always allow" choices.
+
 ## License
 
 Apache License 2.0, modified by the [Commons Clause](https://commonsclause.com).

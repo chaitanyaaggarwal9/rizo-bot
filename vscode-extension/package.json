@@ -202,13 +202,39 @@
           "additionalProperties": {
             "type": "object",
             "properties": {
-              "command": { "type": "string", "description": "Program that starts a local server (no shell)." },
-              "args": { "type": "array", "items": { "type": "string" } },
-              "env": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Extra environment variables for this server, for example its API token." },
-              "cwd": { "type": "string" },
-              "url": { "type": "string", "description": "Streamable HTTP endpoint of a remote server (https, or http://localhost)." },
-              "headers": { "type": "object", "additionalProperties": { "type": "string" } },
-              "disabled": { "type": "boolean" }
+              "command": {
+                "type": "string",
+                "description": "Program that starts a local server (no shell)."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Extra environment variables for this server, for example its API token."
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string",
+                "description": "Streamable HTTP endpoint of a remote server (https, or http://localhost)."
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "disabled": {
+                "type": "boolean"
+              }
             }
           },
           "markdownDescription": "MCP servers whose tools Rizo can use (not in Plan mode). A local server: `{ \"github\": { \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"], \"env\": { \"GITHUB_PERSONAL_ACCESS_TOKEN\": \"...\" } } }`. A remote one: `{ \"docs\": { \"url\": \"https://example.com/mcp\" } }`. Rizo asks before every tool call. This is a user setting only: a workspace can't add servers."
@@ -258,7 +284,38 @@
           "markdownDescription": "Most tokens a single model response may use. `0` (the default) means **each model's own maximum**, read from OpenRouter's model list. If your OpenRouter credit can't cover that, Rizo automatically asks for what it can afford."
         }
       }
-    }
+    },
+    "languages": [
+      {
+        "id": "rizolang",
+        "aliases": [
+          "Rizo Lang",
+          "rizolang",
+          "rizo"
+        ],
+        "extensions": [
+          ".rz"
+        ],
+        "configuration": "./language/rizolang.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rizolang",
+        "scopeName": "source.rizolang",
+        "path": "./syntaxes/rizolang.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.rizolang.codeblock",
+        "path": "./syntaxes/rizolang.markdown.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.rizolang": "rizolang"
+        }
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc -p ./",

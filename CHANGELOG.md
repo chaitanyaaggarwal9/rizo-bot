@@ -9,6 +9,12 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Added
+- **Rizo Lang files.** `.rz` files get syntax highlighting, comment
+  toggling (`Cmd+/`), bracket matching, auto-indent and folding, and
+  ```` ```rizo ```` code blocks in Markdown are highlighted too. Covers
+  everything in the Rizo Lang 0.6 spec.
+
 ### Fixed
 - Replies no longer show extra blank lines around and inside lists and
   code blocks.

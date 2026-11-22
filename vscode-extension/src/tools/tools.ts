@@ -873,12 +873,20 @@ async function listWorkspaceFiles(include: string, maxFiles: number): Promise<{ 
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+// One open file handle for the size check and the read, so the file can't
+// be swapped or grown in between.
 function readForSearch(absPath: string): Buffer | undefined {
+  let fd: number | undefined;
   try {
-    if (fs.statSync(absPath).size > 1_000_000) return undefined;
-    return fs.readFileSync(absPath);
+    fd = fs.openSync(absPath, 'r');
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > 1_000_000) return undefined;
+    const buf = fs.readFileSync(fd);
+    return buf.length > 1_000_000 ? undefined : buf;
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 

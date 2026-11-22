@@ -5,6 +5,8 @@
 import * as vscode from 'vscode';
 import { ChatPanel } from './ui/chatPanel';
 import { getMcpManager } from './mcp/mcpManager';
+import { inlineEdit } from './editor/inlineEdit';
+import { registerAutocomplete } from './editor/autocomplete';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
 import { manageFolderAccess } from './ui/trustPrompts';
 import { CONNECTED_PROVIDERS } from './ui/connectedProviders';
@@ -82,7 +84,22 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rizo.showMcpServers', () => getMcpManager(context).showServers()),
   ];
 
+  // Editor features: inline edit and autocomplete (editor/).
+  const editorFeatures = [
+    vscode.commands.registerCommand('rizo.inlineEdit', () => inlineEdit(context)),
+    vscode.commands.registerCommand('rizo.toggleAutocomplete', async () => {
+      const config = vscode.workspace.getConfiguration('rizo');
+      const next = !config.get<boolean>('autocomplete.enabled', false);
+      await config.update('autocomplete.enabled', next, vscode.ConfigurationTarget.Global);
+      void vscode.window.showInformationMessage(
+        next ? 'Rizo autocomplete is on. Each suggestion is a small paid request to your autocomplete model.' : 'Rizo autocomplete is off.',
+      );
+    }),
+    registerAutocomplete(context),
+  ];
+
   context.subscriptions.push(
+    ...editorFeatures,
     ...connectCommands,
     ...mcpCommands,
     openChat,

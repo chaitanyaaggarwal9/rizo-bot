@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accessibility: Rizo</title>
+<meta name="description" content="Our commitment to making rizobot.com usable by everyone, and how to report a barrier.">
+<link rel="canonical" href="https://rizobot.com/accessibility">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rizo">
+<meta property="og:title" content="Accessibility: Rizo">
+<meta property="og:description" content="Our commitment to making rizobot.com usable by everyone, and how to report a barrier.">
+<meta property="og:url" content="https://rizobot.com/accessibility">
+<meta property="og:image" content="https://rizobot.com/assets/logo-full.png">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#fbfbf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+<script src="/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="/" aria-label="Rizo home">
+      <img class="on-light" src="/assets/logo-word-light.png" alt="Rizo" width="994" height="345">
+      <img class="on-dark" src="/assets/logo-word-dark.png" alt="Rizo" width="994" height="345">
+    </a>
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+    <nav class="nav" id="site-nav" aria-label="Main">
+      <a href="/rizobot">Rizo for VS Code</a>
+      <a href="/rizolang">Rizo Lang</a>
+      <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/tree/main/docs">Docs</a>
+      <a class="nav-gh" href="https://github.com/chaitanyaaggarwal9" data-event="github_click" data-label="nav"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+<section class="first">
+  <div class="wrap doc">
+    <span class="eyebrow"><span class="dot"></span>Legal</span>
+    <h1>Accessibility</h1>
+    <p class="updated">Updated November 22, 2026</p>
+
+    <p>We want rizobot.com to be usable by everyone, including people who use screen readers, keyboard navigation, magnification or other assistive technology.</p>
+
+    <h2>Our target</h2>
+    <p>We aim to meet the <a class="text-link" href="https://www.w3.org/TR/WCAG22/">Web Content Accessibility Guidelines (WCAG) 2.2</a> at level AA.</p>
+
+    <h2>What we do</h2>
+    <ul>
+      <li>Semantic HTML with landmarks, headings in order and a "Skip to content" link.</li>
+      <li>Everything works with a keyboard, with a visible focus indicator.</li>
+      <li>Text and controls meet AA color contrast in both light and dark mode, which follow your system setting.</li>
+      <li>Screenshots and diagrams have text alternatives that describe what they show.</li>
+      <li>Pages work when zoomed to 200% and on small screens, and respect your "reduce motion" setting.</li>
+      <li>No content flashes, autoplays or relies on color alone.</li>
+    </ul>
+
+    <h2>Known limitations</h2>
+    <ul>
+      <li>Code samples are shown as preformatted text. Screen readers read them line by line, which can be slow for longer samples.</li>
+      <li>Some linked pages, such as GitHub, npm and the VS Code Marketplace, are run by others and have their own accessibility practices.</li>
+    </ul>
+
+    <h2>Report a barrier</h2>
+    <p>If something on the site is hard or impossible for you to use, please tell us at <a class="text-link" href="mailto:chaitanyaaggarwal9@gmail.com">chaitanyaaggarwal9@gmail.com</a>. Include the page and what happened, and we'll reply within 5 business days and work to fix it. We can also send the information you need in another format.</p>
+
+    <h2>The software</h2>
+    <p>The Rizo extension runs inside VS Code and uses VS Code's own themes, fonts and keyboard handling. If you find an accessibility problem in Rizo, please <a class="text-link" href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues">open an issue</a>.</p>
+  </div>
+</section>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="logo" href="/" aria-label="Rizo home">
+          <img class="on-light" src="/assets/logo-word-light.png" alt="Rizo" width="994" height="345">
+          <img class="on-dark" src="/assets/logo-word-dark.png" alt="Rizo" width="994" height="345">
+        </a>
+        <p>Tools for building software with AI, without giving up control of your code, your keys or your users' data.</p>
+      </div>
+      <div>
+        <h4>Products</h4>
+        <ul>
+          <li><a href="/rizobot">Rizo for VS Code</a></li>
+          <li><a href="/rizolang">Rizo Lang</a></li>
+          <li><a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">VS Code Marketplace</a></li>
+          <li><a href="https://www.npmjs.com/package/rizolang">npm package</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot">Rizo on GitHub</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizolang">Rizo Lang on GitHub</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/docs/SECURITY-MODEL.md">Security model</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/accessibility">Accessibility</a></li>
+          <li><button class="linklike" type="button" data-cookie-settings>Cookie settings</button></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>&copy; 2026 Chaitanya Aggarwal. Rizo and Rizo Lang are independent projects, not affiliated with Microsoft, OpenRouter, Amazon or the model providers named on this site.</span>
+      <a href="mailto:chaitanyaaggarwal9@gmail.com">chaitanyaaggarwal9@gmail.com</a>
+    </div>
+  </div>
+</footer>
+<div class="consent" id="consent" role="dialog" aria-live="polite" aria-label="Analytics cookies" hidden>
+  <p>We'd like to use Google Analytics cookies to count visits and see which pages help. Nothing is used for ads or sold. <a class="text-link" href="/privacy#analytics">Details</a></p>
+  <p data-gpc hidden>Your browser sends a Global Privacy Control or Do Not Track signal, so analytics stays off.</p>
+  <div class="actions">
+    <button class="btn btn-dark" type="button" data-consent="accept">Accept</button>
+    <button class="btn btn-line" type="button" data-consent="reject">Reject</button>
+  </div>
+</div>
+</body>
+</html>

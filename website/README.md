@@ -1,70 +1,71 @@
-# Rizo website
+# rizobot.com
 
-The marketing site for Rizo: static HTML/CSS/JS, no build step, no
-framework. Deploys as-is.
+The website for Rizo and Rizo Lang. Static HTML, one stylesheet and one
+small script: no framework and no build step. Vercel serves this folder
+as-is.
 
 ```
 website/
-├── index.html
-├── styles.css
-├── script.js
-├── favicon.png          square R+chevron mark, browser tab icon
+├── index.html           Home: both products
+├── rizobot.html         /rizobot: Rizo for VS Code
+├── rizolang.html        /rizolang: Rizo Lang
+├── privacy.html         /privacy
+├── terms.html           /terms
+├── accessibility.html   /accessibility
+├── 404.html
+├── styles.css           Light and dark themes (follows the system setting)
+├── site.js              Mobile menu, copy buttons, analytics consent
+├── vercel.json          Security headers (CSP, HSTS), clean URLs, /lang redirect
+├── robots.txt, sitemap.xml
+├── favicon.png
 └── assets/
-    ├── logo-full.png        source lockup as provided (unused directly)
-    ├── logo-word-light.png  "Rizo}_" wordmark, transparent bg, for light backgrounds
-    ├── logo-word-dark.png   same, ink recolored light, for dark backgrounds
-    ├── screenshot-provider-picker.png   #interface: the new-chat provider picker
-    └── screenshot-model-effort.png      #interface: the model + Effort pills in a chat
+    ├── logo-word-light.png, logo-word-dark.png, logo-full.png, mascot.png
+    ├── rizo-agent.png       The chat panel during a task
+    └── rizo-providers.png   The new-chat provider picker
 ```
 
-Both screenshots are real captures from the running extension, not mockups.
-If the interface changes enough that they go stale, retake and replace
-them rather than leaving an outdated screenshot up.
+## Rules for editing
+
+- **Shared header and footer.** Every page has the same header, footer and
+  consent notice. If you change one, change all of them.
+- **No inline scripts or styles.** The Content-Security-Policy in
+  `vercel.json` blocks them. Use `site.js` and the classes in `styles.css`
+  (the `u-*` utilities cover small spacing tweaks).
+- **No em dashes** in any text.
+- **Claims must be true.** Model names, versions, feature lists and test
+  counts must match the code and releases. Rizo is source-available
+  (Apache 2.0 + Commons Clause); Rizo Lang is open source (Apache 2.0).
+- **Screenshots are real.** `rizo-agent.png` and `rizo-providers.png` are
+  renders of the extension's actual `media/chat.html`, `chat.css` and
+  `chat.js` with a sample conversation. Retake them when the chat view
+  changes.
+
+## Analytics and privacy
+
+Google Analytics 4 loads only after a visitor clicks **Accept** in the
+consent notice, never when the browser sends Global Privacy Control or Do
+Not Track, and with Google signals and ad personalization off. The choice
+is stored in `localStorage` under `rizo-analytics-consent`. "Cookie
+settings" in the footer reopens the notice.
+
+The privacy policy states that GA4 data is kept for 2 months and that
+Google signals and advertising features are off. Keep the GA4 property set
+that way: **Admin → Data collection and modification → Data retention: 2
+months**, Google signals off, and no Google Ads links.
+
+If you add forms, accounts, ads or another tracker, update `/privacy` first.
 
 ## Local preview
-
-No build step. Just serve the folder:
 
 ```bash
 cd website
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`.
+Then open `http://localhost:8000/index.html`. Clean URLs (`/rizobot`) and
+the security headers only apply on Vercel.
 
-## Deploy to Vercel
+## Deploy
 
-1. [vercel.com/new](https://vercel.com/new) → import the `rizo-bot` GitHub repo
-2. **Root Directory**: set to `website` (this is the one setting that
-   matters, because the repo root is a monorepo with the extension source too,
-   and Vercel needs to know to only serve this folder)
-3. **Framework Preset**: "Other" (plain static site, no build command needed)
-4. Deploy
-
-## Security headers
-
-`vercel.json` sets a strict Content-Security-Policy plus HSTS, `nosniff`,
-`X-Frame-Options: DENY`, a referrer policy, a permissions policy and
-COOP on every response. The CSP only allows this site's own files,
-Google Analytics 4 and Google Fonts, and has no `'unsafe-inline'`. So:
-
-- don't add inline `<script>` blocks, `on*=` handlers or `style=""`
-  attributes; put code in a `.js` file and styles in `styles.css`;
-- adding any new third-party script, font, image host or API means
-  adding its origin to the CSP in `vercel.json`.
-
-## Custom domain (rizobot.com)
-
-In the Vercel project → **Settings → Domains** → add `rizobot.com`.
-Vercel shows the exact DNS records to add at your registrar (an `A`
-record to Vercel's IP, or `CNAME` if using a subdomain). Follow what
-it displays there rather than guessing, since Vercel's anycast IP can
-change.
-
-## Updating content
-
-Everything is hand-written, grounded in the actual extension source
-(`vscode-extension/src/`): the routing table, pricing, and destructive-
-command list on the page are meant to match reality, not aspirational
-copy. If those change in the extension, update this page in the same PR
-per Git Hygiene's doc-check rule.
+Vercel builds every push to `main` (production) and every pull request
+(a preview URL in the PR). The project's Root Directory is `website`.

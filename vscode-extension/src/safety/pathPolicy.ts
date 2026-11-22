@@ -74,7 +74,7 @@ export function resolveWithinRoots(requestedPath: unknown, roots: readonly strin
 // that points at another workspace file still works), creates missing
 // parent folders, and opens with O_NOFOLLOW so a symlink swapped in after
 // the check isn't followed.
-export function safeWriteFile(filePath: string, content: string): void {
+export function safeWriteFile(filePath: string, content: string | Uint8Array): void {
   let target: string;
   if (entryExists(filePath)) {
     target = fs.realpathSync(filePath); // throws on a dangling link

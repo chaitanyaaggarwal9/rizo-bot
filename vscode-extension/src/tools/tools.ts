@@ -940,6 +940,9 @@ export async function executeTool(
   // a change approved after the user pressed Stop (or closed the panel)
   // is not applied, and a running command is ended.
   signal?: AbortSignal,
+  // Called with the file's real path right before write_file/edit_file
+  // changes it, so the reply can be undone (agent/checkpoints.ts).
+  beforeWrite?: (absPath: string) => void,
 ): Promise<string> {
   // Backstop for rizo.permissions.disabledTools — chatPanel.ts already
   // filters TOOLS before offering them to the model, so this only matters
@@ -998,6 +1001,7 @@ export async function executeTool(
           return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the change.`;
         }
         if (signal?.aborted) return 'Stopped: the user stopped this turn, so this change was not applied.';
+        beforeWrite?.(filePath);
         await applyFileContent(filePath, args.content);
         return `Wrote ${args.path} (${isNew ? 'created' : 'overwritten'}).`;
       }
@@ -1021,6 +1025,7 @@ export async function executeTool(
           return `Error: ${args.path} changed while waiting for approval, so nothing was written. Read it again and redo the edit.`;
         }
         if (signal?.aborted) return 'Stopped: the user stopped this turn, so this change was not applied.';
+        beforeWrite?.(filePath);
         await applyFileContent(filePath, result.content);
         return `Edited ${args.path}.`;
       }

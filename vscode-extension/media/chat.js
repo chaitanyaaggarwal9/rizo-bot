@@ -434,10 +434,10 @@
           const retryText = 'Please try that again with more capability. Take another look and finish it properly.';
           addMessage('user', retryText);
           if (activeTurn) {
-            messageQueue.push({ text: retryText, attachments: [] });
+            messageQueue.push({ text: retryText, attachments: [], mode: 'act' });
             renderQueueNote();
           } else {
-            dispatchTurn(retryText, []);
+            dispatchTurn(retryText, [], 'act');
           }
         });
         turn.el.appendChild(document.createElement('br'));
@@ -522,7 +522,8 @@
       emptyStateEl.style.display = messages.length === 0 ? 'flex' : 'none';
       messagesEl.style.display = messages.length === 0 ? 'none' : 'flex';
       for (const m of messages) {
-        addMessage(m.role, m.content, m.model, m.taskType, m.totalTokens ? { totalTokens: m.totalTokens } : null);
+        const el = addMessage(m.role, m.content, m.model, m.taskType, m.totalTokens ? { totalTokens: m.totalTokens } : null);
+        if (m.role === 'assistant' && m.turnId && !m.rewound) addTurnActions(el, m.turnId, m.checkpointFiles, false);
       }
     }
 
@@ -849,11 +850,67 @@
 
     // Split out of send() so a queued item can trigger it later via
     // dispatchNextQueued() without duplicating this.
-    function dispatchTurn(text, attachments) {
+    // Act: the model may change files and run commands (with approval).
+    // Plan: it only reads and proposes a plan, then "Run this plan" acts.
+    let composerMode = 'act';
+    const modeBtn = document.getElementById('modeBtn');
+    function setComposerMode(mode) {
+      composerMode = mode === 'plan' ? 'plan' : 'act';
+      modeBtn.textContent = composerMode === 'plan' ? 'Plan' : 'Act';
+      modeBtn.classList.toggle('planMode', composerMode === 'plan');
+    }
+    modeBtn.addEventListener('click', () => setComposerMode(composerMode === 'plan' ? 'act' : 'plan'));
+
+    // Bubbles of recent turns by id, for buttons that arrive after the
+    // turn ended (undo on a stopped or failed reply).
+    const turnEls = new Map();
+
+    function dispatchTurn(text, attachments, mode) {
       const turnId = Date.now() + '-' + Math.random().toString(36).slice(2);
-      startTurn(turnId);
+      const el = startTurn(turnId).el;
+      turnEls.set(turnId, el);
+      if (turnEls.size > 50) turnEls.delete(turnEls.keys().next().value);
       setSending(true);
-      vscode.postMessage({ type: 'send', text, attachments, turnId });
+      vscode.postMessage({ type: 'send', text, attachments, turnId, mode: mode || composerMode });
+    }
+
+    // Undo and "Run this plan" buttons under a finished reply.
+    function addTurnActions(el, turnId, checkpointFiles, planMode) {
+      if (!el) return;
+      const files = Array.isArray(checkpointFiles) ? checkpointFiles.filter((f) => typeof f === 'string') : [];
+      if (!files.length && !planMode) return;
+      const row = document.createElement('div');
+      row.className = 'turnActions';
+      if (files.length) {
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'undoBtn';
+        undo.dataset.turnId = turnId;
+        undo.textContent = '↶ Undo changes (' + files.length + ' file' + (files.length === 1 ? '' : 's') + ')';
+        undo.title = 'Put these files back as they were before this reply:' + String.fromCharCode(10) + files.join(String.fromCharCode(10));
+        undo.addEventListener('click', () => vscode.postMessage({ type: 'rewind', turnId }));
+        row.appendChild(undo);
+      }
+      if (planMode) {
+        const run = document.createElement('button');
+        run.type = 'button';
+        run.className = 'runPlanBtn';
+        run.textContent = '▶ Run this plan';
+        run.addEventListener('click', () => {
+          run.disabled = true;
+          setComposerMode('act');
+          const text = 'Go ahead and carry out the plan above.';
+          addMessage('user', text);
+          if (activeTurn) {
+            messageQueue.push({ text, attachments: [], mode: 'act' });
+            renderQueueNote();
+          } else {
+            dispatchTurn(text, [], 'act');
+          }
+        });
+        row.appendChild(run);
+      }
+      el.appendChild(row);
     }
 
     // Called from every turn-completion path (finalizeTurn, the error
@@ -863,7 +920,7 @@
       if (messageQueue.length === 0) { setSending(false); return; }
       const next = messageQueue.shift();
       renderQueueNote();
-      dispatchTurn(next.text, next.attachments);
+      dispatchTurn(next.text, next.attachments, next.mode);
     }
 
     function send() {
@@ -888,11 +945,11 @@
       autoGrow();
 
       if (activeTurn) {
-        messageQueue.push({ text, attachments });
+        messageQueue.push({ text, attachments, mode: composerMode });
         renderQueueNote();
         return;
       }
-      dispatchTurn(text, attachments);
+      dispatchTurn(text, attachments, composerMode);
     }
 
     // sendBtn does double duty: Send when idle, Stop mid-turn (see
@@ -1004,6 +1061,21 @@
         renderEffortSwitch(currentProvider, currentModel, currentEffort);
         return;
       }
+      if (msg.type === 'turnCheckpoint') {
+        // A stopped or failed reply that had already changed files.
+        if (typeof msg.turnId === 'string') addTurnActions(turnEls.get(msg.turnId), msg.turnId, msg.checkpointFiles, false);
+        return;
+      }
+      if (msg.type === 'rewound') {
+        for (const btn of document.querySelectorAll('.undoBtn')) {
+          if (btn.dataset.turnId !== msg.turnId) continue;
+          const note = document.createElement('span');
+          note.className = 'rewoundNote';
+          note.textContent = 'Changes undone';
+          btn.replaceWith(note);
+        }
+        return;
+      }
       if (msg.type === 'attachmentAdded') {
         pendingAttachments.push(msg.attachment);
         renderChips();
@@ -1029,7 +1101,9 @@
       } else if (msg.type === 'textReset') {
         handleTextReset(msg.turnId);
       } else if (msg.type === 'reply') {
+        const replyEl = activeTurn && activeTurn.id === msg.turnId ? activeTurn.el : null;
         finalizeTurn(msg.turnId, msg.reply, msg.model, msg.taskType, msg.usage, msg.elapsedMs, msg.escalationModel, msg.escalationLabel);
+        addTurnActions(replyEl, msg.turnId, msg.checkpointFiles, msg.planMode === true);
         renderThreadStats(msg.threadTokens, msg.threadCost);
         renderUsageStats(msg.dayTokens, msg.monthCost);
         // Catches the pills up if model/effort silently changed (Smart

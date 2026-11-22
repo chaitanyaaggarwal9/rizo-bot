@@ -14,6 +14,12 @@ an honest gap. Everything before this point lives in git history instead.
   toggling (`Cmd+/`), bracket matching, auto-indent and folding, and
   ```` ```rizo ```` code blocks in Markdown are highlighted too. Covers
   everything in the Rizo Lang 0.6 spec.
+- **Rizo Lang skill.** When a chat mentions Rizo Lang or a `.rz` file, or
+  the project contains `.rz` files, Rizo gives the model the official
+  Rizo Lang 0.6.0 compact spec, so even small models write valid Rizo
+  Lang. The model is also told to check its changes with
+  `rizolang audit` and not to run `build` (which writes files) unless
+  asked. It loads in addition to the usual skills, not instead of them.
 
 ### Fixed
 - Replies no longer show extra blank lines around and inside lists and

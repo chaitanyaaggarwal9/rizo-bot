@@ -41,7 +41,7 @@ const CODING_KEYWORDS = [
 
 // A file name or path with a code-ish extension ("parser.ts",
 // "src/app.py"), or a fenced code block, also means coding work.
-const FILE_REF = /\b[\w./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|cs|cpp|cc|hpp|swift|sql|sh|ps1|yml|yaml|toml|json|html|css|scss|vue|svelte|ipynb|md)\b/i;
+const FILE_REF = /\b[\w./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|rb|php|cs|cpp|cc|hpp|swift|sql|sh|ps1|yml|yaml|toml|json|html|css|scss|vue|svelte|ipynb|md|rz)\b/i;
 const CODE_FENCE = /```/;
 
 function escapeRegExp(str: string): string {

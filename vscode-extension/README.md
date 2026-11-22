@@ -24,6 +24,7 @@ An AI coding assistant for VS Code that uses **your own key**. Chat with Claude,
 - **Inline edit:** select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`), describe the change, then keep or undo it.
 - **Autocomplete** (off by default): suggestions as you type, accepted with `Tab`.
 - **Implement with Rizo** above TODO and FIXME comments.
+- **Rizo Lang:** `.rz` files are highlighted and checked as you type with your project's own compiler, with **Fix with Rizo** on every problem.
 
 **Context**
 - Attach files, mention workspace files, or paste images for vision models.
@@ -71,6 +72,16 @@ Rizo asks before every MCP tool call and shows the arguments. Results are treate
 Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`) or right-click and pick **Rizo: Edit Selection**, then say what to change. Rizo rewrites it in place and highlights it; choose **Keep** or **Undo**. With nothing selected, Rizo writes new code at the cursor.
 
 Autocomplete is off by default because every suggestion is a small paid request. Turn it on with **Rizo: Toggle Autocomplete** and pick a fast, cheap model in `rizo.autocomplete.model`. Files that usually hold secrets are never sent.
+
+## Rizo Lang
+
+[Rizo Lang](https://rizobot.com/rizolang) is a small language that compiles one `.rz` file into a PostgreSQL database, a TypeScript server and web pages. Rizo supports it directly:
+
+- `.rz` files get syntax highlighting, comment toggling, bracket matching and folding, and ```` ```rizo ```` blocks in Markdown are highlighted.
+- When a chat is about Rizo Lang, or the project has `.rz` files, the model gets the official language spec, so even small models write valid code.
+- Install the compiler in your project (`npm install --save-dev rizolang`) and `.rz` files show compile errors and audit warnings as you type. **Fix with Rizo** opens the chat with the problem filled in, and the model checks its own changes with the `rizolang_check` tool.
+
+Rizo only uses the compiler inside your project's `node_modules`, asks once per project before running it, and only runs `rizolang audit` on a private copy of the file, so nothing in your project is written. Turn the checks off with `rizo.rizolang.checks`.
 
 ## Safety
 

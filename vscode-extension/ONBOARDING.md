@@ -42,6 +42,7 @@ To install a test build (a `.vsix` file), use the `...` menu at the top of the E
 - **Inline edit:** select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`), and describe the change. Choose **Keep** or **Undo**.
 - **Autocomplete:** run **Rizo: Toggle Autocomplete** to turn on suggestions as you type. Each suggestion is a small paid request.
 - **TODO comments:** click **Implement with Rizo** above a TODO or FIXME.
+- **Rizo Lang:** with `rizolang` installed in the project (`npm install --save-dev rizolang`), `.rz` files show errors and warnings as you type. Allow the compiler once when asked, then use **Fix with Rizo** from the lightbulb.
 
 ## 6. Make it yours
 

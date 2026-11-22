@@ -9,6 +9,11 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-22
+
+Rizo Lang support: highlighting for `.rz` files, the official spec as a
+built-in skill, and compiler checks in the editor and for the model.
+
 ### Added
 - **Rizo Lang files.** `.rz` files get syntax highlighting, comment
   toggling (`Cmd+/`), bracket matching, auto-indent and folding, and

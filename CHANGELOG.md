@@ -10,6 +10,16 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **Inline edit.** Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`) or
+  pick **Rizo: Edit Selection**, and describe the change. Rizo rewrites
+  it in place, highlights it, and offers **Keep** or **Undo**. With
+  nothing selected it writes new code at the cursor. The model is set by
+  `rizo.inlineEdit.model`.
+- **Autocomplete (off by default).** Ghost-text suggestions as you type,
+  accepted with `Tab`. Turn it on with **Rizo: Toggle Autocomplete** or
+  `rizo.autocomplete.enabled`; each suggestion is a small paid request
+  to `rizo.autocomplete.model`. Files that usually hold secrets are never
+  sent. Both features count toward the usage totals.
 - **MCP servers.** Rizo can use tools from Model Context Protocol
   servers you set up: local ones (a command) or remote ones (an https
   URL). Add one with **Rizo: Add MCP Server** or in the `rizo.mcp.servers`

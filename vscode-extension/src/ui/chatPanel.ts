@@ -70,7 +70,7 @@ import { resolveWithinRoots, safeWriteFile } from '../safety/pathPolicy';
 import { getMcpManager } from '../mcp/mcpManager';
 import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
-const SECRET_KEY = 'rizo.openRouterApiKey';
+export const SECRET_KEY = 'rizo.openRouterApiKey';
 
 type TurnMode = 'act' | 'plan';
 // Tools that only read: the only ones offered in plan mode.

@@ -40,6 +40,12 @@ See [ONBOARDING.md](https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vsc
 
 Short version: install → `Cmd+Shift+P` / `Ctrl+Shift+P` → **"Rizo: Open Chat"** → paste your OpenRouter key when prompted → pick a provider for the chat.
 
+## Edit code in place and autocomplete
+
+Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K` on Windows and Linux) or right-click and pick **Rizo: Edit Selection**, then say what to change. Rizo rewrites the selection in place and highlights it; choose **Keep** or **Undo** (Cmd+Z works too). With nothing selected, Rizo writes new code at the cursor. The model is set by `rizo.inlineEdit.model`.
+
+Autocomplete shows suggestions as you type, accepted with `Tab`. It's off by default because every suggestion is a small paid request; turn it on with **Rizo: Toggle Autocomplete**. Pick a fast, cheap model in `rizo.autocomplete.model`. Files that usually hold secrets (`.env`, keys) are never sent.
+
 ## Use your own Azure AI Foundry deployments
 
 Already pay for models on Azure? Run **Rizo: Connect Azure AI Foundry** from the Command Palette, enter your resource endpoint (for example `https://my-resource.openai.azure.com`) and API key, and pick your deployments. Then choose **Azure AI Foundry** when you start a chat. Requests go straight to your Azure resource with your key (stored in your OS keychain), and Azure bills you directly. Deployments need to support tool calling.

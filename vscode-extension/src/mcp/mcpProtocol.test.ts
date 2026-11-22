@@ -64,6 +64,8 @@ describe('tool names', () => {
     expect(q).toBe('mcp__github__create_issue');
     expect(splitQualifiedName(q)).toEqual({ server: 'github', tool: 'create_issue' });
     expect(splitQualifiedName('read_file')).toBeUndefined();
+    expect(splitQualifiedName('mcp__github__')).toBeUndefined();
+    expect(splitQualifiedName('mcp____x')).toBeUndefined();
     expect(qualifiedToolName('s', 'x'.repeat(100))).toHaveLength(64);
   });
 

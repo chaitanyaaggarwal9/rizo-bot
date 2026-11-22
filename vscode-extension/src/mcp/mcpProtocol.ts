@@ -139,11 +139,9 @@ export function formatToolResult(server: string, result: any): string {
 
 // "mcp__github__create_issue" -> { server: 'github', tool: 'create_issue' }.
 export function splitQualifiedName(name: string): { server: string; tool: string } | undefined {
-  if (!name.startsWith(MCP_TOOL_PREFIX)) return undefined;
-  const rest = name.slice(MCP_TOOL_PREFIX.length);
-  const sep = rest.indexOf('__');
-  if (sep <= 0 || sep === rest.length - 2) return undefined;
-  return { server: rest.slice(0, sep), tool: rest.slice(sep + 2) };
+  // Server names never contain "__", so the first "__" after the prefix splits.
+  const m = /^mcp__(.+?)__(.+)$/.exec(name);
+  return m ? { server: m[1], tool: m[2] } : undefined;
 }
 
 // The arguments as shown in the approval dialog and the chat card.

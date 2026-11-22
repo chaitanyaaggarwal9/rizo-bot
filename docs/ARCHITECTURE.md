@@ -53,7 +53,7 @@ One turn, step by step:
 | `src/ui/` | The chat panel host, webview HTML, trust prompts (folders, project notes), Azure and Bedrock connect flows, TODO CodeLens |
 | `media/` | The chat view itself: `chat.html`, `chat.css`, `chat.js` (strict CSP, nonce scripts) |
 | `src/agent/` | Attachments, folder mentions, checkpoints and undo, turn tracking, history summarizing |
-| `src/api/` | OpenRouter streaming client, Azure v1 client, Bedrock Converse client, live model catalog, pricing |
+| `src/api/` | OpenRouter streaming client, Azure v1 client, Bedrock ConverseStream client (with its event-stream decoder), live model catalog, pricing |
 | `src/models/` | The 10 OpenRouter providers and their model tiers, free-model fallback chains |
 | `src/routing/` | Coding vs general task type, starting model and effort, struggle detection |
 | `src/prompt/` | Skills loader and keywords, project instructions, slash commands |

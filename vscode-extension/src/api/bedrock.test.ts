@@ -14,6 +14,30 @@ import {
 } from './bedrock';
 import type { ChatMessage } from './openrouter';
 import { TOOLS } from '../tools/tools';
+import { encodeEventStreamMessage } from './eventStream';
+
+function ev(type: string, payload: unknown): Uint8Array {
+  return encodeEventStreamMessage({ ':message-type': 'event', ':event-type': type, ':content-type': 'application/json' }, JSON.stringify(payload));
+}
+
+function streamResponse(frames: Uint8Array[], pieceSize = 0): Response {
+  const all = new Uint8Array(frames.reduce((n, f) => n + f.length, 0));
+  let o = 0;
+  for (const f of frames) {
+    all.set(f, o);
+    o += f.length;
+  }
+  const pieces = pieceSize ? Array.from({ length: Math.ceil(all.length / pieceSize) }, (_, i) => all.slice(i * pieceSize, (i + 1) * pieceSize)) : frames;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        for (const p of pieces) c.enqueue(p);
+        c.close();
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/vnd.amazon.eventstream' } },
+  );
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -126,9 +150,16 @@ describe('fromConverseResponse', () => {
 });
 
 describe('callBedrock', () => {
-  it('posts to the regional converse URL with the key and delivers the reply', async () => {
+  it('streams from the regional converse-stream URL with the key', async () => {
     const f = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ output: { message: { content: [{ text: 'hello' }] } }, stopReason: 'end_turn', usage: { inputTokens: 3, outputTokens: 1 } }), { status: 200 }),
+      streamResponse([
+        ev('messageStart', { role: 'assistant' }),
+        ev('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'hel' } }),
+        ev('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'lo' } }),
+        ev('contentBlockStop', { contentBlockIndex: 0 }),
+        ev('messageStop', { stopReason: 'end_turn' }),
+        ev('metadata', { usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 } }),
+      ]),
     );
     vi.stubGlobal('fetch', f);
     const deltas: string[] = [];
@@ -136,12 +167,79 @@ describe('callBedrock', () => {
       onDelta: (t) => deltas.push(t),
       maxTokens: 500,
     });
-    expect(f.mock.calls[0][0]).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-x/converse');
+    expect(f.mock.calls[0][0]).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/model/us.anthropic.claude-x/converse-stream');
     expect(((f.mock.calls[0][1] as RequestInit).headers as Record<string, string>).Authorization).toBe('Bearer ABSK-key');
     expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string).inferenceConfig).toEqual({ maxTokens: 500 });
+    expect(deltas).toEqual(['hel', 'lo']);
     expect(r.message.content).toBe('hello');
+    expect(r.finishReason).toBe('stop');
     expect(r.usage.totalTokens).toBe(4);
-    expect(deltas).toEqual(['hello']);
+  });
+
+  it('collects streamed tool calls, split across chunks and frames', async () => {
+    const f = vi.fn().mockResolvedValue(
+      streamResponse(
+        [
+          ev('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'Reading it.' } }),
+          ev('contentBlockStart', { contentBlockIndex: 1, start: { toolUse: { toolUseId: 'tu_1', name: 'read_file' } } }),
+          ev('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '{"path":' } } }),
+          ev('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '"src/a.ts"}' } } }),
+          ev('contentBlockStart', { contentBlockIndex: 2, start: { toolUse: { toolUseId: 'tu_2', name: 'list_directory' } } }),
+          ev('messageStop', { stopReason: 'tool_use' }),
+          ev('metadata', { usage: { inputTokens: 10, outputTokens: 5 } }),
+        ],
+        7, // deliver in 7-byte pieces so frames straddle reads
+      ),
+    );
+    vi.stubGlobal('fetch', f);
+    const r = await callBedrock({ region: 'us-east-1' }, 'k', 'amazon.nova-pro-v1:0', [{ role: 'user', content: 'hi' }], TOOLS);
+    expect(r.message.content).toBe('Reading it.');
+    expect(r.message.tool_calls).toEqual([
+      { id: 'tu_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' } },
+      { id: 'tu_2', type: 'function', function: { name: 'list_directory', arguments: '{}' } },
+    ]);
+    expect(r.finishReason).toBe('tool_calls');
+    expect(r.usage.totalTokens).toBe(15);
+  });
+
+  it('turns a stream exception into an error with the matching status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        streamResponse([
+          ev('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'partial' } }),
+          encodeEventStreamMessage({ ':message-type': 'exception', ':exception-type': 'throttlingException' }, JSON.stringify({ message: 'Too many requests' })),
+        ]),
+      ),
+    );
+    await expect(callBedrock({ region: 'us-east-1' }, 'k', 'amazon.nova-pro-v1:0', [{ role: 'user', content: 'hi' }])).rejects.toMatchObject({
+      message: 'Too many requests',
+      status: 429,
+    });
+  });
+
+  it('fails clearly when the stream is cut off', async () => {
+    const whole = ev('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'x' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(streamResponse([whole.slice(0, whole.length - 3)])));
+    await expect(callBedrock({ region: 'us-east-1' }, 'k', 'amazon.nova-pro-v1:0', [{ role: 'user', content: 'hi' }])).rejects.toThrow('ended early');
+  });
+
+  it('falls back to plain Converse when the model cannot stream', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'This model doesn\'t support tool use in streaming mode.' }), { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ output: { message: { content: [{ text: 'whole' }] } }, stopReason: 'end_turn', usage: { inputTokens: 2, outputTokens: 1 } }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal('fetch', f);
+    const deltas: string[] = [];
+    const r = await callBedrock({ region: 'us-east-1' }, 'k', 'meta.llama-x', [{ role: 'user', content: 'hi' }], TOOLS, { onDelta: (t) => deltas.push(t) });
+    expect(f.mock.calls[1][0]).toBe('https://bedrock-runtime.us-east-1.amazonaws.com/model/meta.llama-x/converse');
+    expect((f.mock.calls[1][1] as RequestInit).body).toBe((f.mock.calls[0][1] as RequestInit).body);
+    expect(r.message.content).toBe('whole');
+    expect(deltas).toEqual(['whole']);
   });
 
   it('encodes ARNs in the path and surfaces AWS error messages', async () => {
@@ -150,7 +248,7 @@ describe('callBedrock', () => {
     await expect(
       callBedrock({ region: 'us-west-2' }, 'k', 'arn:aws:bedrock:us-west-2:1:inference-profile/us.x', [{ role: 'user', content: 'hi' }]),
     ).rejects.toThrow('security token');
-    expect(f.mock.calls[0][0]).toBe('https://bedrock-runtime.us-west-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-west-2%3A1%3Ainference-profile%2Fus.x/converse');
+    expect(f.mock.calls[0][0]).toBe('https://bedrock-runtime.us-west-2.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-west-2%3A1%3Ainference-profile%2Fus.x/converse-stream');
   });
 
   it('refuses an invalid region or model id before sending anything', async () => {

@@ -8,11 +8,13 @@
 // used instead of Bedrock's OpenAI-compatible endpoint because that one
 // doesn't support Claude models. No AWS SDK: this file translates Rizo's
 // OpenAI-style messages and tool calls to Converse and back.
-// Replies arrive whole (not streamed word by word): ConverseStream uses
-// AWS's binary event-stream framing, a later step.
+// Replies stream through ConverseStream (".../converse-stream"), whose
+// binary event-stream framing is decoded in eventStream.ts. Models that
+// can't stream (or can't stream with tools) fall back to plain Converse.
 // No 'vscode' import: tested in bedrock.test.ts.
 
 import { ToolDefinition } from '../tools/tools';
+import { EventStreamDecoder } from './eventStream';
 import { AssistantMessage, CallOptions, ChatMessage, ChatResult, ContentPart, ToolCall, Usage } from './openrouter';
 
 export interface BedrockConnection {
@@ -201,6 +203,27 @@ export class BedrockHttpError extends Error {
   }
 }
 
+// Stream exceptions arrive as events; map them to the HTTP status the
+// same failure would have had, so retry and auth handling stay the same.
+const EXCEPTION_STATUS: Record<string, number> = {
+  validationException: 400,
+  accessDeniedException: 403,
+  resourceNotFoundException: 404,
+  throttlingException: 429,
+  modelStreamErrorException: 424,
+  internalServerException: 500,
+  serviceUnavailableException: 503,
+  modelTimeoutException: 408,
+};
+
+// Some models reject streaming, or streaming with tools, with a 400 that
+// says so. Those requests are retried once with plain Converse.
+const STREAM_UNSUPPORTED = /stream/i;
+
+function converseUrl(conn: Pick<BedrockConnection, 'region'>, modelId: string, stream: boolean): string {
+  return `${runtimeBase(conn.region)}/model/${encodeURIComponent(modelId)}/${stream ? 'converse-stream' : 'converse'}`;
+}
+
 export async function callBedrock(
   conn: Pick<BedrockConnection, 'region'>,
   apiKey: string,
@@ -210,18 +233,124 @@ export async function callBedrock(
   options?: CallOptions,
 ): Promise<ChatResult> {
   if (!isValidBedrockModelId(modelId)) throw new Error(`"${modelId}" isn't a valid Bedrock model id.`);
-  const body = toConverseRequest(messages, tools, options?.maxTokens);
-  const res = await fetch(`${runtimeBase(conn.region)}/model/${encodeURIComponent(modelId)}/converse`, {
+  const body = JSON.stringify(toConverseRequest(messages, tools, options?.maxTokens));
+  const res = await fetch(converseUrl(conn, modelId, true), {
     method: 'POST',
-    headers: headers(apiKey),
-    body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body,
     signal: options?.signal,
   });
+  if (!res.ok) {
+    const msg = await errorMessage(res);
+    if (res.status === 400 && STREAM_UNSUPPORTED.test(msg)) return callBedrockWhole(conn, apiKey, modelId, body, options);
+    throw new BedrockHttpError(msg, res.status);
+  }
+  if (!res.body) throw new Error('Bedrock response had no body to stream.');
+  return readConverseStream(res.body, modelId, options);
+}
+
+// Plain Converse: the whole reply at once.
+async function callBedrockWhole(
+  conn: Pick<BedrockConnection, 'region'>,
+  apiKey: string,
+  modelId: string,
+  body: string,
+  options?: CallOptions,
+): Promise<ChatResult> {
+  const res = await fetch(converseUrl(conn, modelId, false), { method: 'POST', headers: headers(apiKey), body, signal: options?.signal });
   if (!res.ok) throw new BedrockHttpError(await errorMessage(res), res.status);
   const result = fromConverseResponse(await res.json(), modelId);
-  // Not streamed: hand the whole reply to the chat view at once.
   if (result.message.content) options?.onDelta?.(result.message.content);
   return result;
+}
+
+// Reads ConverseStream events: text deltas go to onDelta as they arrive,
+// tool-call input JSON is collected per content block, and the result has
+// the same shape as fromConverseResponse's.
+export async function readConverseStream(stream: ReadableStream<Uint8Array>, modelId: string, options?: CallOptions): Promise<ChatResult> {
+  const decoder = new EventStreamDecoder();
+  const json = new TextDecoder();
+  let text = '';
+  let stopReason: string | undefined;
+  let usage: any = {};
+  const toolBlocks = new Map<number, { id?: string; name?: string; input: string }>();
+  let sawStop = false;
+
+  const handle = (headers: Record<string, unknown>, payload: Uint8Array) => {
+    const type = headers[':message-type'];
+    let data: any = {};
+    try {
+      data = payload.length ? JSON.parse(json.decode(payload)) : {};
+    } catch {
+      data = {};
+    }
+    if (type === 'exception') {
+      const name = String(headers[':exception-type'] ?? 'exception');
+      throw new BedrockHttpError(data?.message || data?.Message || name, EXCEPTION_STATUS[name] ?? 500);
+    }
+    if (type === 'error') {
+      throw new BedrockHttpError(String(headers[':error-message'] ?? headers[':error-code'] ?? 'Bedrock stream error'), 500);
+    }
+    const index = Number(data?.contentBlockIndex);
+    switch (headers[':event-type']) {
+      case 'contentBlockStart': {
+        const tu = data?.start?.toolUse;
+        if (tu && Number.isInteger(index)) toolBlocks.set(index, { id: tu.toolUseId, name: tu.name, input: '' });
+        break;
+      }
+      case 'contentBlockDelta': {
+        const d = data?.delta;
+        if (typeof d?.text === 'string' && d.text) {
+          text += d.text;
+          options?.onDelta?.(d.text);
+        } else if (typeof d?.toolUse?.input === 'string') {
+          const block = toolBlocks.get(index);
+          if (block) block.input += d.toolUse.input;
+        }
+        // reasoningContent deltas (model thinking) aren't shown.
+        break;
+      }
+      case 'messageStop':
+        sawStop = true;
+        stopReason = data?.stopReason;
+        break;
+      case 'metadata':
+        usage = data?.usage ?? {};
+        break;
+    }
+  };
+
+  const reader = stream.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const m of decoder.push(value)) handle(m.headers, m.payload);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (decoder.pending || (!sawStop && !text && !toolBlocks.size)) {
+    throw new BedrockHttpError('The Bedrock stream ended early.', 502);
+  }
+
+  const toolCalls: ToolCall[] = [...toolBlocks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, b]) => typeof b.name === 'string')
+    .map(([i, b]) => ({
+      id: typeof b.id === 'string' ? b.id : `bedrock_${i}`,
+      type: 'function' as const,
+      // Converse sends no input fragments for a tool with no arguments.
+      function: { name: b.name as string, arguments: b.input || '{}' },
+    }));
+  const message: AssistantMessage = { role: 'assistant', content: text || null };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  const result: Usage = {
+    promptTokens: Number(usage.inputTokens) || 0,
+    completionTokens: Number(usage.outputTokens) || 0,
+    totalTokens: Number(usage.totalTokens) || (Number(usage.inputTokens) || 0) + (Number(usage.outputTokens) || 0),
+  };
+  return { model: modelId, message, usage: result, finishReason: stopReason ? (STOP_REASONS[stopReason] ?? stopReason) : undefined };
 }
 
 // Best-effort list of models and inference profiles the key can see.

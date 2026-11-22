@@ -9,6 +9,12 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Changed
+- **Amazon Bedrock replies stream.** Text now appears as the model writes
+  it instead of all at once at the end, and Stop cuts a reply off right
+  away. Models that can't stream (or can't stream while using tools) fall
+  back to the previous whole-reply request automatically.
+
 ## [0.7.0] - 2026-11-22
 
 Rizo Lang support: highlighting for `.rz` files, the official spec as a

@@ -3,7 +3,7 @@
 // Commons Clause (no resale) — see LICENSE for the full terms.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { callOpenRouter, callWithFallback } from './openrouter';
+import { callOpenRouter, callWithFallback, withCacheBreakpoints } from './openrouter';
 import { FALLBACK_MAX_OUTPUT_TOKENS } from './modelCatalog';
 
 function okStream(text = 'done'): Response {
@@ -100,6 +100,38 @@ describe('cost reporting', () => {
     const r = await callOpenRouter('k', 'a/model', msgs);
     expect(JSON.parse((f.mock.calls[0][1] as RequestInit).body as string).usage).toEqual({ include: true });
     expect(r.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15, cost: 0.00042 });
+  });
+});
+
+describe('prompt caching', () => {
+  const convo = [
+    { role: 'system' as const, content: 'skills...' },
+    { role: 'user' as const, content: 'first' },
+    { role: 'assistant' as const, content: 'answer' },
+    { role: 'tool' as const, tool_call_id: 'c', content: 'tool output' },
+    { role: 'user' as const, content: 'second' },
+  ];
+
+  it('marks the system prompt and the latest message for Claude and Gemini', () => {
+    for (const model of ['anthropic/claude-sonnet-5.5', 'google/gemini-4-neon']) {
+      const out = withCacheBreakpoints(convo, model);
+      expect(out[0].content).toEqual([{ type: 'text', text: 'skills...', cache_control: { type: 'ephemeral' } }]);
+      expect(out[4].content).toEqual([{ type: 'text', text: 'second', cache_control: { type: 'ephemeral' } }]);
+      expect(out[1].content).toBe('first');
+      expect(out[3].content).toBe('tool output');
+    }
+  });
+
+  it('leaves other models untouched (they cache automatically)', () => {
+    expect(withCacheBreakpoints(convo, 'openai/gpt-6.2-sol')).toBe(convo);
+  });
+
+  it('is applied to OpenRouter requests', async () => {
+    const f = vi.fn().mockResolvedValue(okStream());
+    vi.stubGlobal('fetch', f);
+    await callOpenRouter('k', 'anthropic/claude-haiku-5.5', convo);
+    const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.messages[0].content[0].cache_control).toEqual({ type: 'ephemeral' });
   });
 });
 

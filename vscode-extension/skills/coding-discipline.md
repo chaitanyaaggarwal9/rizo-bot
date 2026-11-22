@@ -13,7 +13,8 @@ Base habits for any coding task. For trivial one-liners, use judgment.
 - If an edit fails, re-read the file. Do not guess at its contents.
 - Use `write_file` only for new files or full rewrites.
 - Before changing a function's signature or behavior, check its callers with `find_references` or `call_hierarchy`.
-- Search with `run_command`: `rg -n "pattern"` (fall back to `git grep -n`).
+- Search with `search_files` (text) and `find_files` (file names); use `list_directory` to look around. They need no approval, so use them instead of shell commands.
+- For a task with 3 or more steps, keep a checklist with `update_plan` and update it as steps finish.
 - The user must approve every write and command. Plan first and skip unnecessary steps.
 
 ### 3. Make the smallest correct change

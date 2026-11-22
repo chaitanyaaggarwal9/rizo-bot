@@ -29,6 +29,8 @@ export interface ToolCall {
 export interface TextContentPart {
   type: 'text';
   text: string;
+  // Prompt-caching breakpoint (Anthropic and Gemini through OpenRouter).
+  cache_control?: { type: 'ephemeral' };
 }
 export interface ImageContentPart {
   type: 'image_url';
@@ -111,6 +113,38 @@ export interface CompletionTarget {
   label: string; // for error messages
 }
 
+// Models whose provider caches prompts only where the request marks a
+// breakpoint. (OpenAI, DeepSeek, Grok and others cache automatically.)
+function needsCacheBreakpoints(model: string): boolean {
+  return model.startsWith('anthropic/') || model.startsWith('google/gemini');
+}
+
+function markLastText(content: ChatMessage['content']): ChatMessage['content'] {
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content, cache_control: { type: 'ephemeral' } }] : content;
+  if (!Array.isArray(content)) return content;
+  const i = content.map((p) => p.type).lastIndexOf('text');
+  if (i === -1) return content;
+  return content.map((p, j) => (j === i && p.type === 'text' ? { ...p, cache_control: { type: 'ephemeral' as const } } : p));
+}
+
+// Marks two cache breakpoints: the system prompt (skills and project
+// notes, the same every turn) and the latest user or assistant message,
+// so the next request in the conversation re-reads everything before it
+// from cache at a fraction of the price. Anthropic allows up to four.
+export function withCacheBreakpoints(messages: ChatMessage[], model: string): ChatMessage[] {
+  if (!needsCacheBreakpoints(model)) return messages;
+  let lastIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if ((messages[i].role === 'user' || messages[i].role === 'assistant') && messages[i].content) {
+      lastIdx = i;
+      break;
+    }
+  }
+  return messages.map((m, i) =>
+    (m.role === 'system' && i === 0) || i === lastIdx ? { ...m, content: markLastText(m.content) } : m,
+  );
+}
+
 function openRouterTarget(apiKey: string): CompletionTarget {
   return {
     url: OPENROUTER_URL,
@@ -118,6 +152,7 @@ function openRouterTarget(apiKey: string): CompletionTarget {
     label: 'OpenRouter',
     shapeBody: (body, options) => ({
       ...body,
+      messages: withCacheBreakpoints(body.messages as ChatMessage[], String(body.model)),
       // Asks OpenRouter to include the exact cost in the usage it reports.
       usage: { include: true },
       ...(options?.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),

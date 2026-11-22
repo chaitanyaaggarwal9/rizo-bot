@@ -134,7 +134,11 @@
               "search_past_work",
               "find_definition",
               "find_references",
-              "call_hierarchy"
+              "call_hierarchy",
+              "search_files",
+              "find_files",
+              "list_directory",
+              "update_plan"
             ]
           },
           "default": [],

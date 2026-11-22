@@ -21,6 +21,8 @@ import {
   sliceForReading,
 } from '../safety/pathPolicy';
 import { listThreads, loadThread } from '../storage/threadStore';
+import { gitignoreExcludeGlobs } from '../agent/attachments';
+import { compileSearch, formatPlan, formatSearchOutcome, parsePlan, planProgress, searchFiles } from './fileSearch';
 
 export interface ToolDefinition {
   type: 'function';
@@ -168,6 +170,79 @@ export const TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_files',
+      description:
+        'Search the text of files in the workspace (like grep). Returns matching lines as path:line: text. No approval needed. Skips node_modules, build output, .gitignore\'d files, binaries and files that usually hold secrets. Use "include" to narrow by file glob. Prefer this over run_command for searching.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Text to find (literal by default)' },
+          is_regex: { type: 'boolean', description: 'Treat pattern as a JavaScript regular expression (default false)' },
+          case_sensitive: { type: 'boolean', description: 'Match case exactly (default false)' },
+          include: { type: 'string', description: 'Optional glob of files to search, e.g. "src/**/*.ts" (default: all files)' },
+          max_results: { type: 'integer', description: 'Maximum matching lines to return (default 100, max 500)' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_files',
+      description:
+        'Find files in the workspace by name or path glob, e.g. "**/*.test.ts" or "**/package.json". No approval needed. Skips node_modules, build output and .gitignore\'d files.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'Glob pattern relative to the workspace root' },
+          max_results: { type: 'integer', description: 'Maximum paths to return (default 200, max 1000)' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_directory',
+      description: 'List the files and folders in one workspace folder (not recursive). Folders end with "/". No approval needed.',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: 'Relative folder path (default ".", the workspace root)' } },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_plan',
+      description:
+        'Write or update your step-by-step plan for a multi-step task. The user sees it as a checklist. Call it at the start of any task with 3 or more steps, then again as steps finish. Send the whole list each time. No approval needed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          steps: {
+            type: 'array',
+            description: 'All steps, in order',
+            items: {
+              type: 'object',
+              properties: {
+                step: { type: 'string', description: 'Short description of the step' },
+                status: { type: 'string', enum: ['pending', 'in_progress', 'done'] },
+              },
+              required: ['step', 'status'],
+            },
+          },
+        },
+        required: ['steps'],
+      },
+    },
+  },
 ];
 
 // For the live tool-call transcript's two-tier card: label is the short
@@ -242,6 +317,18 @@ export function summarizeToolCall(name: string, argsJson: string, extraRoots: st
       return tooBig || oldString === undefined || newString === undefined
         ? { label: 'Edit', title: path ?? '(unknown path)' }
         : { label: 'Edit', title: path ?? '(unknown path)', diffOld: oldString, diffNew: newString };
+    }
+    case 'search_files':
+      return { label: 'Search', title: typeof args.pattern === 'string' ? args.pattern : '(no pattern)', detail: args.include ? `in ${args.include}` : undefined };
+    case 'find_files':
+      return { label: 'Find', title: typeof args.pattern === 'string' ? args.pattern : '(no pattern)' };
+    case 'list_directory':
+      return { label: 'List', title: typeof args.path === 'string' && args.path ? args.path : '.' };
+    case 'update_plan': {
+      const plan = parsePlan(args.steps);
+      return Array.isArray(plan)
+        ? { label: 'Plan', title: planProgress(plan), detail: formatPlan(plan) }
+        : { label: 'Plan', title: 'update' };
     }
     case 'run_command':
       // description is required, but older replayed history (or a
@@ -761,6 +848,80 @@ function searchPastWork(context: vscode.ExtensionContext, targetPath: string, cu
   return `${hits.length} prior touch(es) of "${targetPath}" found:\n${lines.join('\n')}`;
 }
 
+// ---------- search tools (read-only, no approval) ----------
+
+// Always skipped, on top of each folder's .gitignore.
+const SEARCH_EXCLUDES = [
+  '**/node_modules/**', '**/.git/**', '**/dist/**', '**/out/**', '**/build/**', '**/.next/**',
+  '**/coverage/**', '**/.venv/**', '**/venv/**', '**/__pycache__/**', '**/*.min.js', '**/*.map',
+];
+
+// Workspace files matching a glob, across every open folder, respecting
+// .gitignore. Read-only and confined to the workspace (findFiles never
+// leaves the open folders).
+async function listWorkspaceFiles(include: string, maxFiles: number): Promise<{ path: string; absPath: string }[]> {
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const out: { path: string; absPath: string }[] = [];
+  for (const folder of folders) {
+    const exclude = `{${[...SEARCH_EXCLUDES, ...gitignoreExcludeGlobs(folder.uri.fsPath)].join(',')}}`;
+    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, include), exclude, maxFiles - out.length);
+    for (const uri of uris) {
+      out.push({ path: vscode.workspace.asRelativePath(uri, folders.length > 1), absPath: uri.fsPath });
+    }
+    if (out.length >= maxFiles) break;
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function readForSearch(absPath: string): Buffer | undefined {
+  try {
+    if (fs.statSync(absPath).size > 1_000_000) return undefined;
+    return fs.readFileSync(absPath);
+  } catch {
+    return undefined;
+  }
+}
+
+function validGlob(pattern: unknown): pattern is string {
+  return typeof pattern === 'string' && pattern.trim().length > 0 && pattern.length <= 300 && !pattern.includes('..');
+}
+
+async function searchFilesTool(args: any): Promise<string> {
+  const regex = compileSearch({ pattern: args.pattern, isRegex: !!args.is_regex, caseSensitive: !!args.case_sensitive });
+  if (!(regex instanceof RegExp)) return `Error: ${regex.error}`;
+  const include = args.include === undefined ? '**/*' : args.include;
+  if (!validGlob(include)) return 'Error: "include" must be a glob inside the workspace, like "src/**/*.ts".';
+  const files = await listWorkspaceFiles(include, 20_000);
+  const outcome = searchFiles(files, readForSearch, regex, args.max_results);
+  return formatSearchOutcome(outcome, args.pattern);
+}
+
+async function findFilesTool(pattern: unknown, maxResults: unknown): Promise<string> {
+  if (!validGlob(pattern)) return 'Error: find_files needs a glob pattern inside the workspace, like "**/*.test.ts".';
+  const limit = Math.min(Math.max(Math.floor(Number(maxResults)) || 200, 1), 1000);
+  const files = await listWorkspaceFiles(pattern, limit + 1);
+  if (!files.length) return `No files match ${JSON.stringify(pattern)}.`;
+  const shown = files.slice(0, limit).map((f) => f.path);
+  return shown.join('\n') + (files.length > limit ? `\n\n(showing the first ${limit}; narrow the pattern to see others)` : '');
+}
+
+function listDirectoryTool(requested: unknown, extraRoots: string[]): string {
+  const rel = typeof requested === 'string' && requested.trim() ? requested : '.';
+  const dir = resolveSafePath(rel, extraRoots);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (err: any) {
+    return `Error: can't list ${rel}: ${err?.code === 'ENOTDIR' ? 'it is a file, not a folder' : err?.message ?? String(err)}`;
+  }
+  const names = entries
+    .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+    .sort((a, b) => Number(b.endsWith('/')) - Number(a.endsWith('/')) || a.localeCompare(b));
+  if (!names.length) return `${rel} is empty.`;
+  const shown = names.slice(0, 500);
+  return shown.join('\n') + (names.length > 500 ? `\n\n(${names.length - 500} more entries not shown)` : '');
+}
+
 export async function executeTool(
   context: vscode.ExtensionContext,
   name: string,
@@ -870,6 +1031,21 @@ export async function executeTool(
 
       case 'call_hierarchy':
         return await callHierarchyTool(args.path, args.symbol, args.direction, extraRoots);
+
+      case 'search_files':
+        return await searchFilesTool(args);
+
+      case 'find_files':
+        return await findFilesTool(args.pattern, args.max_results);
+
+      case 'list_directory':
+        return listDirectoryTool(args.path, extraRoots);
+
+      case 'update_plan': {
+        const plan = parsePlan(args.steps);
+        if (!Array.isArray(plan)) return `Error: ${plan.error}`;
+        return `Plan updated (${planProgress(plan)}).`;
+      }
 
       default:
         return `Error: unknown tool "${name}"`;

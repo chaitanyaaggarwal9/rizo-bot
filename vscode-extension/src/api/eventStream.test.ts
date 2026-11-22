@@ -59,7 +59,7 @@ describe('EventStreamDecoder', () => {
 
   it('rejects a corrupted prelude before waiting for a huge message', () => {
     const msg = encodeEventStreamMessage({ x: '1' }, 'hello');
-    msg[1] = 0x7f; // claims ~2 GB
+    msg[0] = 0x7f; // claims ~2 GB
     expect(() => new EventStreamDecoder().push(msg)).toThrow('invalid event length');
   });
 

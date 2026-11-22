@@ -9,6 +9,8 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-22
+
 ### Changed
 - **Amazon Bedrock replies stream.** Text now appears as the model writes
   it instead of all at once at the end, and Stop cuts a reply off right

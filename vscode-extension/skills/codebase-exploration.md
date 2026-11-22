@@ -4,10 +4,10 @@ Understand an unfamiliar codebase quickly without reading everything.
 
 ### 1. Get the shape first
 - Read the README and the package manifest (package.json, pyproject.toml, go.mod, Cargo.toml, etc.).
-- List files with `run_command`: `git ls-files` (or `rg --files`). Note the main folders and entry points.
+- Look around with `list_directory` and `find_files` (e.g. `**/package.json`, `src/**/*.ts`). Note the main folders and entry points.
 
 ### 2. Search, then read
-- Find symbols and strings with `rg -n "pattern"` (fall back to `git grep -n`).
+- Find symbols and strings with `search_files` (narrow with `include`).
 - Read large files in ranges with `read_file` start_line/end_line.
 - Follow code with `find_definition` and `find_references`. Use `call_hierarchy` to see who calls what.
 

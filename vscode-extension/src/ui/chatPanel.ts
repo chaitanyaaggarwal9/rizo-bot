@@ -593,9 +593,19 @@ export class ChatPanel {
       // with their own key: that history never goes to OpenRouter.
       const connected = getConnectedProvider(thread.provider);
       if (connected && !thread.model) return;
-      const { message } = connected
+      // OpenRouter chats are summarized by their own company's cheapest
+      // model (Free chats by the free chain), not a fixed paid model, so
+      // a chat's history stays with the provider the user picked.
+      const provider = thread.provider && PROVIDERS[thread.provider] ? thread.provider : undefined;
+      const result = connected
         ? await connected.call(this.context, apiKey, thread.model as string, plan.prompt)
-        : await callOpenRouter(apiKey, SUMMARY_MODEL, plan.prompt);
+        : provider === 'free'
+          ? await callWithFallback(apiKey, freeChainForTaskType('general', getCachedCatalog()), plan.prompt)
+          : await callOpenRouter(apiKey, provider ? PROVIDERS[provider].variants[0].id : SUMMARY_MODEL, plan.prompt);
+      const { message } = result;
+      // Summaries cost tokens too: count them in the day/month totals.
+      const cost = result.usage.cost ?? estimateCost(result.model, result.usage.promptTokens, result.usage.completionTokens, getCachedCatalog());
+      recordUsage(this.context, result.usage.totalTokens, cost);
       const newSummary = (message.content as string) || thread.summary || '';
       if (newSummary) updateThreadSummary(this.context, threadId, newSummary, plan.foldEnd);
     } catch {

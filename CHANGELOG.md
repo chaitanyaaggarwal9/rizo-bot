@@ -10,6 +10,18 @@ an honest gap. Everything before this point lives in git history instead.
 ## [Unreleased]
 
 ### Added
+- **Search tools that need no approval:** `search_files` (search text
+  across the workspace, like grep), `find_files` (find files by glob) and
+  `list_directory`. They only read, stay inside the workspace, skip
+  `node_modules`, build output, `.gitignore`d files, binaries and files
+  that usually hold secrets, and redact secrets in what they return.
+  Rizo no longer needs a shell command (and your approval) for every
+  search.
+- **Task checklist:** for multi-step work the model keeps a plan with
+  `update_plan`, shown as a checklist card in the chat.
+- **Prompt caching** for Claude and Gemini: the unchanged start of a long
+  chat is read from cache on the next request, at a fraction of the
+  price. Other providers already cache automatically.
 - **Amazon Bedrock.** Use your own Bedrock models, including Claude, with
   a Bedrock API key: run **Rizo: Connect Amazon Bedrock**, enter your
   region and key, pick your models, and choose Amazon Bedrock when you
@@ -66,6 +78,10 @@ an honest gap. Everything before this point lives in git history instead.
   and `rizo.limits.maxOutputTokens` (both `0` = no limit, the default).
 
 ### Fixed
+- History summaries of long chats used a paid OpenAI model whatever
+  provider the chat was on (Free chats included), and their cost wasn't
+  counted. They now use the chat's own provider (the free chain for Free)
+  and count toward the day and month totals.
 - A chat whose model has been retired falls back to its provider's
   default; a chat on an older model that still exists keeps it.
 - Turns whose input was billed but produced no output tokens are now

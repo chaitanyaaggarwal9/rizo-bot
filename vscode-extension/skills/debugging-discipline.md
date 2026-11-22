@@ -18,7 +18,7 @@ Find and fix the root cause, not the symptom.
 ### 4. One hypothesis at a time
 - State the hypothesis and what would confirm it. Change one thing, rerun, note the result.
 - Find out why a value is wrong (for example, why it is null) and fix it at the source.
-- Before editing a shared function, check all callers with `find_references` or `call_hierarchy` (or `rg -n`). One fix in the shared function beats copies in each caller.
+- Before editing a shared function, check all callers with `find_references` or `call_hierarchy` (or `search_files`). One fix in the shared function beats copies in each caller.
 
 ### 5. Do not
 - Change many things hoping one helps.

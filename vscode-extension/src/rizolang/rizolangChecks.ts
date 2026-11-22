@@ -229,18 +229,19 @@ export class RizoLangChecks implements vscode.Disposable, vscode.CodeActionProvi
   }
 }
 
-const SEVERITY: Record<Problem['severity'], vscode.DiagnosticSeverity> = {
-  error: vscode.DiagnosticSeverity.Error,
-  warning: vscode.DiagnosticSeverity.Warning,
-  note: vscode.DiagnosticSeverity.Information,
-};
+// Built on use, not at load: tools.ts imports this module, and unit tests
+// load tools.ts with a minimal vscode stub.
+function severityOf(p: Problem): vscode.DiagnosticSeverity {
+  if (p.severity === 'error') return vscode.DiagnosticSeverity.Error;
+  return p.severity === 'warning' ? vscode.DiagnosticSeverity.Warning : vscode.DiagnosticSeverity.Information;
+}
 
 function toDiagnostic(doc: vscode.TextDocument, p: Problem): vscode.Diagnostic {
   const line = Math.min(Math.max((p.line ?? 1) - 1, 0), Math.max(doc.lineCount - 1, 0));
   const start = Math.max((p.column ?? 1) - 1, 0);
   const end = p.length ? start + p.length : doc.lineAt(line).range.end.character;
   const range = doc.validateRange(new vscode.Range(line, start, line, Math.max(end, start + 1)));
-  const d = new vscode.Diagnostic(range, p.fix ? `${p.message}\nFix: ${p.fix}` : p.message, SEVERITY[p.severity]);
+  const d = new vscode.Diagnostic(range, p.fix ? `${p.message}\nFix: ${p.fix}` : p.message, severityOf(p));
   d.source = 'rizolang';
   d.code = p.code.startsWith('RZ') ? { value: p.code, target: vscode.Uri.parse(ERRORS_URL) } : p.code;
   return d;

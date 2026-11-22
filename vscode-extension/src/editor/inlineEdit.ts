@@ -18,7 +18,9 @@ const highlight = vscode.window.createTextEditorDecorationType({
   isWholeLine: true,
 });
 
-export async function inlineEdit(context: vscode.ExtensionContext): Promise<void> {
+// args.instruction skips the input box (keybindings with "args", and the
+// end-to-end tests).
+export async function inlineEdit(context: vscode.ExtensionContext, args?: { instruction?: unknown }): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     void vscode.window.showInformationMessage('Open a file and select some code to edit with Rizo.');
@@ -47,7 +49,8 @@ export async function inlineEdit(context: vscode.ExtensionContext): Promise<void
     if (pick !== send) return;
   }
 
-  const instruction = await vscode.window.showInputBox({
+  const given = typeof args?.instruction === 'string' && args.instruction.trim() ? args.instruction : undefined;
+  const instruction = given ?? await vscode.window.showInputBox({
     title: original ? 'Rizo: edit selection' : 'Rizo: write code here',
     prompt: original ? 'Describe the change' : 'Describe the code to add at the cursor',
     placeHolder: original ? 'e.g. add error handling, convert to async/await' : 'e.g. a function that parses ISO dates',

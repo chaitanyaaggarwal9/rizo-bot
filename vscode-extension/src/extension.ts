@@ -10,8 +10,20 @@ import { registerAutocomplete } from './editor/autocomplete';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
 import { manageFolderAccess } from './ui/trustPrompts';
 import { CONNECTED_PROVIDERS } from './ui/connectedProviders';
+import { RizoCompletionProvider } from './editor/autocomplete';
+import { overrideOpenRouterUrlForTests } from './api/openrouter';
 
-export function activate(context: vscode.ExtensionContext) {
+// What the end-to-end tests (test/e2e) can reach. Returned only when VS
+// Code runs the extension in test mode, never in a normal install.
+export interface RizoTestApi {
+  context: vscode.ExtensionContext;
+  setOpenRouterUrl(url: string | undefined): void;
+  chatPanel(): ChatPanel | undefined;
+  mcp(): ReturnType<typeof getMcpManager>;
+  completionProvider(): RizoCompletionProvider;
+}
+
+export function activate(context: vscode.ExtensionContext): RizoTestApi | undefined {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
     ChatPanel.createOrShow(context);
   });
@@ -86,7 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Editor features: inline edit and autocomplete (editor/).
   const editorFeatures = [
-    vscode.commands.registerCommand('rizo.inlineEdit', () => inlineEdit(context)),
+    vscode.commands.registerCommand('rizo.inlineEdit', (args?: { instruction?: unknown }) => inlineEdit(context, args)),
     vscode.commands.registerCommand('rizo.toggleAutocomplete', async () => {
       const config = vscode.workspace.getConfiguration('rizo');
       const next = !config.get<boolean>('autocomplete.enabled', false);
@@ -109,6 +121,15 @@ export function activate(context: vscode.ExtensionContext) {
     implementTodo,
     manageFolderAccessCmd,
   );
+
+  if (context.extensionMode !== vscode.ExtensionMode.Test) return undefined;
+  return {
+    context,
+    setOpenRouterUrl: overrideOpenRouterUrlForTests,
+    chatPanel: () => ChatPanel.currentPanel,
+    mcp: () => getMcpManager(context),
+    completionProvider: () => new RizoCompletionProvider(context),
+  };
 }
 
 export function deactivate() {}

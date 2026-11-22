@@ -33,7 +33,7 @@ function wait(ms: number, token: vscode.CancellationToken): Promise<boolean> {
   });
 }
 
-class RizoCompletionProvider implements vscode.InlineCompletionItemProvider {
+export class RizoCompletionProvider implements vscode.InlineCompletionItemProvider {
   private noKeyWarned = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {}

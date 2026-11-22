@@ -113,25 +113,31 @@
       text = text.replace(/[*]([^*]+)[*]/g, '<em>$1</em>');
       text = text.replace(/^#{1,6} +(.+)$/gm, '<span class="mdHeading">$1</span>');
 
+      // A list is built as one string with no line breaks inside: the
+      // bubble uses white-space: pre-wrap, so every newline between the
+      // <li>s (or around the list) would show as an extra blank line.
       const lines = text.split(NL);
       const out = [];
-      let inList = false;
+      let list = null;
       for (const line of lines) {
         const m = line.match(/^[-*] +(.+)$/);
         if (m) {
-          if (!inList) { out.push('<ul>'); inList = true; }
-          out.push('<li>' + m[1] + '</li>');
+          if (list === null) list = '';
+          list += '<li>' + m[1] + '</li>';
         } else {
-          if (inList) { out.push('</ul>'); inList = false; }
+          if (list !== null) { out.push('<ul>' + list + '</ul>'); list = null; }
           out.push(line);
         }
       }
-      if (inList) out.push('</ul>');
+      if (list !== null) out.push('<ul>' + list + '</ul>');
       text = out.join(NL);
 
       text = text.replace(new RegExp(NUL + '([CI])([0-9]+)' + NUL, 'g'), (_, kind, i) =>
         (kind === 'C' ? codeBlocks : inlineCodes)[Number(i)] || '');
-      return text;
+      // Lists and code blocks are blocks with their own margins; the
+      // newlines next to them would add blank lines on top. (All text was
+      // HTML-escaped first, so these tags can only be the renderer's own.)
+      return text.replace(new RegExp(NL + '*(<ul>|</ul>|<pre>|</pre>)' + NL + '*', 'g'), '$1');
     }
 
     function setSending(isSending) {

@@ -9,6 +9,10 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Fixed
+- Replies no longer show extra blank lines around and inside lists and
+  code blocks.
+
 ## [0.6.0] - 2026-11-22
 
 A big feature release: plan mode, undo, MCP tools, inline edit,

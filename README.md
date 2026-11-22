@@ -96,9 +96,8 @@ Details are in [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md). To report a vul
 
 Rizo is in active development. Released versions are on the Marketplace, and unreleased changes are in [CHANGELOG.md](CHANGELOG.md).
 
-- **Done:** BYOK chat across 10 providers plus Azure and Bedrock, agent tools, plan mode, undo, MCP, inline edit, autocomplete, and repository hardening.
-- **Released:** 0.6.0 with everything above, on the Marketplace.
-- **In progress:** [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) support: syntax highlighting, the spec as a built-in skill, and compiler checks in the editor and for the model are done; next is release 0.7.0.
+- **Done:** BYOK chat across 10 providers plus Azure and Bedrock, agent tools, plan mode, undo, MCP, inline edit, autocomplete, Rizo Lang support, and repository hardening.
+- **Released:** 0.7.0 on the Marketplace, adding [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) support: syntax highlighting, the spec as a built-in skill, and compiler checks in the editor and for the model.
 
 ## Project structure
 

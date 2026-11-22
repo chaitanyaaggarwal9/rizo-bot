@@ -111,6 +111,7 @@
       <div class="row"><h3>Skills</h3><p>Built-in guidance for coding, debugging, testing, security, git and code review, loaded only when the task needs it.</p></div>
       <div class="row"><h3>Project rules</h3><p>Put your conventions in <code>.rizo/instructions.md</code>. Rizo asks you to approve them, and asks again when they change.</p></div>
       <div class="row"><h3>Slash commands</h3><p><code>/commit</code>, <code>/review</code> and <code>/test</code> start a full, guided task in one line.</p></div>
+      <div class="row"><h3>Rizo Lang built in</h3><p><code>.rz</code> files are highlighted and checked as you type with your project's compiler. The model gets the language spec and checks its own changes.</p></div>
       <div class="row"><h3>Chats that last</h3><p>Named chats with history, automatic summaries of long ones, and undo when you delete one by mistake.</p></div>
     </div>
   </div>
@@ -229,7 +230,7 @@
       <details><summary>Can it break my project?</summary><p>Every write needs your approval (or your explicit "Always Allow" for the project), dangerous commands always warn, and you can undo the file changes of any recent reply. Commands it ran, such as installs, can't be undone, which is why they ask first.</p></details>
       <details><summary>Which model should I use?</summary><p>Start with a provider's everyday model. Rizo picks a cheaper model for simple chats and offers the strongest one when a task struggles. For autocomplete, choose a fast, cheap model.</p></details>
       <details><summary>Is it open source?</summary><p>Rizo is source-available under the Apache License 2.0 with the Commons Clause: you can read, use (including at work), modify and share it, but not sell it. Rizo Lang is open source under Apache 2.0.</p></details>
-      <details><summary>Does it work with Rizo Lang?</summary><p>Yes, Rizo can write and fix <code>.rz</code> files today. Built-in support, with the spec loaded automatically and compiler checks in the editor, is next on the roadmap.</p></details>
+      <details><summary>Does it work with Rizo Lang?</summary><p>Yes, since 0.7.0. <code>.rz</code> files are highlighted, chats about Rizo Lang load the official spec, and with <code>rizolang</code> installed in your project, errors and audit warnings show in the editor with a Fix with Rizo quick fix. Rizo asks once per project before it runs the compiler, and only runs its read-only <code>audit</code>.</p></details>
     </div>
   </div>
 </section>

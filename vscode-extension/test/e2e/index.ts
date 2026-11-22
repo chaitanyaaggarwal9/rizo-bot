@@ -125,8 +125,10 @@ test('an approved write is applied and can be undone', async () => {
   );
   const turnId = await send('Create notes.md');
   assert.strictEqual(fs.readFileSync(path.join(ws, 'notes.md'), 'utf8'), '# Notes\n');
-  const cp = posted.find((m) => m.type === 'turnCheckpoint' && m.turnId === turnId);
-  assert.ok(cp, 'the reply offers Undo changes');
+  // The finished reply carries the files its Undo button restores.
+  const done = posted.find((m) => m.turnId === turnId && Array.isArray(m.checkpointFiles) && m.checkpointFiles.length);
+  assert.ok(done, 'the reply offers Undo changes');
+  assert.deepStrictEqual(done.checkpointFiles, ['notes.md']);
   await api.context.workspaceState.update('rizo.alwaysAllowFileEdits', undefined);
 });
 
@@ -159,8 +161,8 @@ test('inline edit rewrites the selection in place', async () => {
   void vscode.commands.executeCommand('rizo.inlineEdit', { instruction: 'Add types' });
   await waitFor(() => doc.getText().includes('a: number'), 30_000, 'the inline edit');
   assert.strictEqual(doc.getText(), 'export function add(a: number, b: number): number {\n  return a + b;\n}\n');
-  assert.match(String(fake.requests[0].messages[1].content), /<selection>/);
-  await vscode.commands.executeCommand('workbench.action.closeMessages');
+  assert.match(JSON.stringify(fake.requests[0].messages[1].content), /<selection>/);
+  await vscode.commands.executeCommand('notifications.clearAll').then(undefined, () => undefined);
   await vscode.commands.executeCommand('workbench.action.files.revert');
 });
 
@@ -197,7 +199,7 @@ test('protected folders still ask even with Always Allow on', async () => {
   await new Promise((r) => setTimeout(r, 3000));
   assert.ok(!fs.existsSync(path.join(ws, '.vscode', 'settings.json')), 'protected file not written without asking');
   await p.routeMessage({ type: 'cancel', turnId });
-  await vscode.commands.executeCommand('workbench.action.closeMessages');
+  await vscode.commands.executeCommand('notifications.clearAll').then(undefined, () => undefined);
   void running.catch(() => undefined);
   await api.context.workspaceState.update('rizo.alwaysAllowFileEdits', undefined);
 });

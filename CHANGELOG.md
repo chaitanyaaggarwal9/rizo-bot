@@ -59,6 +59,11 @@ an honest gap. Everything before this point lives in git history instead.
   Tool use and images work; replies arrive all at once for now.
 
 ### Changed
+- **Documentation rewritten:** a new README, Marketplace page and user
+  guide, plus `docs/` with the architecture, every setting and command,
+  and the security model. The license is described accurately: use,
+  including at work, modification and sharing are allowed; selling is
+  not.
 - **Smarter, more reliable coding guidance.** The built-in skills Rizo
   gives the model were rewritten and now actually load when they should:
   - Requests like "write unit tests", "is this secure?", "why does it

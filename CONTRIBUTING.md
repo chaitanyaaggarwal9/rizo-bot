@@ -2,8 +2,8 @@
 
 Guide for working on Rizo (`vscode-extension/`) and its marketing site
 (`website/`). Licensed Apache 2.0 + Commons Clause (see
-[LICENSE](LICENSE)): source-available, free to use and modify, resale
-not permitted. Issues and pull requests are welcome; by opening one
+[LICENSE](LICENSE)): source-available, free to use (including at work),
+modify and share, but not to sell. Issues and pull requests are welcome; by opening one
 you're contributing under that same license. For anything beyond a small
 fix, open an issue first so we can agree on the approach before you put
 time into an implementation. Please follow the
@@ -21,23 +21,32 @@ If you're touching code, they apply to you too.
 
 ## Rizo (`vscode-extension/`)
 
+Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the
+code is laid out, and [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md)
+for the rules any change must keep.
+
 ```bash
 cd vscode-extension
-npm install
+npm ci               # exact versions from the lockfile; install scripts are off (.npmrc)
 npm run compile      # or `npm run watch` while iterating
 ```
 
 Launch via VS Code's Run and Debug panel (F5) to open an Extension
 Development Host with your changes loaded. `.vscode/launch.json` is
-already configured, so no setup is needed beyond `npm install`.
+already configured.
+
+**Dependencies:** pin exact versions, and only add a version that has
+been published for at least two weeks. Prefer a small in-house module
+over a new runtime dependency.
 
 **Before proposing a change:**
 - Compile clean (`npm run compile`) with no TypeScript errors
-- Run the test suite (`npm test`). Pure-logic modules (task
-  classification, model/effort selection, destructive-command detection,
-  struggle detection, pricing, thread storage) are all written to be
-  testable outside the extension host (no direct `vscode` import at the
-  module level)
+- Run the test suite (`npm test`). Pure logic (routing, providers,
+  safety policies, prompts, the MCP protocol, checkpoints, search) has
+  no `vscode` import and a `*.test.ts` next to it; add tests there for
+  anything you change
+- Keep user-facing text plain: no em dashes in docs, settings
+  descriptions or UI strings
 - Manually verify in the Extension Development Host for anything
   touching the webview, approval dialogs, or file/terminal tools, since those
   need the real host to test meaningfully
@@ -49,8 +58,8 @@ Bump `version` in `vscode-extension/package.json`, move the relevant
 dated section, commit, then tag and push:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.6.0
+git push origin v0.6.0
 ```
 
 `.github/workflows/release.yml` picks it up from there in two jobs:
@@ -91,6 +100,8 @@ for local preview and deploy instructions.
 ## Before every push
 
 Per Git Hygiene's rule 7: check whether your change invalidates anything
-`README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` currently claims. Update
+`README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `vscode-extension/README.md`
+(the Marketplace page), `ONBOARDING.md` or `docs/` currently claims. New
+settings and commands go in [docs/SETTINGS.md](docs/SETTINGS.md). Update
 what's now wrong, create what's missing and needed, leave the rest alone, and
 don't touch a doc just to touch it.

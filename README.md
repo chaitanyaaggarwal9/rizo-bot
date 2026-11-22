@@ -4,305 +4,139 @@
 
 **A bring-your-own-key AI coding assistant for VS Code.**
 
-Pick Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM or a free model for each chat through your own OpenRouter key. Rizo chats, edits files and runs terminal and git commands, with a diff before every write, a warning on every destructive command and the cost of every turn in view.
+Chat with Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM or free models through your own OpenRouter key, or with your own Azure AI Foundry and Amazon Bedrock accounts. Rizo reads your code, edits files, runs commands and uses MCP tools, and asks before anything changes.
 
 [![CI](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml/badge.svg)](https://github.com/chaitanyaaggarwal9/rizo-bot/actions/workflows/codeql.yml)
 [![License: Apache 2.0 + Commons Clause](https://img.shields.io/badge/license-Apache%202.0%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
 
 [![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo)
-![BYOK](https://img.shields.io/badge/BYOK-OpenRouter-0ea5e9)
-![Providers](https://img.shields.io/badge/providers-10-8b5cf6)
+![BYOK](https://img.shields.io/badge/BYOK-OpenRouter%20%7C%20Azure%20%7C%20Bedrock-0ea5e9)
+![MCP](https://img.shields.io/badge/MCP-supported-8b5cf6)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Source available](https://img.shields.io/badge/source-available-10b981)
 
-[Website](https://rizobot.com) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo) · [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Website](https://rizobot.com) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo) · [Getting started](vscode-extension/ONBOARDING.md) · [Settings](docs/SETTINGS.md) · [Security model](docs/SECURITY-MODEL.md) · [Architecture](docs/ARCHITECTURE.md) · [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang)
 
 </div>
 
 ---
 
-## Why this exists
+## Contents
 
-Most AI coding assistants pick one model for everything, or auto-route
-across companies in ways that lose context when the model changes
-mid-task. Rizo's core bet is different: **cost-efficient routing that
-never sacrifices continuity.**
+- [Why Rizo?](#why-rizo)
+- [What it can do](#what-it-can-do)
+- [Getting started](#getting-started)
+- [Models and providers](#models-and-providers)
+- [Security model](#security-model)
+- [Project status and roadmap](#project-status-and-roadmap)
+- [Project structure](#project-structure)
+- [Development](#development)
+- [Contributing, security and license](#contributing-security-and-license)
 
-- **Company-locked, not model-locked.** Pick Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM,
-  or Free once per chat. Every switch inside that chat
-  stays within the same company's own variants (same tool-calling
-  convention, same context window, same pricing model), never a
-  different provider mid-task
-- **Cheap by default, strong when it matters.** A new chat starts on
-  its provider's cheapest variant; a lightweight heuristic can start it
-  stronger when the first message actually calls for it, and offer a
-  one-click escalation if a turn visibly struggles. See
-  [Smart routing](#smart-routing) below
-- **You own the key, you see the cost.** No vendor lock-in, no hidden
-  markup: a running tokens/cost readout is always visible
+## Why Rizo?
+
+- **Your key, your bill.** Requests go to OpenRouter, Azure or Bedrock with your own credentials. There is no Rizo account, no middleman server and no markup. Every reply shows its tokens, and the panel shows today's tokens and this month's cost.
+- **One company per chat.** You pick a provider when a chat starts and every model switch inside that chat stays within that company. Context, tool calling and pricing stay consistent for the whole conversation.
+- **Cheap by default, strong when it matters.** A chat starts on its provider's cheaper model unless the first message clearly needs more. A reply that struggles offers a one-click retry on the strongest model of the same company.
+- **Nothing changes without you.** Every file write shows a diff first, every command asks first, destructive commands always warn, and every reply's file changes can be undone.
 
 ## What it can do
 
-### Core chat
+| | |
+|---|---|
+| **Chat and agent** | Streams replies, reads and edits files, runs terminal and git commands, and keeps a task checklist for multi-step work. |
+| **Search without approvals** | `search_files` (grep), `find_files` (glob) and `list_directory` stay inside the workspace, skip ignored and secret files, and need no approval. |
+| **Code navigation** | `find_definition`, `find_references` and `call_hierarchy` use the workspace's language server, the same engine as Go to Definition. |
+| **Plan mode** | Switch the composer to **Plan** and Rizo only reads and investigates, then proposes a plan. **Run this plan** carries it out. |
+| **Undo a reply** | A reply that changed files gets an **Undo changes** button that restores them, and warns if you edited them since. |
+| **MCP servers** | Use tools from Model Context Protocol servers (local or remote) that you configure. Every call asks first. |
+| **Inline edit** | Select code, press `Cmd+Alt+K` (`Ctrl+Alt+K`), describe the change, then keep or undo it. |
+| **Autocomplete** | Optional ghost-text suggestions as you type. Off by default because each one is a paid request. |
+| **Skills and project notes** | Bundled engineering guidance loaded only when relevant, plus your own `.rizo/instructions.md`. |
+| **Slash commands** | `/commit`, `/review` and `/test` expand into full guided prompts. |
+| **Attachments** | Attach files, mention workspace files, or paste images for vision models. |
+| **Threads** | Named chats with history, automatic summarizing of long chats, and undo for deleted chats. |
 
-- **Provider picker** (`src/models/providers.ts`): a new chat opens with a
-  one-time choice of company. That choice locks in for the thread's
-  whole life (`ThreadData.provider`/`.model` in `src/storage/threadStore.ts`)
-  and the in-chat switcher only ever offers that same company's other
-  variants, never a different one. Free is the one exception to "3
-  tiers, cheapest to strongest": no free Claude or Gemini exists on
-  OpenRouter, so it offers Auto (the default) plus 5 specific free
-  models from whichever companies actually publish one, picked
-  individually rather than grouped
-- **Work outside the open folder, deliberately**: every folder in a
-  multi-root VS Code workspace is usable, not just the first one, and
-  naming a real absolute path in your own message (not the model's own
-  tool-call arguments) grants access to it for the rest of that thread
-  (`Thread.extraRoots` in `src/storage/threadStore.ts`), the same trust boundary
-  "Attach file..." already relies on for a human-driven pick
-- **Effort switcher**: a second pill (Low/Medium/High) maps to
-  OpenRouter's unified `reasoning.effort` field: *how hard* the
-  already-picked model thinks, never *which* model answers. Hidden
-  entirely for a variant that doesn't support it
-- **Agentic tools** (`src/tools/tools.ts`): `read_file` (auto-approved,
-  read-only, reads the live editor buffer directly when a file's open
-  with unsaved changes), `write_file`/`edit_file` (native diff preview +
-  modal approval before anything touches disk), `run_command`
-  (approval-gated, with an elevated, non-bypassable warning for
-  destructive-looking commands and for shell indirection that hides what's
-  actually running), `search_past_work` (searches every *other* thread's
-  stored history for prior work on a file (when it was touched, in
-  which thread, what was being asked), deterministic, built entirely
-  from what earlier turns already touched, no separate index and no
-  extra LLM call to populate it), and `find_definition`/
-  `find_references`/`call_hierarchy`, which use the workspace's own language
-  server (same engine behind VS Code's Go to Definition/Find All
-  References), not a text search, so results resolve through imports
-  and re-exports correctly instead of matching an unrelated
-  same-named symbol elsewhere. A live tool-call transcript shows each
-  call as it happens, collapsible for the full input/output. A
-  write/edit's card keeps its own +/- line diff on scrollback too, not
-  just at approval time
-- **Attachments**: any file via the OS picker, a workspace quick pick,
-  or paste an image directly into the composer. Checked against the
-  current variant's own vision support before sending
-- **Streaming replies**, markdown rendering, a Stop button, message
-  queueing while a turn is in flight, per-chat summarization once a
-  thread gets long, and named/renameable/deletable threads with undo
+## Getting started
 
-### Smart routing
+1. Install **Rizo** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo) (search "Rizo" in the Extensions view).
+2. Get an API key at [openrouter.ai/keys](https://openrouter.ai/keys), or connect Azure or Bedrock (below).
+3. Open a folder you trust, run **Rizo: Open Chat** from the Command Palette, and paste your key when asked. It's stored in your OS keychain.
+4. Pick a provider for the chat and start asking.
 
-- **Smart Starting Variant** (`src/routing/complexityEstimator.ts`): a
-  thread's first message picks which variant *within its already-locked
-  provider* to start on, instead of always defaulting to the cheapest.
-  A cheap keyword/shape heuristic (no extra model call) scores the
-  message for coding-flavor, code blocks, stack traces, attachments,
-  length, and "big ask" phrasing. It runs once, only on the first
-  message, and only when you haven't already picked a variant yourself
-- **Effort auto-suggestion** (`effortForTier` in `src/models/providers.ts`):
-  reuses that same heuristic to also pick the Effort level, every turn
-  rather than only the first (effort is a per-request parameter, not a
-  thread-level trait). Backs off permanently the moment you pick an
-  effort level yourself
-- **Auto-escalation** (`src/routing/struggleDetector.ts`): when a turn shows
-  real evidence of struggling (hits the tool-call iteration cap, keeps
-  re-hitting the same failing tool call, or shows two turns in a row
-  that both poked around with tools but never wrote anything), the
-  reply carries a one-click "↑ Retry with {strongest variant}" button,
-  never crossing companies, only offered when a stronger variant
-  actually exists to switch to
-- **Live turn status**: while a turn runs, its bubble shows which
-  variant is actually answering, what it's doing right now, elapsed
-  time, and a running token count, not just a static "thinking"
-  placeholder
+The full walkthrough is in [ONBOARDING.md](vscode-extension/ONBOARDING.md). Every setting and command is listed in [docs/SETTINGS.md](docs/SETTINGS.md).
 
-### Safety and cost visibility
+## Models and providers
 
-- **Command-output redaction** (`src/safety/outputRedaction.ts`):
-  `run_command`'s stdout/stderr is scanned for API keys, tokens, and
-  private keys and redacted in place before the result ever reaches the
-  model or gets written into thread history
-- **Security pattern-scan on diffs** (`src/safety/dangerousPatterns.ts`):
-  before a write/edit approval dialog, the proposed change is scanned
-  for high-signal dangerous patterns (`eval(`, raw `innerHTML =`,
-  unsafe deserialization, hardcoded-looking secrets, disabled TLS
-  verification, etc.) and folded into the dialog as a warning banner
-- **Configurable permissions**: `rizo.permissions
-  .autoApproveCommandPatterns` (has no effect on destructive commands)
-  and `rizo.permissions.disabledTools`
-- **Cost visibility** (`src/api/pricing.ts`): every reply shows tokens
-  used and elapsed time; the chat as a whole and the extension overall
-  both show running token/cost totals
-- **Truncated writes fail informatively, not silently**: a large
-  `write_file`/`edit_file` call cut off by the response size limit gets
-  told exactly that (split it into smaller calls) instead of a generic
-  parse error that just prompts a full, identical, costly retry
+| Provider | How you pay | Models |
+|---|---|---|
+| Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM | Your OpenRouter key | A curated fast / everyday / strongest set for each, plus **More models** with the live OpenRouter catalog and prices |
+| Free | Your OpenRouter key, no credit needed | Auto (picks per task, with fallbacks) or a specific free model |
+| Azure AI Foundry | Your Azure resource and key | Your own deployments (**Rizo: Connect Azure AI Foundry**) |
+| Amazon Bedrock | Your Bedrock API key | Your enabled models and inference profiles (**Rizo: Connect Amazon Bedrock**) |
 
-### Personalization
+Replies have no built-in length or step limit: a reply runs until the model finishes or you press **Stop**. You can set your own caps in `rizo.limits.*`.
 
-- **Skills** (`src/prompt/skillsLoader.ts`, `vscode-extension/skills/`):
-  per-topic engineering-discipline instructions, selectively loaded by
-  keyword match so a one-line question doesn't pay for the full
-  instruction set
-- **Project-specific instructions** (`src/prompt/projectInstructions.ts`):
-  an optional `.rizo/instructions.md` in your own workspace, read fresh
-  every message and appended after the bundled skills
-- **Slash commands** (`src/prompt/slashCommands.ts`): `/commit`, `/review`,
-  `/test` expand to a full canned prompt tied to the matching skill
+## Security model
 
-## Architecture
+Rizo runs code and edits files on your machine, so it is built to need your consent and to limit what a repository can do to you. In short:
 
-How a message flows through the extension, and which file owns each step:
+- **Trusted folders only.** Rizo is disabled in Restricted Mode, and a workspace can't change Rizo's security settings. Those are user settings only.
+- **Approvals.** Writes and edits show a diff and ask. Commands ask, and destructive ones (force-push, `reset --hard`, `rm -rf`, piping downloads into a shell) always warn, even if you chose "Always Allow". Files that can turn on automation (`.vscode`, `.git`, `.github`, `.rizo`, `.npmrc` and others) always ask.
+- **Boundaries.** Tools stay inside your workspace folders. Other folders need your explicit grant, and symlinks can't be used to escape.
+- **Secrets.** `.env` files and keys need approval to read and are never searched or autocompleted. Credential environment variables are withheld from commands and MCP servers. Secrets in command and tool output are redacted.
+- **Untrusted content.** Project notes need your approval for each version. MCP results and repository text are marked as untrusted for the model.
+- **Supply chain.** Pinned dependencies with install scripts disabled, SHA-pinned GitHub Actions, CodeQL, dependency review, a malware scan, and Marketplace publishing through OIDC with no stored token.
 
-```mermaid
-graph TD
-    You(("You, in the chat panel")) --> Panel
+Details are in [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-    subgraph EXT["vscode-extension/src/"]
-        Ext["extension.ts<br/><small>activation, commands, CodeLens</small>"] --> Panel
+## Project status and roadmap
 
-        Panel["chatPanel.ts<br/><small>webview host + the send / tool-call loop</small>"]
+Rizo is in active development. Released versions are on the Marketplace, and unreleased changes are in [CHANGELOG.md](CHANGELOG.md).
 
-        Panel --> Router["modelRouter.ts<br/><small>coding vs general</small>"]
-        Panel --> Complexity["complexityEstimator.ts<br/><small>starting tier for model + effort</small>"]
-        Panel --> Skills["skillsLoader.ts<br/><small>picks skill files to inject</small>"]
-        Panel --> ProjectInstr["projectInstructions.ts<br/><small>.rizo/instructions.md</small>"]
-        Panel --> Slash["slashCommands.ts<br/><small>/commit /review /test</small>"]
-
-        Panel --> Providers["providers.ts<br/><small>company/model catalog</small>"]
-        Providers --> Free["freeModels.ts<br/><small>free-tier fallback chain</small>"]
-        Providers --> OpenRouter["openrouter.ts<br/><small>streaming API client</small>"]
-
-        Panel --> Tools["tools.ts<br/><small>read_file, write_file, edit_file, run_command,<br/>search_past_work, find_definition,<br/>find_references, call_hierarchy</small>"]
-        Tools --> Destructive["destructiveCommands.ts"]
-        Tools --> Dangerous["dangerousPatterns.ts"]
-        Tools --> Redact["outputRedaction.ts"]
-
-        Panel --> Struggle["struggleDetector.ts<br/><small>flags a turn worth auto-escalating</small>"]
-        Panel --> ThreadStore["threadStore.ts<br/><small>per-thread persistence</small>"]
-        Panel --> UsageStore["usageStore.ts<br/><small>running token/cost totals</small>"]
-        UsageStore --> Pricing["pricing.ts"]
-    end
-
-    OpenRouter -.HTTPS.-> API[("OpenRouter API")]
-    Tools -.reads/writes.-> Files[("Your workspace files")]
-    ThreadStore -.reads/writes.-> Disk[("VS Code global storage")]
-```
-
-`skills/` (bundled Markdown, not code) holds the engineering-discipline
-text `skillsLoader.ts` selects from: Coding Discipline, Debugging
-Discipline, Git Hygiene, Security Hygiene, and the rest listed under
-[Personalization](#personalization) above.
+- **Done:** BYOK chat across 10 providers plus Azure and Bedrock, agent tools, plan mode, undo, MCP, inline edit, autocomplete, and repository hardening.
+- **Next:** release 0.6.0 with everything above.
+- **Then:** [Rizo Lang](https://github.com/chaitanyaaggarwal9/rizolang) support: syntax highlighting for `.rz` files, the language spec as a built-in skill, compiler diagnostics in the editor, and a build-and-fix loop (trusted workspaces only, with a pinned compiler).
 
 ## Project structure
 
 ```
 .
-├── vscode-extension/        Rizo itself; see below
-├── website/                 Marketing site (rizobot.com); see website/README.md
-├── .github/workflows/       CI, CodeQL, dependency review, malware scan, release
-├── LICENSE                  Apache License 2.0 + Commons Clause (no resale)
-└── .gitignore
+├── vscode-extension/      The extension (see docs/ARCHITECTURE.md for the module map)
+│   ├── src/               TypeScript source, tests next to each module (*.test.ts)
+│   ├── media/             Chat view: chat.html, chat.css, chat.js
+│   ├── skills/            Bundled engineering guidance (Markdown)
+│   ├── README.md          Marketplace page
+│   └── ONBOARDING.md      User guide
+├── website/               rizobot.com (static, deployed by Vercel)
+├── docs/                  Architecture, settings reference, security model
+├── .github/workflows/     CI, CodeQL, dependency review, malware scan, release
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+└── LICENSE                Apache 2.0 + Commons Clause
 ```
-
-Inside `vscode-extension/`:
-
-```
-vscode-extension/
-├── src/
-│   ├── extension.ts        Activation: registers commands and the TODO CodeLens
-│   ├── ui/                 Chat panel host (chatPanel.ts), webview HTML (webviewHtml.ts),
-│   │                       trust prompts, TODO CodeLens
-│   ├── agent/              Attachments, folder mentions, history summarizer
-│   ├── api/                OpenRouter streaming client, pricing
-│   ├── models/             Provider/model catalog, free-model fallback chains
-│   ├── routing/            Task classification, starting tier, struggle detection
-│   ├── prompt/             Bundled skills loader, project notes, slash commands
-│   ├── storage/            Threads and usage (VS Code storage)
-│   ├── safety/             Permissions, path policy, command analysis, redaction, pattern scan
-│   └── tools/              read_file / write_file / edit_file / run_command / code navigation
-│   (tests sit next to their modules as *.test.ts; vscode-dependent ones use test/vscodeStub.ts)
-├── media/                  Chat view: chat.html, chat.css, chat.js
-├── skills/                 Engineering-discipline instructions, bundled into the extension
-├── package.json            Extension manifest: commands, settings, contributes
-└── ONBOARDING.md           End-user install/usage guide
-```
-
-## Using it
-
-See [`vscode-extension/ONBOARDING.md`](vscode-extension/ONBOARDING.md):
-install from the Marketplace, add your API key, go. Marketing site:
-[`website/`](website/) (deploys to rizobot.com).
 
 ## Development
 
 ```bash
 cd vscode-extension
-npm install
-npm run compile      # or `npm run watch` while developing
-npm test             # unit tests (vitest)
+npm ci               # install scripts are disabled by .npmrc
+npm run compile      # or npm run watch
+npm test             # vitest
 ```
 
-Launch from VS Code's Run and Debug panel (`.vscode/launch.json` is
-already set up) to open the Extension Development Host. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the full dev/release workflow.
+Press F5 in VS Code to open an Extension Development Host. Every CI run also uploads a ready-to-install build as the `rizo-vsix` artifact, so you can test a pull request without building locally. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and releases.
 
-**Packaging a `.vsix` for distribution:**
+## Contributing, security and license
 
-```bash
-cd vscode-extension
-npx vsce package --allow-missing-repository
-```
+- **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md), and open an issue before anything larger than a small fix. Everyone is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security:** report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
+- **License:** Apache License 2.0 with the [Commons Clause](https://commonsclause.com) (see [LICENSE](LICENSE)). You may use Rizo, including at work, and read, modify and share it. You may not sell it, or sell a product or service whose value comes mainly from it. This makes Rizo **source-available** rather than open source in the OSI sense. Please don't use the "Rizo" name to imply that a fork is endorsed.
 
-## Continuous integration
+<div align="center">
 
-`.github/workflows/`:
+Made by [Chaitanya Aggarwal](https://github.com/chaitanyaaggarwal9) · [rizobot.com](https://rizobot.com)
 
-- **`ci.yml`** runs on every pull request and every push to `main`. It
-  runs the malware scan, installs with install scripts disabled,
-  verifies npm registry signatures, compiles, runs the unit tests and
-  packages the `.vsix`. Its `CI passed` job is the required check.
-- **`codeql.yml`** runs CodeQL (`security-extended`) on the TypeScript
-  and JavaScript and on the workflows themselves.
-- **`dependency-review.yml`** fails a pull request that adds a
-  dependency with a known vulnerability or a copyleft license.
-- **`malware-scan.yml`** scans every branch for the known IOCs from
-  the `postcss.config` incident and for obfuscation patterns.
-- **`stale-issues.yml`**: labels issues stale after 60 days of no
-  activity, closes them after 14 more; runs on a daily schedule
-- **`release.yml`**: publishes to the Marketplace, tag-triggered
-  (`v*.*.*`). Compiles, tests, refuses to run if the tag doesn't match
-  `package.json`'s version. See [CONTRIBUTING.md](CONTRIBUTING.md) for
-  the release steps
-
-Dependabot (`.github/dependabot.yml`) opens a weekly grouped PR for
-dependency updates.
-
-## Contributing
-
-Bug reports and feature requests: use the issue templates. Pull
-requests: see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, and
-open an issue first for anything beyond a small fix. Everyone taking
-part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Security
-
-Please report vulnerabilities privately, never in a public issue. See
-[SECURITY.md](SECURITY.md).
-
-## License
-
-Apache License 2.0, modified by the [Commons
-Clause](https://commonsclause.com); see [LICENSE](LICENSE). Free to use,
-read, modify, and redistribute for any non-commercial purpose; the one
-thing the Commons Clause withholds is the right to **sell** it: the
-software itself, or a product/service whose value comes substantially
-from it. Also don't use the "Rizo" name to imply endorsement of a fork.
-
-This makes the project source-available rather than OSI-certified "open
-source" (the official Open Source Definition doesn't permit restricting
-commercial use). Full source stays public and forkable, resale just
-isn't licensed. `vscode-extension/package.json`'s `license` field reads
-`SEE LICENSE IN LICENSE` since Commons Clause has no registered SPDX
-identifier.
+</div>

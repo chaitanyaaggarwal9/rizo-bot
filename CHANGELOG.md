@@ -9,6 +9,15 @@ an honest gap. Everything before this point lives in git history instead.
 
 ## [Unreleased]
 
+### Added
+- **Amazon Bedrock.** Use your own Bedrock models, including Claude, with
+  a Bedrock API key: run **Rizo: Connect Amazon Bedrock**, enter your
+  region and key, pick your models, and choose Amazon Bedrock when you
+  start a chat. Requests go straight to Bedrock in your region (never
+  through OpenRouter), the key is kept in your OS keychain, and only
+  `bedrock-runtime.<region>.amazonaws.com` is ever contacted with it.
+  Tool use and images work; replies arrive all at once for now.
+
 ### Changed
 - **Smarter, more reliable coding guidance.** The built-in skills Rizo
   gives the model were rewritten and now actually load when they should:

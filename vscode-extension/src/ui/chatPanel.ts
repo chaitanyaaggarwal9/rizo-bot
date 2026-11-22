@@ -51,8 +51,7 @@ import {
 } from '../storage/threadStore';
 import { frameProjectNotes, isValidThreadId } from '../safety/permissions';
 import { approvedProjectNotes, requestFolderGrants } from './trustPrompts';
-import { connectAzure, getAzureConnection, getAzureKey } from './azureConnect';
-import { callAzure } from '../api/azure';
+import { connectedProviderCatalog, getConnectedProvider } from './connectedProviders';
 import { buildChatHtml, openRouterProviderCatalog } from './webviewHtml';
 import { IncomingAttachment, isIncomingAttachment, readAttachmentFile, gitignoreExcludeGlobs } from '../agent/attachments';
 import { findMentionedPaths } from '../agent/folderMentions';
@@ -61,9 +60,6 @@ import { TurnTracker } from '../agent/turnTracker';
 import { formatPrice, getCachedCatalog, getCatalog, getMaxOutputTokens, shortModelName } from '../api/modelCatalog';
 
 const SECRET_KEY = 'rizo.openRouterApiKey';
-// Provider id for the user's own Azure AI Foundry deployments (not routed
-// through OpenRouter; see azureConnect.ts).
-const AZURE = 'azure';
 // Holds one thread — the most recently deleted, cleared once restored.
 // Not a stack: only the last deletion is recoverable.
 const LAST_DELETED_THREAD_KEY = 'rizo.lastDeletedThread';
@@ -223,12 +219,14 @@ export class ChatPanel {
           case 'selectProvider': {
             // First pick for a brand-new thread — always starts on that
             // provider's cheapest variant (providers.ts's variants[0]).
-            if (message.provider === AZURE) {
-              // Your own Azure deployments: connect first if needed.
-              const conn = getAzureConnection(this.context) ?? (await connectAzure(this.context));
-              if (!conn) break;
+            const connected = getConnectedProvider(message.provider);
+            if (connected) {
+              // Your own cloud account (Azure, Bedrock): connect first if needed.
+              if (!connected.models(this.context)?.length && !(await connected.connect(this.context))) break;
+              const models = connected.models(this.context);
+              if (!models?.length) break;
               this.post({ type: 'catalogUpdate', catalog: this.providerCatalog() });
-              setThreadModel(this.context, this.activeThreadId, AZURE, conn.deployments[0]);
+              setThreadModel(this.context, this.activeThreadId, connected.id, models[0]);
               this.sendInit();
               break;
             }
@@ -335,29 +333,22 @@ export class ChatPanel {
     this.post({ type: 'moreModels', provider, models });
   }
 
-  // Whether a chat on this provider may use this model: Azure chats use the
-  // connected deployments, everything else the OpenRouter catalog.
+  // Whether a chat on this provider may use this model: connected
+  // providers (Azure, Bedrock) use the user's models, everything else the
+  // OpenRouter catalog.
   private isAllowedModel(provider: string, model: string): boolean {
-    if (provider === AZURE) return !!getAzureConnection(this.context)?.deployments.includes(model);
+    const connected = getConnectedProvider(provider);
+    if (connected) return !!connected.models(this.context)?.includes(model);
     return isValidProviderModel(provider, model, getCachedCatalog());
   }
 
   // What the provider picker and model switcher show: the OpenRouter
-  // companies plus the Azure card (its deployments, once connected).
+  // companies plus the connected-provider cards (Azure, Bedrock).
   private providerCatalog() {
-    const azure = getAzureConnection(this.context);
-    return [
-      ...openRouterProviderCatalog(),
-      {
-        id: AZURE,
-        label: 'Azure AI Foundry',
-        connectable: true,
-        variants: (azure?.deployments ?? []).map((d) => ({ id: d, label: d, tagline: 'Your Azure deployment', reasoning: true })),
-      },
-    ];
+    return [...openRouterProviderCatalog(), ...connectedProviderCatalog(this.context)];
   }
 
-  // Called after Connect/Disconnect Azure from the command palette.
+  // Called after a Connect/Disconnect command from the Command Palette.
   public refreshProviders() {
     this.post({ type: 'catalogUpdate', catalog: this.providerCatalog() });
     this.sendStateUpdate();
@@ -505,13 +496,8 @@ export class ChatPanel {
     tools: ToolDefinition[],
     options: CallOptions = {},
   ) {
-    if (provider === AZURE) {
-      // The user's own deployment, with their Azure key. No OpenRouter
-      // model-limit lookup: only the user's own output cap, if any.
-      const conn = getAzureConnection(this.context);
-      if (!conn) throw new Error('Azure AI Foundry is no longer connected. Run "Rizo: Connect Azure AI Foundry".');
-      return callAzure(conn, apiKey, model, messages, tools, { ...options, maxTokensFor: undefined });
-    }
+    const connected = getConnectedProvider(provider);
+    if (connected) return connected.call(this.context, apiKey, model, messages, tools, options);
     if (provider === 'free') {
       // Vision already checked in handleSend for every provider (Free
       // included, now that Gemma supports vision).
@@ -603,12 +589,12 @@ export class ChatPanel {
     const plan = planSummary(thread.messages, thread.summarizedCount || 0, thread.summary);
     if (!plan) return;
     try {
-      // Azure chats are summarized by their own deployment, with the Azure
-      // key: their history never goes to OpenRouter.
-      const conn = thread.provider === AZURE ? getAzureConnection(this.context) : undefined;
-      if (thread.provider === AZURE && (!conn || !thread.model)) return;
-      const { message } = conn
-        ? await callAzure(conn, apiKey, thread.model as string, plan.prompt)
+      // Chats on a connected provider are summarized by their own model,
+      // with their own key: that history never goes to OpenRouter.
+      const connected = getConnectedProvider(thread.provider);
+      if (connected && !thread.model) return;
+      const { message } = connected
+        ? await connected.call(this.context, apiKey, thread.model as string, plan.prompt)
         : await callOpenRouter(apiKey, SUMMARY_MODEL, plan.prompt);
       const newSummary = (message.content as string) || thread.summary || '';
       if (newSummary) updateThreadSummary(this.context, threadId, newSummary, plan.foldEnd);
@@ -648,12 +634,13 @@ export class ChatPanel {
     signal: AbortSignal,
   ) {
 
-    // Azure chats use the Azure key; everything else the OpenRouter key.
-    const isAzure = loadThread(this.context, threadId)?.provider === AZURE;
-    const azureConn = isAzure ? getAzureConnection(this.context) : undefined;
-    const apiKey = isAzure ? await getAzureKey(this.context) : await this.getApiKey();
-    if (isAzure && (!azureConn || !apiKey)) {
-      this.post({ type: 'error', error: 'Azure AI Foundry isn\'t connected. Run "Rizo: Connect Azure AI Foundry" from the Command Palette.', turnId });
+    // Chats on a connected provider (Azure, Bedrock) use that provider's
+    // key and models; everything else the OpenRouter key.
+    const connected = getConnectedProvider(loadThread(this.context, threadId)?.provider);
+    const connectedModels = connected?.models(this.context);
+    const apiKey = connected ? await connected.getKey(this.context) : await this.getApiKey();
+    if (connected && (!connectedModels?.length || !apiKey)) {
+      this.post({ type: 'error', error: `${connected.label} isn't connected. Run "${connected.connectCommandTitle}" from the Command Palette.`, turnId });
       return;
     }
     if (!apiKey) {
@@ -684,10 +671,10 @@ export class ChatPanel {
     // falls back to the provider's default. Offline: a chat keeps its
     // model as long as it belongs to the right company, rather than being
     // switched just because the catalog couldn't load.
-    const catalog = isAzure ? undefined : await getCatalog();
-    if (isAzure) {
-      if (!azureConn!.deployments.includes(model)) {
-        model = azureConn!.deployments[0];
+    const catalog = connected ? undefined : await getCatalog();
+    if (connected) {
+      if (!connectedModels!.includes(model)) {
+        model = connectedModels![0];
         setThreadModel(this.context, threadId, provider, model);
       }
     } else if (!isValidProviderModel(provider, model, catalog) && (catalog || !belongsToProvider(provider, model))) {
@@ -1074,8 +1061,8 @@ export class ChatPanel {
       // history record of.
       if (err.name === 'AbortError') {
         this.post({ type: 'cancelled', turnId });
-      } else if (isAzure && /401|403|unauthorized|access denied|invalid subscription key/i.test(err.message)) {
-        const error = `${err.message}. Azure rejected the key: run "Rizo: Connect Azure AI Foundry" again to update it.`;
+      } else if (connected && connected.authError.test(err.message)) {
+        const error = `${err.message}. ${connected.label} rejected the key: run "${connected.connectCommandTitle}" again to update it.`;
         this.post({ type: 'error', turnId, error });
         this.persistFailedTurn(threadId, userContent, error);
       } else if (/user not found|401|unauthorized/i.test(err.message)) {

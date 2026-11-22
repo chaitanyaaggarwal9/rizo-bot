@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { ChatPanel } from './ui/chatPanel';
 import { registerTodoCodeLens } from './ui/todoCodeLens';
 import { manageFolderAccess } from './ui/trustPrompts';
-import { connectAzure, disconnectAzure } from './ui/azureConnect';
+import { CONNECTED_PROVIDERS } from './ui/connectedProviders';
 
 export function activate(context: vscode.ExtensionContext) {
   const openChat = vscode.commands.registerCommand('rizo.openChat', () => {
@@ -58,19 +58,25 @@ export function activate(context: vscode.ExtensionContext) {
     manageFolderAccess(context),
   );
 
-  // Your own Azure AI Foundry deployments, with your own key.
-  const connectAzureCmd = vscode.commands.registerCommand('rizo.connectAzure', async () => {
-    await connectAzure(context);
-    ChatPanel.currentPanel?.refreshProviders();
-  });
-  const disconnectAzureCmd = vscode.commands.registerCommand('rizo.disconnectAzure', async () => {
-    await disconnectAzure(context);
-    ChatPanel.currentPanel?.refreshProviders();
+  // Your own cloud accounts (Azure AI Foundry, Amazon Bedrock), with your
+  // own keys: rizo.connectAzure / rizo.disconnectAzure, and the same for
+  // bedrock.
+  const connectCommands = Object.values(CONNECTED_PROVIDERS).flatMap((p) => {
+    const name = p.id.charAt(0).toUpperCase() + p.id.slice(1);
+    return [
+      vscode.commands.registerCommand(`rizo.connect${name}`, async () => {
+        await p.connect(context);
+        ChatPanel.currentPanel?.refreshProviders();
+      }),
+      vscode.commands.registerCommand(`rizo.disconnect${name}`, async () => {
+        await p.disconnect(context);
+        ChatPanel.currentPanel?.refreshProviders();
+      }),
+    ];
   });
 
   context.subscriptions.push(
-    connectAzureCmd,
-    disconnectAzureCmd,
+    ...connectCommands,
     openChat,
     changeApiKey,
     reopenClosedSession,

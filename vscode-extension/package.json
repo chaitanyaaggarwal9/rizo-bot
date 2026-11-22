@@ -61,6 +61,14 @@
         "title": "Rizo: Disconnect Azure AI Foundry"
       },
       {
+        "command": "rizo.connectBedrock",
+        "title": "Rizo: Connect Amazon Bedrock"
+      },
+      {
+        "command": "rizo.disconnectBedrock",
+        "title": "Rizo: Disconnect Amazon Bedrock"
+      },
+      {
         "command": "rizo.reopenClosedSession",
         "title": "Rizo: Reopen Closed Session"
       },

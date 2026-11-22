@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rizo for VS Code: the AI coding assistant on your own key</title>
+<meta name="description" content="Rizo is an AI coding assistant for VS Code. Use Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM, free models, Azure or Bedrock with your own key. Diffs before writes, plan mode, undo, MCP, inline edit.">
+<link rel="canonical" href="https://rizobot.com/rizobot">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rizo">
+<meta property="og:title" content="Rizo for VS Code: the AI coding assistant on your own key">
+<meta property="og:description" content="Rizo is an AI coding assistant for VS Code. Use Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM, free models, Azure or Bedrock with your own key. Diffs before writes, plan mode, undo, MCP, inline edit.">
+<meta property="og:url" content="https://rizobot.com/rizobot">
+<meta property="og:image" content="https://rizobot.com/assets/logo-full.png">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#fbfbf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1110" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+<script src="/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="/" aria-label="Rizo home">
+      <img class="on-light" src="/assets/logo-word-light.png" alt="Rizo" width="994" height="345">
+      <img class="on-dark" src="/assets/logo-word-dark.png" alt="Rizo" width="994" height="345">
+    </a>
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+    <nav class="nav" id="site-nav" aria-label="Main">
+      <a href="/rizobot" aria-current="page">Rizo for VS Code</a>
+      <a href="/rizolang">Rizo Lang</a>
+      <a href="https://github.com/chaitanyaaggarwal9/rizo-bot/tree/main/docs">Docs</a>
+      <a class="nav-gh" href="https://github.com/chaitanyaaggarwal9" data-event="github_click" data-label="nav"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+<section class="hero first">
+  <div class="wrap hero-split">
+    <div>
+      <span class="eyebrow"><span class="dot"></span>Rizo for VS Code</span>
+      <h1>The AI coding assistant that runs on your key.</h1>
+      <p class="lede">Rizo reads your code, plans the work, edits files, runs commands and uses MCP tools, with the model you pick. Every write shows a diff, every command asks first, and every reply can be undone.</p>
+      <div class="actions">
+        <a class="btn btn-dark" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-event="cta_install" data-label="rizobot_hero">Install from the Marketplace</a>
+        <a class="btn btn-line" href="https://github.com/chaitanyaaggarwal9/rizo-bot" data-event="github_click" data-label="rizobot_hero">View the source</a>
+      </div>
+      <div class="meta-line"><span>Free to use</span><span>You pay your provider directly</span><span>No account</span></div>
+    </div>
+    <figure class="u-m0">
+      <div class="frame">
+        <div class="frame-bar"><i></i><i></i><i></i><span>Rizo</span></div>
+        <img src="/assets/rizo-agent.png" alt="Rizo's chat panel: the user asks for rate limiting on the login route. Rizo keeps a plan, searches the code, reads the route, shows its edit as a diff, writes a new test, runs the test suite, summarizes the change and offers Undo changes for 2 files." width="1200" height="1880">
+      </div>
+      <figcaption class="caption">The real chat panel. One request, start to finish: plan, search, edit, test, summary, undo.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section aria-labelledby="flow-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="flow-title" class="h2">How a task runs</h2>
+      <p>Rizo works like a careful colleague: it looks before it changes anything, tells you what it is doing, and leaves you the final say.</p>
+    </div>
+    <div class="steps">
+      <div>
+        <span class="num">01</span>
+        <h3>Ask</h3>
+        <p>Describe the change. Attach files, mention workspace files, or paste a screenshot for models that support images.</p>
+      </div>
+      <div>
+        <span class="num">02</span>
+        <h3>Investigate</h3>
+        <p>Rizo searches and reads the code without interrupting you, and keeps a live checklist for multi-step work.</p>
+      </div>
+      <div>
+        <span class="num">03</span>
+        <h3>Change, with approval</h3>
+        <p>Each edit opens as a diff and each command asks first. Destructive commands always warn, whatever you allowed before.</p>
+      </div>
+      <div>
+        <span class="num">04</span>
+        <h3>Review or undo</h3>
+        <p>A reply that changed files gets an Undo button that restores them, with a warning if you edited them since.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" aria-labelledby="features-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="features-title" class="h2">Everything in the box</h2>
+      <p>The features you'd expect from a modern coding agent, built so you can see and stop what it does.</p>
+    </div>
+    <div class="rows">
+      <div class="row"><h3>Plan mode</h3><p>Switch the composer to Plan and Rizo only reads and investigates, then proposes a plan. One click runs it.</p></div>
+      <div class="row"><h3>Undo any reply</h3><p>The last 20 replies in each chat can be undone, including replies you stopped or that failed partway.</p></div>
+      <div class="row"><h3>Search without prompts</h3><p>Text search, file search and folder listing stay inside the workspace, skip ignored and secret files, and need no approval.</p></div>
+      <div class="row"><h3>Code navigation</h3><p>Go to definition, find references and call hierarchy through your language server, not a text match.</p></div>
+      <div class="row"><h3>MCP servers</h3><p>Connect GitHub, a database, your docs or any Model Context Protocol server, local or remote. Every call asks first.</p></div>
+      <div class="row"><h3>Inline edit</h3><p>Select code, press <kbd>Cmd</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd>, say what to change, then keep or undo the result in place.</p></div>
+      <div class="row"><h3>Autocomplete</h3><p>Optional suggestions as you type, accepted with Tab. Off by default, because each one is a paid request.</p></div>
+      <div class="row"><h3>Terminal and git</h3><p>Runs commands in your workspace with a time limit, capped output, and credentials withheld from the environment.</p></div>
+      <div class="row"><h3>Skills</h3><p>Built-in guidance for coding, debugging, testing, security, git and code review, loaded only when the task needs it.</p></div>
+      <div class="row"><h3>Project rules</h3><p>Put your conventions in <code>.rizo/instructions.md</code>. Rizo asks you to approve them, and asks again when they change.</p></div>
+      <div class="row"><h3>Slash commands</h3><p><code>/commit</code>, <code>/review</code> and <code>/test</code> start a full, guided task in one line.</p></div>
+      <div class="row"><h3>Chats that last</h3><p>Named chats with history, automatic summaries of long ones, and undo when you delete one by mistake.</p></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="models-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="models-title" class="h2">Pick the model. Keep the context.</h2>
+      <p>Each chat stays with one company from start to finish, so switching between its fast and strong models never loses the thread. More models from the live OpenRouter catalog are one click away, with prices.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Provider</th><th scope="col">Fast</th><th scope="col">Everyday</th><th scope="col">Strongest</th></tr></thead>
+        <tbody>
+          <tr><td>Claude</td><td>Haiku 5.5</td><td>Sonnet 5.5</td><td>Fable 5.2</td></tr>
+          <tr><td>OpenAI</td><td>GPT-6 Luna</td><td>GPT-6.2 Sol</td><td>GPT-6.2 Astra</td></tr>
+          <tr><td>Gemini</td><td>3.5 Flash Lite</td><td>3.8 Flash</td><td>Gemini 4 Neon</td></tr>
+          <tr><td>Grok</td><td>Grok 4.3</td><td class="dim">n/a</td><td>Grok 4.7</td></tr>
+          <tr><td>DeepSeek</td><td>V4.1 Flash</td><td>V4 Pro</td><td>V4 Pro (0813)</td></tr>
+          <tr><td>Qwen</td><td>Qwen3.8 Flash</td><td>Qwen3.7 Plus</td><td>Qwen4 Max</td></tr>
+          <tr><td>Kimi</td><td>K2.6</td><td>K2.7 Code</td><td>K3.1 Pro</td></tr>
+          <tr><td>Mistral</td><td>Small</td><td>Medium 3.5</td><td>Large 4</td></tr>
+          <tr><td>Z.ai GLM</td><td>GLM 5.3 Flash</td><td>GLM 5.3</td><td>GLM 5.3 Prime</td></tr>
+          <tr><td>Free</td><td colspan="3">Auto picks a free model for each task, or choose one yourself. No credit needed.</td></tr>
+          <tr><td>Azure AI Foundry</td><td colspan="3">Your own deployments, with your own key, billed by Azure.</td></tr>
+          <tr><td>Amazon Bedrock</td><td colspan="3">Your own models and inference profiles, with a Bedrock API key, billed by AWS.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="u-mt40 u-start grid-2">
+      <div>
+        <h3 class="u-mb12 h3">Starts cheap, steps up when it matters</h3>
+        <p class="muted">A chat begins on a faster, cheaper model unless your first message clearly needs more. If a reply struggles, Rizo offers a one-click retry on the strongest model of the same company. An effort control sets how hard models that can reason should think.</p>
+        <h3 class="u-sub h3">You always see the cost</h3>
+        <p class="muted">Each reply shows its tokens. The chat shows its total, and the panel shows today's tokens and this month's cost across every chat, using the exact cost your provider reports.</p>
+        <h3 class="u-sub h3">No reply limits</h3>
+        <p class="muted">A reply runs until the model is finished or you press Stop. Set your own caps on steps or tokens if you want them.</p>
+      </div>
+      <figure class="u-m0">
+        <div class="frame">
+          <div class="frame-bar"><i></i><i></i><i></i><span>New chat</span></div>
+          <img src="/assets/rizo-providers.png" alt="Rizo's new-chat screen: choose a provider for this chat, from Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, Mistral, Z.ai GLM and Free, each with the model it starts on." width="1200" height="1880" loading="lazy">
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="alt" aria-labelledby="data-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="data-title" class="h2">Where your code goes</h2>
+      <p>When you send a message, Rizo sends your prompt and the code it needs straight from your machine to the provider you chose. That's the only place it goes.</p>
+    </div>
+    <div class="flow" role="img" aria-label="Your VS Code sends requests directly to the AI provider you chose. There is no Rizo server in between.">
+      <div class="node"><strong>Your VS Code</strong><span>Rizo runs here, with your key in the OS keychain</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node off"><strong>A Rizo server</strong><span>Doesn't exist. Nothing is relayed or stored by us.</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node"><strong>Your provider</strong><span>OpenRouter, Azure or Bedrock, under their terms</span></div>
+    </div>
+    <div class="grid-3">
+      <div class="cell"><h3>No telemetry</h3><p>The extension doesn't collect usage data. Besides your provider, it only contacts OpenRouter's public model list and MCP servers you add yourself.</p></div>
+      <div class="cell"><h3>Your provider's rules apply</h3><p>What happens to a request after it reaches the provider, including retention and training, is set by that provider and your account settings there.</p></div>
+      <div class="cell"><h3>Secrets stay out</h3><p><code>.env</code> files and keys need approval to read and are never searched or autocompleted. Secrets in command output are redacted.</p></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="safety-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="safety-title" class="h2">Safety you don't have to configure</h2>
+      <p>An AI agent can be wrong, or be tricked by text it reads. Rizo is built so that neither turns into damage without you agreeing to it.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">When Rizo wants to</th><th scope="col">What happens</th></tr></thead>
+        <tbody>
+          <tr><td>Read or search code</td><td>Runs straight away, inside your workspace. Files that usually hold secrets ask every time.</td></tr>
+          <tr><td>Write or edit a file</td><td>Shows a diff and asks. Edits to <code>.vscode</code>, <code>.git</code>, <code>.github</code> and other folders that control automation always ask.</td></tr>
+          <tr><td>Run a command</td><td>Asks first. Force-push, hard reset, <code>rm -rf</code>, piping downloads into a shell and similar commands always warn.</td></tr>
+          <tr><td>Use an MCP tool</td><td>Asks every time and shows the arguments, unless you allowed that one tool in this project.</td></tr>
+          <tr><td>Use another folder</td><td>Only after you grant it. Your home folder, <code>~/.ssh</code> and system folders can't be granted.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="u-mt28 note">Rizo only runs in folders you trust, and a repository can't change its security settings or add MCP servers. Read the full <a class="text-link" href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/docs/SECURITY-MODEL.md">security model</a>.</p>
+  </div>
+</section>
+
+<section class="alt" aria-labelledby="start-title" id="start">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="start-title" class="h2">Up and running in two minutes</h2>
+      <p>All you need is VS Code and a key from OpenRouter, or an Azure or Bedrock account.</p>
+    </div>
+    <div class="grid-3">
+      <div class="cell"><span class="num">01</span><h3>Install</h3><p>Search for "Rizo" in the Extensions view, or install it from the <a class="text-link" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-event="cta_install" data-label="rizobot_steps">Marketplace</a>.</p></div>
+      <div class="cell"><span class="num">02</span><h3>Add your key</h3><p>Create a key at <a class="text-link" href="https://openrouter.ai/keys">openrouter.ai</a>. Free models work without credit. Or run "Rizo: Connect Azure AI Foundry" or "Connect Amazon Bedrock".</p></div>
+      <div class="cell"><span class="num">03</span><h3>Open the chat</h3><p>Run "Rizo: Open Chat" from the Command Palette, pick a provider, and describe what you want to build.</p></div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="faq-title">
+  <div class="wrap">
+    <div class="section-head">
+      <h2 id="faq-title" class="h2">Questions</h2>
+      <p>If something isn't answered here, <a class="text-link" href="https://github.com/chaitanyaaggarwal9/rizo-bot/issues">open an issue</a>.</p>
+    </div>
+    <div class="faq">
+      <details><summary>What does Rizo cost?</summary><p>Rizo itself is free. You pay your AI provider directly for the tokens you use, at their prices, and Rizo shows you the cost as you go. Free models on OpenRouter cost nothing.</p></details>
+      <details><summary>Does Rizo see or store my code?</summary><p>No. There is no Rizo server. Requests go from your editor to the provider you chose. Chats are stored locally in VS Code's storage on your machine.</p></details>
+      <details><summary>Can it break my project?</summary><p>Every write needs your approval (or your explicit "Always Allow" for the project), dangerous commands always warn, and you can undo the file changes of any recent reply. Commands it ran, such as installs, can't be undone, which is why they ask first.</p></details>
+      <details><summary>Which model should I use?</summary><p>Start with a provider's everyday model. Rizo picks a cheaper model for simple chats and offers the strongest one when a task struggles. For autocomplete, choose a fast, cheap model.</p></details>
+      <details><summary>Is it open source?</summary><p>Rizo is source-available under the Apache License 2.0 with the Commons Clause: you can read, use (including at work), modify and share it, but not sell it. Rizo Lang is open source under Apache 2.0.</p></details>
+      <details><summary>Does it work with Rizo Lang?</summary><p>Yes, Rizo can write and fix <code>.rz</code> files today. Built-in support, with the spec loaded automatically and compiler checks in the editor, is next on the roadmap.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="band" aria-labelledby="cta-title">
+  <div class="wrap band-inner">
+    <div>
+      <h2 id="cta-title" class="h2">Your models. Your key. Your call.</h2>
+      <p class="u-mt12">Install Rizo and start a chat in VS Code.</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-dark" href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo" data-event="cta_install" data-label="rizobot_band">Install Rizo</a>
+      <a class="btn btn-line" href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/vscode-extension/ONBOARDING.md">Read the guide</a>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="logo" href="/" aria-label="Rizo home">
+          <img class="on-light" src="/assets/logo-word-light.png" alt="Rizo" width="994" height="345">
+          <img class="on-dark" src="/assets/logo-word-dark.png" alt="Rizo" width="994" height="345">
+        </a>
+        <p>Tools for building software with AI, without giving up control of your code, your keys or your users' data.</p>
+      </div>
+      <div>
+        <h4>Products</h4>
+        <ul>
+          <li><a href="/rizobot">Rizo for VS Code</a></li>
+          <li><a href="/rizolang">Rizo Lang</a></li>
+          <li><a href="https://marketplace.visualstudio.com/items?itemName=ChaitanyaAggarwal.rizo">VS Code Marketplace</a></li>
+          <li><a href="https://www.npmjs.com/package/rizolang">npm package</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot">Rizo on GitHub</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizolang">Rizo Lang on GitHub</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/docs/SECURITY-MODEL.md">Security model</a></li>
+          <li><a href="https://github.com/chaitanyaaggarwal9/rizo-bot/blob/main/SECURITY.md">Report a vulnerability</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/accessibility">Accessibility</a></li>
+          <li><button class="linklike" type="button" data-cookie-settings>Cookie settings</button></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>&copy; 2026 Chaitanya Aggarwal. Rizo and Rizo Lang are independent projects, not affiliated with Microsoft, OpenRouter, Amazon or the model providers named on this site.</span>
+      <a href="mailto:chaitanyaaggarwal9@gmail.com">chaitanyaaggarwal9@gmail.com</a>
+    </div>
+  </div>
+</footer>
+<div class="consent" id="consent" role="dialog" aria-live="polite" aria-label="Analytics cookies" hidden>
+  <p>We'd like to use Google Analytics cookies to count visits and see which pages help. Nothing is used for ads or sold. <a class="text-link" href="/privacy#analytics">Details</a></p>
+  <p data-gpc hidden>Your browser sends a Global Privacy Control or Do Not Track signal, so analytics stays off.</p>
+  <div class="actions">
+    <button class="btn btn-dark" type="button" data-consent="accept">Accept</button>
+    <button class="btn btn-line" type="button" data-consent="reject">Reject</button>
+  </div>
+</div>
+</body>
+</html>
